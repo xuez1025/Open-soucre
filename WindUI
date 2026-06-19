@@ -1,0 +1,80 @@
+-- WindUI 載入
+local WindUI = loadstring(game:HttpGet(
+    "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
+))()
+
+local CurrentKey = "G"
+local KeyDisabled = false
+
+local Window = WindUI:CreateWindow({
+    Title         = "Xu-hub",
+    Icon          = "user-check",
+    Author        = "by xuez1025",
+    Folder        = "Xu-Hub",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            local LocalPlayer = game.Players.LocalPlayer
+            WindUI:Notify({ 
+                Title = LocalPlayer.Name, 
+                Content = "ID: " .. LocalPlayer.UserId, 
+                Duration = 3 
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Xu-hub",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+    }
+})
+
+-- 建立分頁
+local Tabs = {
+    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+}
+
+Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Keybind({ 
+    Title = "快捷鍵", 
+    Desc = "可更改", 
+    Value = CurrentKey,
+    Callback = function(v)
+        CurrentKey = v
+        
+        if not KeyDisabled then
+            Window:SetToggleKey(Enum.KeyCode[v])
+        end
+    end
+})
+
+-- 停用快捷鍵開關
+Tabs.Settings:Toggle({
+    Title = "停用快捷鍵",
+    Desc = "開啟後將禁用快捷鍵",
+    Value = false,
+    Callback = function(state)
+        KeyDisabled = state
+        
+        if state then
+            -- 停用快捷鍵
+            Window:SetToggleKey(nil)
+        else
+            -- 恢復快捷鍵
+            Window:SetToggleKey(Enum.KeyCode[CurrentKey])
+        end
+    end
+})
