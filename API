@@ -1,0 +1,385 @@
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LogService = game:GetService("LogService")
+
+-- 創建 UI 實體
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local TitleBar = Instance.new("Frame")
+local TitleLabel = Instance.new("TextLabel")
+local CloseBtn = Instance.new("TextButton")
+local ContentFrame = Instance.new("Frame")
+
+local UserSearchInput = Instance.new("TextBox") 
+local AutoGenBtn = Instance.new("TextButton")      
+local PresenceBtn = Instance.new("TextButton")    
+
+local UrlInput = Instance.new("TextBox")
+local CopyBtn = Instance.new("TextButton") -- 新增：複製按鈕
+local ResultFrame = Instance.new("ScrollingFrame")
+local ResultText = Instance.new("TextBox") 
+
+-- 新增：專門用來放說明的 UI 區塊
+local DescFrame = Instance.new("ScrollingFrame")
+local DescText = Instance.new("TextLabel")
+
+ScreenGui.Name = "ApiTesterGUI_v2_Modified"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false
+
+-- 主面板 (橫向加寬至 750 以防換行)
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+MainFrame.Position = UDim2.new(0.2, 0, 0.2, 0)
+MainFrame.Size = UDim2.new(0, 750, 0, 420) 
+MainFrame.BorderSizePixel = 0
+
+-- 標題列
+TitleBar.Parent = MainFrame
+TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BorderSizePixel = 0
+
+TitleLabel.Parent = TitleBar
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.Size = UDim2.new(0, 400, 1, 0)
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.Text = "Roblox API 手動監控測試器 (JobID複製優化版)"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 16
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+CloseBtn.Parent = TitleBar
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+CloseBtn.Size = UDim2.new(0, 35, 1, 0)
+CloseBtn.Position = UDim2.new(1, -35, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.TextSize = 16
+
+-- 內容面版
+ContentFrame.Parent = MainFrame
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Position = UDim2.new(0, 0, 0, 35)
+ContentFrame.Size = UDim2.new(1, 0, 1, -35)
+
+-- 玩家輸入框
+UserSearchInput.Parent = ContentFrame
+UserSearchInput.PlaceholderText = "輸入玩家名稱 或 純數字 ID"
+UserSearchInput.Size = UDim2.new(0, 710, 0, 35)
+UserSearchInput.Position = UDim2.new(0, 20, 0, 15)
+UserSearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+UserSearchInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+UserSearchInput.Text = ""
+UserSearchInput.TextSize = 14
+UserSearchInput.ClearTextOnFocus = false
+
+-- 按鈕：生成基本資料網址
+AutoGenBtn.Parent = ContentFrame
+AutoGenBtn.Text = "ℹ️ 獲取基本資料 (Manual GET)"
+AutoGenBtn.Size = UDim2.new(0, 345, 0, 35)
+AutoGenBtn.Position = UDim2.new(0, 20, 0, 60)
+AutoGenBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 90)
+AutoGenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+AutoGenBtn.Font = Enum.Font.SourceSansBold
+AutoGenBtn.TextSize = 14
+
+-- 按鈕：生成在線狀態
+PresenceBtn.Parent = ContentFrame
+PresenceBtn.Text = "🟢 獲取在線狀態 (Manual POST)"
+PresenceBtn.Size = UDim2.new(0, 345, 0, 35)
+PresenceBtn.Position = UDim2.new(0, 385, 0, 60)
+PresenceBtn.BackgroundColor3 = Color3.fromRGB(110, 70, 30)
+PresenceBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+PresenceBtn.Font = Enum.Font.SourceSansBold
+PresenceBtn.TextSize = 14
+
+-- API 網址輸入框 (縮短寬度至 610，留 90 給複製按鈕)
+UrlInput.Parent = ContentFrame
+UrlInput.PlaceholderText = "當前監控 API 網址"
+UrlInput.Size = UDim2.new(0, 610, 0, 35)
+UrlInput.Position = UDim2.new(0, 20, 0, 110)
+UrlInput.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+UrlInput.TextColor3 = Color3.fromRGB(180, 180, 180)
+UrlInput.Text = ""
+UrlInput.TextSize = 13
+UrlInput.ClearTextOnFocus = false
+UrlInput.TextXAlignment = Enum.TextXAlignment.Left
+UrlInput.TextEditable = false 
+
+-- 新增：複製按鈕 UI 設定
+CopyBtn.Parent = ContentFrame
+CopyBtn.Text = "📋 複製網址"
+CopyBtn.Size = UDim2.new(0, 90, 0, 35)
+CopyBtn.Position = UDim2.new(0, 640, 0, 110)
+CopyBtn.BackgroundColor3 = Color3.fromRGB(45, 85, 45)
+CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyBtn.Font = Enum.Font.SourceSansBold
+CopyBtn.TextSize = 13
+
+-- 內部狀態變數
+local currentMethod = "GET"
+local currentBody = ""
+local currentDataType = "None"
+local currentTargetUrl = ""
+local lastRawResponse = "" -- 儲存最新一次的原始回傳，方便解析
+
+-- 【左側】API結果顯示框 
+ResultFrame.Parent = ContentFrame
+ResultFrame.Position = UDim2.new(0, 20, 0, 160)
+ResultFrame.Size = UDim2.new(0, 430, 0, 200)
+ResultFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18) -- 微調背景色
+ResultFrame.CanvasSize = UDim2.new(0, 0, 5, 0) -- 增加滾動長度以容納縮排 JSON
+
+ResultText.Parent = ResultFrame
+ResultText.Size = UDim2.new(1, -10, 1, 0)
+ResultText.Position = UDim2.new(0, 5, 0, 0)
+ResultText.BackgroundTransparency = 1
+ResultText.TextColor3 = Color3.fromRGB(120, 230, 160) -- 改成較柔和、高質感的亮綠色
+ResultText.TextSize = 13 
+ResultText.Font = Enum.Font.RobotoMono -- 更改為最好看的現代等寬程式碼字體
+ResultText.TextXAlignment = Enum.TextXAlignment.Left
+ResultText.TextYAlignment = Enum.TextYAlignment.Top
+ResultText.TextWrapped = true
+ResultText.ClearTextOnFocus = false
+ResultText.TextEditable = false 
+ResultText.Text = "系統就緒。\n請在上方輸入框輸入玩家名稱或 ID，並點擊上方按鈕手動請求資料。"
+
+-- 【右側】獨立說明面板 
+DescFrame.Parent = ContentFrame
+DescFrame.Position = UDim2.new(0, 465, 0, 160)
+DescFrame.Size = UDim2.new(0, 265, 0, 200)
+DescFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+DescFrame.CanvasSize = UDim2.new(0, 0, 1.8, 0) -- 微調高度以容納新增的提示
+
+DescText.Parent = DescFrame
+DescText.Size = UDim2.new(1, -10, 1, 0)
+DescText.Position = UDim2.new(0, 5, 0, 5)
+DescText.BackgroundTransparency = 1
+DescText.TextColor3 = Color3.fromRGB(240, 240, 240)
+DescText.TextSize = 14 
+DescText.Font = Enum.Font.SourceSansBold 
+DescText.TextXAlignment = Enum.TextXAlignment.Left
+DescText.TextYAlignment = Enum.TextYAlignment.Top
+DescText.TextWrapped = true
+DescText.Text = "【欄位說明面板】\n\n尚未選擇模式。\n點擊上方按鈕後，這裡會顯示對應的 API 欄位中文翻譯教學。"
+
+---------------------------------------------
+-- 核心邏輯：複製到剪貼簿的相容性函式
+---------------------------------------------
+local function copyToClipboard(text)
+    local setClipboard = setclipboard or toclipboard or (syn and syn.write_clipboard)
+    if setClipboard then
+        setClipboard(text)
+        return true
+    else
+        return false
+    end
+end
+
+---------------------------------------------
+-- 核心邏輯：獲取 UserID 的通用函式
+---------------------------------------------
+local function getUserId(target, callback)
+    if tonumber(target) ~= nil then
+        callback(target)
+        return
+    end
+    ResultText.Text = "正在查詢玩家 ID，請稍候..."
+    task.spawn(function()
+        local requestFunc = syn and syn.request or http_request or request
+        if not requestFunc then
+            ResultText.Text = "錯誤: 執行器不支援 request 函數，無法轉換名稱。"
+            return
+        end
+        local success, res = pcall(function()
+            return requestFunc({
+                Url = "https://users.roproxy.com/v1/usernames/users",
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode({ usernames = { target }, excludeBannedUsers = false })
+            })
+        end)
+        if success and res.StatusCode == 200 then
+            local data = HttpService:JSONDecode(res.Body)
+            if data and data.data and data.data[1] then
+                callback(data.data[1].id)
+            else
+                ResultText.Text = "錯誤: 找不到該玩家，請檢查名稱是否拼錯。"
+            end
+        else
+            ResultText.Text = "錯誤: 玩家 ID 查詢失敗（RoProxy 伺服器異常）。"
+        end
+    end)
+end
+
+---------------------------------------------
+-- 核心邏輯：發送請求（已改為單次執行，無循環）
+---------------------------------------------
+local function performApiRequest()
+    if currentTargetUrl == "" then return end
+    
+    local targetUrl = currentTargetUrl:gsub("roblox%.com", "roproxy.com")
+    ResultText.Text = "正在發送請求..."
+    
+    task.spawn(function()
+        local success, res
+        if currentMethod == "GET" then
+            success, res = pcall(function() return game:HttpGetAsync(targetUrl) end)
+        else
+            local requestFunc = syn and syn.request or http_request or request
+            if not requestFunc then
+                ResultText.Text = "錯誤: 執行器缺少 request 函數，無法發送 POST 請求。"
+                return
+            end
+            success, res = pcall(function()
+                local response = requestFunc({
+                    Url = targetUrl,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = currentBody
+                })
+                return response.Body
+            end)
+        end
+        
+        if success then
+            lastRawResponse = res -- 緩存原始資料供複製解析用
+            
+            -- 使用 Pretty Print 格式化
+            local status, cleanJson = pcall(function()
+                local decoded = HttpService:JSONDecode(res)
+                return HttpService:JSONEncode(decoded) 
+            end)
+            
+            local formattedResult = res
+            if status then
+                local decoded = HttpService:JSONDecode(res)
+                -- 修正原始排版替換邏輯，移除亂碼字元
+                formattedResult = HttpService:JSONEncode(decoded):gsub(',', ',\n    '):gsub('{', '{\n    '):gsub('}', '\n}')
+            end
+            
+            local timestamp = os.date("%X")
+            ResultText.Text = "【手動更新成功: " .. timestamp .. "】\n" .. formattedResult
+        else
+            ResultText.Text = "請求失敗:\n" .. tostring(res)
+        end
+    end)
+end
+
+---------------------------------------------
+-- 按鈕事件 1：基本資料
+---------------------------------------------
+AutoGenBtn.MouseButton1Click:Connect(function()
+    if UserSearchInput.Text == "" then ResultText.Text = "請輸入玩家名稱或ID！" return end
+    getUserId(UserSearchInput.Text, function(userId)
+        currentTargetUrl = "https://users.roblox.com/v1/users/" .. userId
+        UrlInput.Text = currentTargetUrl
+        CopyBtn.Text = "📋 複製網址"
+        currentMethod = "GET"
+        currentBody = ""
+        currentDataType = "UserData"
+        
+        DescText.Text = "💡【基本資料欄位說明】\n\n" ..
+                        "• created:\n  帳號創立時間 (UTC 格式)\n\n" ..
+                        "• description:\n  玩家個人簡介文字\n\n" ..
+                        "• hasVerifiedBadge:\n  是否有藍色勾勾 (true/false)\n\n" ..
+                        "• id:\n  玩家唯一的純數字 ID\n\n" ..
+                        "• name:\n  玩家目前註冊的登入帳號名稱\n\n" ..
+                        "• isBanned:\n  是否被官方封禁 (true/false)\n\n" ..
+                        "• displayName:\n  玩家的顯示名稱 (暱稱)"
+
+        performApiRequest() 
+    end)
+end)
+
+---------------------------------------------
+-- 按鈕事件 2：在線狀態
+---------------------------------------------
+PresenceBtn.MouseButton1Click:Connect(function()
+    if UserSearchInput.Text == "" then ResultText.Text = "請輸入玩家名稱或ID！" return end
+    getUserId(UserSearchInput.Text, function(userId)
+        currentTargetUrl = "https://presence.roblox.com/v1/presence/users"
+        UrlInput.Text = currentTargetUrl
+        CopyBtn.Text = "📋 複製JobID"
+        currentMethod = "POST"
+        currentBody = string.format('{"userIds": [%s]}', tostring(userId))
+        currentDataType = "Presence"
+        
+        DescText.Text = "💡【在線狀態欄位說明】\n" ..
+                        "⚠️ 註：若玩家為離線狀態，API將不回傳下方帶有※號的遊戲內數據。\n\n" ..
+                        "• userPresenceType:\n  0 ＝ 離線 (Offline)\n  1 ＝ 線上 (Online)\n  2 ＝ 遊戲中 (In-Game)\n  3 ＝ 工作室中 (Studio)\n\n" ..
+                        "• lastLocation (※):\n  當前所在遊戲名稱/位置\n\n" ..
+                        "• placeId (※):\n  當前遊戲關卡 ID\n\n" ..
+                        "• universeId (※):\n  當前遊戲宇宙 ID\n\n" ..
+                        "• gameId (※):\n  當前伺服器實例 (JobId)"
+        
+        performApiRequest() 
+    end)
+end)
+
+---------------------------------------------
+-- 新增按鈕邏輯：動態複製 (網址 或 JobID)
+---------------------------------------------
+CopyBtn.MouseButton1Click:Connect(function()
+    if currentDataType == "None" or UrlInput.Text == "" then
+        ResultText.Text = "【系統提示】目前尚未生成任何監控數據，無法複製。"
+        return
+    end
+
+    if currentDataType == "UserData" then
+        local success = copyToClipboard(UrlInput.Text)
+        if success then
+            CopyBtn.Text = "✅ 複製成功！"
+            task.delay(1.5, function() CopyBtn.Text = "📋 複製網址" end)
+        else
+            ResultText.Text = "【複製失敗】您的執行器不支援剪貼簿函數。"
+        end
+    elseif currentDataType == "Presence" then
+        if lastRawResponse == "" then
+            ResultText.Text = "【系統提示】尚未獲取到在線狀態數據，請稍候再試。"
+            return
+        end
+
+        local successParse, decoded = pcall(function() return HttpService:JSONDecode(lastRawResponse) end)
+        if successParse and decoded and decoded.userPresences and decoded.userPresences[1] then
+            local jobId = decoded.userPresences[1].gameId
+            
+            if jobId and jobId ~= "" and jobId ~= "null" then
+                local successCopy = copyToClipboard(tostring(jobId))
+                if successCopy then
+                    CopyBtn.Text = "✅ JobID已複製"
+                    task.delay(1.5, function() CopyBtn.Text = "📋 複製JobID" end)
+                else
+                    ResultText.Text = "【複製失敗】您的執行器不支援剪貼簿函數。"
+                end
+            else
+                ResultText.Text = "【複製提示】目前該玩家不在遊戲中（或為私人伺服器），沒有可用的 JobId (gameId)。"
+            end
+        else
+            ResultText.Text = "【解析失敗】無法從回傳的 API 數據中提取 JobId。"
+        end
+    end
+end)
+
+---------------------------------------------
+-- 頂部視窗拖動邏輯
+---------------------------------------------
+local dragging, dragInput, dragStart, startPos
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+TitleBar.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
