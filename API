@@ -1,372 +1,550 @@
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local LogService = game:GetService("LogService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService") 
+local LocalPlayer = Players.LocalPlayer
 
--- 創建 UI 實體
+-- ==========================================
+-- 【目標監控玩家名單】(可自由增加)
+-- ==========================================
+local targetUsers = {
+    "powoDYLANowoq",
+}
+
+-- 核心 UI 容器
 local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local TitleBar = Instance.new("Frame")
-local TitleLabel = Instance.new("TextLabel")
-local CloseBtn = Instance.new("TextButton")
-local ContentFrame = Instance.new("Frame")
-
-local UserSearchInput = Instance.new("TextBox") 
-local AutoGenBtn = Instance.new("TextButton")      
-local PresenceBtn = Instance.new("TextButton")    
-
-local UrlInput = Instance.new("TextBox")
-local CopyBtn = Instance.new("TextButton") -- 新增：複製按鈕
-local ResultFrame = Instance.new("ScrollingFrame")
-local ResultText = Instance.new("TextBox") 
-
--- 新增：專門用來放說明的 UI 區塊
-local DescFrame = Instance.new("ScrollingFrame")
-local DescText = Instance.new("TextLabel")
-
-ScreenGui.Name = "ApiTesterGUI_v2_Modified"
+ScreenGui.Name = "Roblox_Ultra_Monitor_v5_PureMonitor"
 ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.ResetOnSpawn = false
 
--- 主面板 (橫向加寬至 750 以防換行)
+-- 主面板
+local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-MainFrame.Position = UDim2.new(0.2, 0, 0.2, 0)
-MainFrame.Size = UDim2.new(0, 750, 0, 420) 
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 16, 22)
+MainFrame.Position = UDim2.new(0.5, -475, 0.5, -300)
+MainFrame.Size = UDim2.new(0, 960, 0, 620) 
 MainFrame.BorderSizePixel = 0
 
--- 標題列
-TitleBar.Parent = MainFrame
-TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-TitleBar.Size = UDim2.new(1, 0, 0, 35)
-TitleBar.BorderSizePixel = 0
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
 
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Thickness = 1
+MainStroke.Color = Color3.fromRGB(35, 37, 48)
+MainStroke.Transparency = 0.3
+MainStroke.Parent = MainFrame
+
+-- 標題列
+local TitleBar = Instance.new("Frame")
+TitleBar.Parent = MainFrame
+TitleBar.BackgroundColor3 = Color3.fromRGB(22, 24, 33)
+TitleBar.Size = UDim2.new(1, 0, 0, 48)
+TitleBar.BorderSizePixel = 0
+local BarCorner = Instance.new("UICorner")
+BarCorner.CornerRadius = UDim.new(0, 12)
+BarCorner.Parent = TitleBar
+
+local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Parent = TitleBar
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.Size = UDim2.new(0, 400, 1, 0)
-TitleLabel.Font = Enum.Font.SourceSansBold
-TitleLabel.Text = "Roblox API 手動監控測試器 (JobID複製優化版)"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 16
+TitleLabel.Position = UDim2.new(0, 20, 0, 0)
+TitleLabel.Size = UDim2.new(0, 600, 1, 0)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Text = "⚡ MULTI-MONITOR SYSTEM (準備中...)"
+TitleLabel.TextColor3 = Color3.fromRGB(240, 243, 255)
+TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
+local CloseBtn = Instance.new("TextButton")
 CloseBtn.Parent = TitleBar
 CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-CloseBtn.Size = UDim2.new(0, 35, 1, 0)
-CloseBtn.Position = UDim2.new(1, -35, 0, 0)
+CloseBtn.TextColor3 = Color3.fromRGB(150, 155, 170)
+CloseBtn.Size = UDim2.new(0, 48, 1, 0)
+CloseBtn.Position = UDim2.new(1, -48, 0, 0)
 CloseBtn.BackgroundTransparency = 1
 CloseBtn.TextSize = 16
+CloseBtn.Font = Enum.Font.GothamBold
 
--- 內容面版
-ContentFrame.Parent = MainFrame
-ContentFrame.BackgroundTransparency = 1
-ContentFrame.Position = UDim2.new(0, 0, 0, 35)
-ContentFrame.Size = UDim2.new(1, 0, 1, -35)
+-- 【左側】滾動區
+local LeftContainer = Instance.new("ScrollingFrame")
+LeftContainer.Parent = MainFrame
+LeftContainer.BackgroundTransparency = 1
+LeftContainer.Position = UDim2.new(0, 16, 0, 64)
+LeftContainer.Size = UDim2.new(0, 584, 1, -80)
+LeftContainer.CanvasSize = UDim2.new(0, 0, 0, 0) 
+LeftContainer.ScrollBarThickness = 4
+LeftContainer.ScrollBarImageColor3 = Color3.fromRGB(45, 48, 64)
 
--- 玩家輸入框
-UserSearchInput.Parent = ContentFrame
-UserSearchInput.PlaceholderText = "輸入玩家名稱 或 純數字 ID"
-UserSearchInput.Size = UDim2.new(0, 710, 0, 35)
-UserSearchInput.Position = UDim2.new(0, 20, 0, 15)
-UserSearchInput.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-UserSearchInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-UserSearchInput.Text = ""
-UserSearchInput.TextSize = 14
-UserSearchInput.ClearTextOnFocus = false
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = LeftContainer
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 12)
 
--- 按鈕：生成基本資料網址
-AutoGenBtn.Parent = ContentFrame
-AutoGenBtn.Text = "ℹ️ 獲取基本資料 (Manual GET)"
-AutoGenBtn.Size = UDim2.new(0, 345, 0, 35)
-AutoGenBtn.Position = UDim2.new(0, 20, 0, 60)
-AutoGenBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 90)
-AutoGenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-AutoGenBtn.Font = Enum.Font.SourceSansBold
-AutoGenBtn.TextSize = 14
+-- 【右側】詳細面板
+local RightPanel = Instance.new("Frame")
+RightPanel.Parent = MainFrame
+RightPanel.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
+RightPanel.Position = UDim2.new(0, 616, 0, 64)
+RightPanel.Size = UDim2.new(0, 328, 1, -80)
+local RightCorner = Instance.new("UICorner")
+RightCorner.CornerRadius = UDim.new(0, 10)
+RightCorner.Parent = RightPanel
 
--- 按鈕：生成在線狀態
-PresenceBtn.Parent = ContentFrame
-PresenceBtn.Text = "🟢 獲取在線狀態 (Manual POST)"
-PresenceBtn.Size = UDim2.new(0, 345, 0, 35)
-PresenceBtn.Position = UDim2.new(0, 385, 0, 60)
-PresenceBtn.BackgroundColor3 = Color3.fromRGB(110, 70, 30)
-PresenceBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-PresenceBtn.Font = Enum.Font.SourceSansBold
-PresenceBtn.TextSize = 14
+local RightStroke = Instance.new("UIStroke")
+RightStroke.Thickness = 1
+RightStroke.Color = Color3.fromRGB(28, 30, 42)
+RightStroke.Parent = RightPanel
 
--- API 網址輸入框 (縮短寬度至 610，留 90 給複製按鈕)
-UrlInput.Parent = ContentFrame
-UrlInput.PlaceholderText = "當前監控 API 網址"
-UrlInput.Size = UDim2.new(0, 610, 0, 35)
-UrlInput.Position = UDim2.new(0, 20, 0, 110)
-UrlInput.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-UrlInput.TextColor3 = Color3.fromRGB(180, 180, 180)
-UrlInput.Text = ""
-UrlInput.TextSize = 13
-UrlInput.ClearTextOnFocus = false
-UrlInput.TextXAlignment = Enum.TextXAlignment.Left
-UrlInput.TextEditable = false 
+local SearchBox = Instance.new("TextBox")
+SearchBox.Parent = RightPanel
+SearchBox.Size = UDim2.new(1, -100, 0, 36)
+SearchBox.Position = UDim2.new(0, 16, 0, 16)
+SearchBox.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+SearchBox.Font = Enum.Font.Gotham
+SearchBox.PlaceholderText = "🔎 輸入玩家名稱或 ID..."
+SearchBox.Text = ""
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBox.TextSize = 13
+SearchBox.ClearTextOnFocus = false
+local SearchBoxCorner = Instance.new("UICorner")
+SearchBoxCorner.CornerRadius = UDim.new(0, 6)
+SearchBoxCorner.Parent = SearchBox
 
--- 新增：複製按鈕 UI 設定
-CopyBtn.Parent = ContentFrame
-CopyBtn.Text = "📋 複製網址"
-CopyBtn.Size = UDim2.new(0, 90, 0, 35)
-CopyBtn.Position = UDim2.new(0, 640, 0, 110)
-CopyBtn.BackgroundColor3 = Color3.fromRGB(45, 85, 45)
-CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CopyBtn.Font = Enum.Font.SourceSansBold
-CopyBtn.TextSize = 13
+local SearchBoxStroke = Instance.new("UIStroke")
+SearchBoxStroke.Thickness = 1
+SearchBoxStroke.Color = Color3.fromRGB(40, 43, 60)
+SearchBoxStroke.Parent = SearchBox
 
--- 內部狀態變數
-local currentMethod = "GET"
-local currentBody = ""
-local currentDataType = "None"
-local currentTargetUrl = ""
-local lastRawResponse = "" -- 儲存最新一次的原始回傳，方便解析
+local SearchBtn = Instance.new("TextButton")
+SearchBtn.Parent = RightPanel
+SearchBtn.Size = UDim2.new(0, 72, 0, 36)
+SearchBtn.Position = UDim2.new(1, -88, 0, 16)
+SearchBtn.BackgroundColor3 = Color3.fromRGB(56, 110, 245)
+SearchBtn.Font = Enum.Font.GothamBold
+SearchBtn.Text = "搜尋"
+SearchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBtn.TextSize = 13
+local SearchBtnCorner = Instance.new("UICorner")
+SearchBtnCorner.CornerRadius = UDim.new(0, 6)
+SearchBtnCorner.Parent = SearchBtn
 
--- 【左側】API結果顯示框 
-ResultFrame.Parent = ContentFrame
-ResultFrame.Position = UDim2.new(0, 20, 0, 160)
-ResultFrame.Size = UDim2.new(0, 430, 0, 200)
-ResultFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18) -- 微調背景色
-ResultFrame.CanvasSize = UDim2.new(0, 0, 5, 0) -- 增加滾動長度以容納縮排 JSON
+local DetailDetails = Instance.new("ScrollingFrame")
+DetailDetails.Parent = RightPanel
+DetailDetails.BackgroundTransparency = 1
+DetailDetails.Position = UDim2.new(0, 16, 0, 68)
+DetailDetails.Size = UDim2.new(1, -32, 1, -84)
+DetailDetails.CanvasSize = UDim2.new(0, 0, 0, 520)
+DetailDetails.ScrollBarThickness = 2
+DetailDetails.ScrollBarImageColor3 = Color3.fromRGB(45, 48, 64)
 
-ResultText.Parent = ResultFrame
-ResultText.Size = UDim2.new(1, -10, 1, 0)
-ResultText.Position = UDim2.new(0, 5, 0, 0)
-ResultText.BackgroundTransparency = 1
-ResultText.TextColor3 = Color3.fromRGB(120, 230, 160) -- 改成較柔和、高質感的亮綠色
-ResultText.TextSize = 13 
-ResultText.Font = Enum.Font.RobotoMono -- 更改為最好看的現代等寬程式碼字體
-ResultText.TextXAlignment = Enum.TextXAlignment.Left
-ResultText.TextYAlignment = Enum.TextYAlignment.Top
-ResultText.TextWrapped = true
-ResultText.ClearTextOnFocus = false
-ResultText.TextEditable = false 
-ResultText.Text = "系統就緒。\n請在上方輸入框輸入玩家名稱或 ID，並點擊上方按鈕手動請求資料。"
+local DetailAvatar = Instance.new("ImageLabel")
+DetailAvatar.Size = UDim2.new(0, 96, 0, 96)
+DetailAvatar.Position = UDim2.new(0.5, -48, 0, 12)
+DetailAvatar.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+DetailAvatar.Parent = DetailDetails
+local DetailAvatarCorner = Instance.new("UICorner")
+DetailAvatarCorner.CornerRadius = UDim.new(0, 48)
+DetailAvatarCorner.Parent = DetailAvatar
 
--- 【右側】獨立說明面板 
-DescFrame.Parent = ContentFrame
-DescFrame.Position = UDim2.new(0, 465, 0, 160)
-DescFrame.Size = UDim2.new(0, 265, 0, 200)
-DescFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-DescFrame.CanvasSize = UDim2.new(0, 0, 1.8, 0) -- 微調高度以容納新增的提示
+local DetailAvatarStroke = Instance.new("UIStroke")
+DetailAvatarStroke.Thickness = 2
+DetailAvatarStroke.Color = Color3.fromRGB(56, 110, 245)
+DetailAvatarStroke.Parent = DetailAvatar
 
-DescText.Parent = DescFrame
-DescText.Size = UDim2.new(1, -10, 1, 0)
-DescText.Position = UDim2.new(0, 5, 0, 5)
-DescText.BackgroundTransparency = 1
-DescText.TextColor3 = Color3.fromRGB(240, 240, 240)
-DescText.TextSize = 14 
-DescText.Font = Enum.Font.SourceSansBold 
-DescText.TextXAlignment = Enum.TextXAlignment.Left
-DescText.TextYAlignment = Enum.TextYAlignment.Top
-DescText.TextWrapped = true
-DescText.Text = "【欄位說明面板】\n\n尚未選擇模式。\n點擊上方按鈕後，這裡會顯示對應的 API 欄位中文翻譯教學。"
+-- 右側驗證標記 (改為文字型態，置於大頭貼右下方)
+local DetailVerified = Instance.new("TextLabel")
+DetailVerified.Size = UDim2.new(0, 22, 0, 22)
+DetailVerified.Position = UDim2.new(0.5, 26, 0, 86) 
+DetailVerified.BackgroundTransparency = 1
+DetailVerified.Text = "☑️️"
+DetailVerified.TextSize = 26
+DetailVerified.Font = Enum.Font.GothamBold
+DetailVerified.ZIndex = 3
+DetailVerified.Visible = false
+DetailVerified.Parent = DetailDetails
+
+local DetailText = Instance.new("TextLabel")
+DetailText.Size = UDim2.new(1, 0, 0, 380)
+DetailText.Position = UDim2.new(0, 0, 0, 130)
+DetailText.BackgroundTransparency = 1
+DetailText.Font = Enum.Font.Code
+DetailText.TextSize = 13
+DetailText.TextColor3 = Color3.fromRGB(185, 190, 210)
+DetailText.TextXAlignment = Enum.TextXAlignment.Left
+DetailText.TextYAlignment = Enum.TextYAlignment.Top
+DetailText.TextWrapped = true
+DetailText.Text = "請點擊左側玩家卡片\n或在上方輸入資訊進行檢索。"
+DetailText.Parent = DetailDetails
+
+local monitoredPlayers = {}
 
 ---------------------------------------------
--- 核心邏輯：複製到剪貼簿的相容性函式
+-- 工具函式與通訊機制
 ---------------------------------------------
-local function copyToClipboard(text)
-    local setClipboard = setclipboard or toclipboard or (syn and syn.write_clipboard)
-    if setClipboard then
-        setClipboard(text)
-        return true
-    else
-        return false
+local function sendRequest(options)
+    local requestFunc = syn and syn.request or http_request or request
+    if requestFunc then
+        local success, response = pcall(function() return requestFunc(options) end)
+        if success then return response end
     end
+    return nil
+end
+
+local function applyHoverEffect(frame, normalColor, hoverColor)
+    frame.MouseEnter:Connect(function()
+        TweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {BackgroundColor3 = hoverColor}):Play()
+    end)
+    frame.MouseLeave:Connect(function()
+        TweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {BackgroundColor3 = normalColor}):Play()
+    end)
+end
+
+local function getPlaceName(placeId)
+    if not placeId or placeId == 0 or placeId == "無" then return "未知遊戲場景" end
+    local success, result = pcall(function()
+        return MarketplaceService:GetProductInfo(tonumber(placeId)).Name
+    end)
+    return success and result or "不公開的私有場景"
 end
 
 ---------------------------------------------
--- 核心邏輯：獲取 UserID 的通用函式
+-- 右側詳細面板數據加載與動態刷新
 ---------------------------------------------
-local function getUserId(target, callback)
-    if tonumber(target) ~= nil then
-        callback(target)
-        return
-    end
-    ResultText.Text = "正在查詢玩家 ID，請稍候..."
+local function showDetailByUserId(userId)
+    DetailVerified.Visible = false
+    DetailAvatar.Image = "https://www.roproxy.com/headshot-thumbnail/image?userId=" .. tostring(userId) .. "&width=150&height=150&format=png"
+    DetailText.Text = "⏳ 正在同步雲端深度數據..."
+
     task.spawn(function()
-        local requestFunc = syn and syn.request or http_request or request
-        if not requestFunc then
-            ResultText.Text = "錯誤: 執行器不支援 request 函數，無法轉換名稱。"
-            return
+        local detailRes = sendRequest({
+            Url = "https://users.roproxy.com/v1/users/" .. tostring(userId),
+            Method = "GET"
+        })
+        local presenceRes = sendRequest({
+            Url = "https://presence.roproxy.com/v1/presence/users",
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({ userIds = { tonumber(userId) } })
+        })
+
+        if detailRes and detailRes.StatusCode == 200 then
+            local detail = HttpService:JSONDecode(detailRes.Body)
+            
+            -- 設定右側面板驗證狀態與文字備註
+            local isVerified = detail.hasVerifiedBadge or false
+            DetailVerified.Visible = isVerified
+            local verifiedString = isVerified and "已驗證 ✅ (Verified)" or "未驗證 ❌"
+            
+            local statusText = "離線 (Offline)"
+            local extraGameInfo = ""
+            
+            if presenceRes and presenceRes.StatusCode == 200 then
+                local pInfo = HttpService:JSONDecode(presenceRes.Body).userPresences[1]
+                if pInfo then
+                    local pType = pInfo.userPresenceType
+                    if pType == 1 then 
+                        statusText = "🌐 線上 (大廳/網頁)"
+                    elseif pType == 2 then 
+                        statusText = "🎮 遊戲中 (In-Game)"
+                        local gName = getPlaceName(pInfo.placeId)
+                        local pId = pInfo.placeId and tostring(pInfo.placeId) or "無"
+                        
+                        if pInfo.gameId and pInfo.gameId ~= "" then
+                            extraGameInfo = string.format("\n\n[ 🎮 當前伺服器 ]\n● 遊戲名稱: %s\n● PlaceID: %s\n● 追隨狀態: 開放 ✅", gName, pId)
+                        else
+                            extraGameInfo = string.format("\n\n[ 🎮 當前伺服器 ]\n● 遊戲名稱: %s\n● PlaceID: %s\n● 追隨狀態: 隱私封鎖 ❌", gName, pId)
+                        end
+                    elseif pType == 3 then 
+                        statusText = "🛠️ Studio 編輯中"
+                    end
+                end
+            end
+
+            DetailText.Text = string.format(
+                "[ 📝 帳號基礎資訊 ]\n" ..
+                "● 玩家名稱: %s\n" ..
+                "● 使用者ID: %s\n" ..
+                "● 顯示暱稱: %s\n" ..
+                "● 驗證狀態: %s\n" ..
+                "● 註冊日期: %s\n\n" ..
+                "-[ 📡 當前活動狀態 ]\n" ..
+                "● 狀態: %s%s\n\n" ..
+                "[ 🏷️ 個人簡介 ]\n%s",
+                detail.name,
+                tostring(userId),
+                detail.displayName,
+                verifiedString,
+                detail.created:sub(1, 10),
+                statusText,
+                extraGameInfo,
+                (detail.description == "" and "(該使用者沒有填寫簡介)" or detail.description)
+            )
+        else
+            DetailText.Text = "❌ 無法取得該玩家的詳細資料，API 請求被阻斷。"
         end
-        local success, res = pcall(function()
-            return requestFunc({
+    end)
+end
+
+---------------------------------------------
+-- 初始化與卡片生成 (左側)
+---------------------------------------------
+local function initPlayerCards()
+    for index, username in ipairs(targetUsers) do
+        local Card = Instance.new("TextButton")
+        Card.Name = username
+        Card.Size = UDim2.new(1, -6, 0, 110)
+        Card.BackgroundColor3 = Color3.fromRGB(22, 24, 33)
+        Card.BorderSizePixel = 0
+        Card.Text = ""
+        Card.AutoButtonColor = false
+        Card.Parent = LeftContainer
+        
+        local CardCorner = Instance.new("UICorner")
+        CardCorner.CornerRadius = UDim.new(0, 8)
+        CardCorner.Parent = Card
+        
+        local CardStroke = Instance.new("UIStroke")
+        CardStroke.Thickness = 1
+        CardStroke.Color = Color3.fromRGB(32, 35, 48)
+        CardStroke.Parent = Card
+
+        applyHoverEffect(Card, Color3.fromRGB(22, 24, 33), Color3.fromRGB(28, 31, 44))
+
+        local AvatarImg = Instance.new("ImageLabel")
+        AvatarImg.Size = UDim2.new(0, 64, 0, 64)
+        AvatarImg.Position = UDim2.new(0, 16, 0, 23)
+        AvatarImg.BackgroundColor3 = Color3.fromRGB(15, 16, 22)
+        AvatarImg.BorderSizePixel = 0
+        AvatarImg.Parent = Card
+        local ImgCorner = Instance.new("UICorner")
+        ImgCorner.CornerRadius = UDim.new(0, 32)
+        ImgCorner.Parent = AvatarImg
+
+        -- 左側卡片驗證標籤 (改為文字型態，精確貼合頭像右下角)
+        local VerifiedIcon = Instance.new("TextLabel")
+        VerifiedIcon.Name = "VerifiedIcon"
+        VerifiedIcon.Size = UDim2.new(0, 18, 0, 18)
+        VerifiedIcon.Position = UDim2.new(0, 62, 0, 66) 
+        VerifiedIcon.BackgroundTransparency = 1
+        VerifiedIcon.Text = "☑️"
+        VerifiedIcon.TextSize = 20
+        VerifiedIcon.Font = Enum.Font.GothamBold
+        VerifiedIcon.ZIndex = 4
+        VerifiedIcon.Visible = false
+        VerifiedIcon.Parent = Card
+
+        local StatusDot = Instance.new("Frame")
+        StatusDot.Size = UDim2.new(0, 8, 0, 8)
+        StatusDot.Position = UDim2.new(0, 96, 0, 80)
+        StatusDot.BackgroundColor3 = Color3.fromRGB(130, 135, 150)
+        StatusDot.BorderSizePixel = 0
+        StatusDot.Parent = Card
+        local DotCorner = Instance.new("UICorner")
+        DotCorner.CornerRadius = UDim.new(1, 0)
+        DotCorner.Parent = StatusDot
+
+        local StatusLabel = Instance.new("TextLabel")
+        StatusLabel.Size = UDim2.new(0, 150, 0, 20)
+        StatusLabel.Position = UDim2.new(0, 110, 0, 74)
+        StatusLabel.BackgroundTransparency = 1
+        StatusLabel.Font = Enum.Font.GothamBold
+        StatusLabel.Text = "連線中..."
+        StatusLabel.TextColor3 = Color3.fromRGB(140, 145, 160)
+        StatusLabel.TextSize = 12
+        StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+        StatusLabel.Parent = Card
+
+        local InfoLabel = Instance.new("TextLabel")
+        InfoLabel.Size = UDim2.new(1, -112, 0, 55)
+        InfoLabel.Position = UDim2.new(0, 96, 0, 16)
+        InfoLabel.BackgroundTransparency = 1
+        InfoLabel.Font = Enum.Font.Gotham
+        InfoLabel.TextSize = 13
+        InfoLabel.TextColor3 = Color3.fromRGB(220, 225, 240)
+        InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+        InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
+        InfoLabel.TextWrapped = true
+        InfoLabel.Text = string.format("載入中...\nID: 獲取中...\n暱稱: 獲取中...", username)
+        InfoLabel.Parent = Card
+        
+        Card.MouseButton1Click:Connect(function()
+            local pData = monitoredPlayers[username]
+            if pData and pData.UserId then
+                showDetailByUserId(pData.UserId)
+            end
+        end)
+
+        monitoredPlayers[username] = {
+            UserId = nil,
+            Card = Card,
+            AvatarImg = AvatarImg,
+            StatusDot = StatusDot,
+            StatusLabel = StatusLabel,
+            InfoLabel = InfoLabel,
+            VerifiedIcon = VerifiedIcon
+        }
+
+        task.spawn(function()
+            local userRes = sendRequest({
                 Url = "https://users.roproxy.com/v1/usernames/users",
                 Method = "POST",
                 Headers = { ["Content-Type"] = "application/json" },
-                Body = HttpService:JSONEncode({ usernames = { target }, excludeBannedUsers = false })
+                Body = HttpService:JSONEncode({ usernames = { username }, excludeBannedUsers = false })
             })
-        end)
-        if success and res.StatusCode == 200 then
-            local data = HttpService:JSONDecode(res.Body)
-            if data and data.data and data.data[1] then
-                callback(data.data[1].id)
-            else
-                ResultText.Text = "錯誤: 找不到該玩家，請檢查名稱是否拼錯。"
-            end
-        else
-            ResultText.Text = "錯誤: 玩家 ID 查詢失敗（RoProxy 伺服器異常）。"
-        end
-    end)
-end
 
----------------------------------------------
--- 核心邏輯：發送請求（已改為單次執行，無循環）
----------------------------------------------
-local function performApiRequest()
-    if currentTargetUrl == "" then return end
-    
-    local targetUrl = currentTargetUrl:gsub("roblox%.com", "roproxy.com")
-    ResultText.Text = "正在發送請求..."
-    
-    task.spawn(function()
-        local success, res
-        if currentMethod == "GET" then
-            success, res = pcall(function() return game:HttpGetAsync(targetUrl) end)
-        else
-            local requestFunc = syn and syn.request or http_request or request
-            if not requestFunc then
-                ResultText.Text = "錯誤: 執行器缺少 request 函數，無法發送 POST 請求。"
-                return
-            end
-            success, res = pcall(function()
-                local response = requestFunc({
-                    Url = targetUrl,
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = currentBody
-                })
-                return response.Body
-            end)
-        end
-        
-        if success then
-            lastRawResponse = res -- 緩存原始資料供複製解析用
-            
-            -- 使用 Pretty Print 格式化
-            local status, cleanJson = pcall(function()
-                local decoded = HttpService:JSONDecode(res)
-                return HttpService:JSONEncode(decoded) 
-            end)
-            
-            local formattedResult = res
-            if status then
-                local decoded = HttpService:JSONDecode(res)
-                -- 修正原始排版替換邏輯，移除亂碼字元
-                formattedResult = HttpService:JSONEncode(decoded):gsub(',', ',\n    '):gsub('{', '{\n    '):gsub('}', '\n}')
-            end
-            
-            local timestamp = os.date("%X")
-            ResultText.Text = "【手動更新成功: " .. timestamp .. "】\n" .. formattedResult
-        else
-            ResultText.Text = "請求失敗:\n" .. tostring(res)
-        end
-    end)
-end
+            if userRes and userRes.StatusCode == 200 then
+                local uData = HttpService:JSONDecode(userRes.Body).data[1]
+                if uData then
+                    local userId = uData.id
+                    monitoredPlayers[username].UserId = userId
+                    AvatarImg.Image = string.format("https://www.roproxy.com/headshot-thumbnail/image?userId=%s&width=150&height=150&format=png", tostring(userId))
 
----------------------------------------------
--- 按鈕事件 1：基本資料
----------------------------------------------
-AutoGenBtn.MouseButton1Click:Connect(function()
-    if UserSearchInput.Text == "" then ResultText.Text = "請輸入玩家名稱或ID！" return end
-    getUserId(UserSearchInput.Text, function(userId)
-        currentTargetUrl = "https://users.roblox.com/v1/users/" .. userId
-        UrlInput.Text = currentTargetUrl
-        CopyBtn.Text = "📋 複製網址"
-        currentMethod = "GET"
-        currentBody = ""
-        currentDataType = "UserData"
-        
-        DescText.Text = "💡【基本資料欄位說明】\n\n" ..
-                        "• created:\n  帳號創立時間 (UTC 格式)\n\n" ..
-                        "• description:\n  玩家個人簡介文字\n\n" ..
-                        "• hasVerifiedBadge:\n  是否有藍色勾勾 (true/false)\n\n" ..
-                        "• id:\n  玩家唯一的純數字 ID\n\n" ..
-                        "• name:\n  玩家目前註冊的登入帳號名稱\n\n" ..
-                        "• isBanned:\n  是否被官方封禁 (true/false)\n\n" ..
-                        "• displayName:\n  玩家的顯示名稱 (暱稱)"
+                    local detailRes = sendRequest({
+                        Url = "https://users.roproxy.com/v1/users/" .. tostring(userId),
+                        Method = "GET"
+                    })
 
-        performApiRequest() 
-    end)
-end)
-
----------------------------------------------
--- 按鈕事件 2：在線狀態
----------------------------------------------
-PresenceBtn.MouseButton1Click:Connect(function()
-    if UserSearchInput.Text == "" then ResultText.Text = "請輸入玩家名稱或ID！" return end
-    getUserId(UserSearchInput.Text, function(userId)
-        currentTargetUrl = "https://presence.roblox.com/v1/presence/users"
-        UrlInput.Text = currentTargetUrl
-        CopyBtn.Text = "📋 複製JobID"
-        currentMethod = "POST"
-        currentBody = string.format('{"userIds": [%s]}', tostring(userId))
-        currentDataType = "Presence"
-        
-        DescText.Text = "💡【在線狀態欄位說明】\n" ..
-                        "⚠️ 註：若玩家為離線狀態，API將不回傳下方帶有※號的遊戲內數據。\n\n" ..
-                        "• userPresenceType:\n  0 ＝ 離線 (Offline)\n  1 ＝ 線上 (Online)\n  2 ＝ 遊戲中 (In-Game)\n  3 ＝ 工作室中 (Studio)\n\n" ..
-                        "• lastLocation (※):\n  當前所在遊戲名稱/位置\n\n" ..
-                        "• placeId (※):\n  當前遊戲關卡 ID\n\n" ..
-                        "• universeId (※):\n  當前遊戲宇宙 ID\n\n" ..
-                        "• gameId (※):\n  當前伺服器實例 (JobId)"
-        
-        performApiRequest() 
-    end)
-end)
-
----------------------------------------------
--- 新增按鈕邏輯：動態複製 (網址 或 JobID)
----------------------------------------------
-CopyBtn.MouseButton1Click:Connect(function()
-    if currentDataType == "None" or UrlInput.Text == "" then
-        ResultText.Text = "【系統提示】目前尚未生成任何監控數據，無法複製。"
-        return
-    end
-
-    if currentDataType == "UserData" then
-        local success = copyToClipboard(UrlInput.Text)
-        if success then
-            CopyBtn.Text = "✅ 複製成功！"
-            task.delay(1.5, function() CopyBtn.Text = "📋 複製網址" end)
-        else
-            ResultText.Text = "【複製失敗】您的執行器不支援剪貼簿函數。"
-        end
-    elseif currentDataType == "Presence" then
-        if lastRawResponse == "" then
-            ResultText.Text = "【系統提示】尚未獲取到在線狀態數據，請稍候再試。"
-            return
-        end
-
-        local successParse, decoded = pcall(function() return HttpService:JSONDecode(lastRawResponse) end)
-        if successParse and decoded and decoded.userPresences and decoded.userPresences[1] then
-            local jobId = decoded.userPresences[1].gameId
-            
-            if jobId and jobId ~= "" and jobId ~= "null" then
-                local successCopy = copyToClipboard(tostring(jobId))
-                if successCopy then
-                    CopyBtn.Text = "✅ JobID已複製"
-                    task.delay(1.5, function() CopyBtn.Text = "📋 複製JobID" end)
-                else
-                    ResultText.Text = "【複製失敗】您的執行器不支援剪貼簿函數。"
+                    if detailRes and detailRes.StatusCode == 200 then
+                        local detail = HttpService:JSONDecode(detailRes.Body)
+                        
+                        -- 當確認有驗證標章時，啟動卡片上的文字藍勾勾
+                        local hasBadge = detail.hasVerifiedBadge or false
+                        VerifiedIcon.Visible = hasBadge
+                        
+                        -- 如果有驗證，在文字名稱前加個圖案標記備註
+                        local badgePrefix = hasBadge and " ☑️️ " or "  "
+                        
+                        monitoredPlayers[username].StaticTextTemplate = 
+                            badgePrefix .. detail.displayName .. " (" .. detail.name .. ")\n" ..
+                            " ID : " .. tostring(userId)
+                        InfoLabel.Text = monitoredPlayers[username].StaticTextTemplate
+                    end
                 end
             else
-                ResultText.Text = "【複製提示】目前該玩家不在遊戲中（或為私人伺服器），沒有可用的 JobId (gameId)。"
+                InfoLabel.Text = "👤 " .. username .. "\n❌ 找不到此玩家或 API 故障。"
             end
-        else
-            ResultText.Text = "【解析失敗】無法從回傳的 API 數據中提取 JobId。"
-        end
+        end)
     end
-end)
+    LeftContainer.CanvasSize = UDim2.new(0, 0, 0, #targetUsers * 122 + 20)
+end
 
 ---------------------------------------------
--- 頂部視窗拖動邏輯
+-- 搜尋處理
+---------------------------------------------
+local function handleSearch()
+    local text = SearchBox.Text:gsub("%s+", "")
+    if text == "" then return end
+    
+    if tonumber(text) then
+        showDetailByUserId(tonumber(text))
+    else
+        DetailText.Text = "⚡ 正在檢索該玩家 ID 對應檔案..."
+        task.spawn(function()
+            local res = sendRequest({
+                Url = "https://users.roproxy.com/v1/usernames/users",
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode({ usernames = { text }, excludeBannedUsers = false })
+            })
+            if res and res.StatusCode == 200 then
+                local data = HttpService:JSONDecode(res.Body).data[1]
+                if data then
+                    showDetailByUserId(data.id)
+                else
+                    DetailText.Text = "❌ 資料庫中查無此玩家，請確認拼字。"
+                end
+            else
+                DetailText.Text = "❌ 遠端 API 請求失敗。"
+            end
+        end)
+    end
+end
+
+SearchBtn.MouseButton1Click:Connect(handleSearch)
+SearchBox.FocusLost:Connect(function(enterPressed) if enterPressed then handleSearch() end end)
+applyHoverEffect(SearchBtn, Color3.fromRGB(56, 110, 245), Color3.fromRGB(46, 95, 220))
+
+---------------------------------------------
+-- 定時刷新輪詢 (5秒)
+---------------------------------------------
+local function startPresenceLoop()
+    task.spawn(function()
+        while MainFrame and MainFrame.Parent do
+            for i = 5, 1, -1 do
+                TitleLabel.Text = string.format("🛰️ MULTI-MONITOR SYSTEM [ ⏳ 00:0%d 後自動更新 ]", i)
+                task.wait(1)
+            end
+            TitleLabel.Text = "🛰️ MULTI-MONITOR SYSTEM ( 🔄 同步雲端數據中... )"
+
+            local idList = {}
+            local nameMap = {}
+            for name, pData in pairs(monitoredPlayers) do
+                if pData.UserId then
+                    table.insert(idList, pData.UserId)
+                    nameMap[tostring(pData.UserId)] = name
+                end
+            end
+
+            if #idList > 0 then
+                local presenceRes = sendRequest({
+                    Url = "https://presence.roproxy.com/v1/presence/users",
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode({ userIds = idList })
+                })
+
+                if presenceRes and presenceRes.StatusCode == 200 then
+                    local presences = HttpService:JSONDecode(presenceRes.Body).userPresences
+                    for _, pInfo in ipairs(presences) do
+                        local targetName = nameMap[tostring(pInfo.userId)]
+                        local pData = monitoredPlayers[targetName]
+
+                        if pData then
+                            local pType = pInfo.userPresenceType
+                            local statusText = "離線"
+                            local statusColor = Color3.fromRGB(130, 135, 150)
+
+                            if pType == 0 then
+                                statusText = "離線"
+                                statusColor = Color3.fromRGB(130, 135, 150)
+                            elseif pType == 1 then
+                                statusText = "線上"
+                                statusColor = Color3.fromRGB(56, 140, 255)
+                            elseif pType == 2 then
+                                statusText = "遊戲中"
+                                statusColor = Color3.fromRGB(46, 204, 113)
+                            elseif pType == 3 then
+                                statusText = "Studio"
+                                statusColor = Color3.fromRGB(241, 196, 15)
+                            end
+
+                            TweenService:Create(pData.StatusDot, TweenInfo.new(0.3), {BackgroundColor3 = statusColor}):Play()
+                            pData.StatusLabel.Text = statusText
+                            pData.StatusLabel.TextColor3 = statusColor
+
+                            if pData.StaticTextTemplate then
+                                if pType == 2 then
+                                    task.spawn(function()
+                                        local gameName = getPlaceName(pInfo.placeId)
+                                        pData.InfoLabel.Text = pData.StaticTextTemplate .. string.format("\n🎮 當前活動: %s", gameName)
+                                    end)
+                                else
+                                    pData.InfoLabel.Text = pData.StaticTextTemplate
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+---------------------------------------------
+-- 面板關閉與拖動邏輯
 ---------------------------------------------
 local dragging, dragInput, dragStart, startPos
 TitleBar.InputBegan:Connect(function(input)
@@ -382,4 +560,10 @@ UserInputService.InputChanged:Connect(function(input)
         MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
+
+CloseBtn.MouseEnter:Connect(function() CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100) end)
+CloseBtn.MouseLeave:Connect(function() CloseBtn.TextColor3 = Color3.fromRGB(150, 155, 170) end)
 CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+
+initPlayerCards()
+startPresenceLoop()
