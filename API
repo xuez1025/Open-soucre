@@ -84,12 +84,23 @@ local targetUsers = {
     "powoDYLANowoq",
 }
 
--- 移除名單中的空字串
-for i = #targetUsers, 1, -1 do
-    if targetUsers[i] == "" then
-        table.remove(targetUsers, i)
+-- ==========================================
+-- 【防重複與過濾空字串處理】
+-- ==========================================
+local seenUsers = {}      -- 用來記錄哪些名字已經處理過
+local cleanedUsers = {}   -- 儲存乾淨、不重複的名單
+
+for i = 1, #targetUsers do
+    local name = targetUsers[i]
+    if name and name ~= "" then          -- 這裡就已經把空欄位 "" 擋掉了
+        if not seenUsers[name] then       
+            seenUsers[name] = true        
+            table.insert(cleanedUsers, name) 
+        end
     end
 end
+
+targetUsers = cleanedUsers -- 此時的 targetUsers 已經是完美、沒空字串、沒重複的名單了
 
 -- 核心 UI 容器
 local ScreenGui = Instance.new("ScreenGui")
