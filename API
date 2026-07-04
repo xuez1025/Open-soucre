@@ -12,6 +12,13 @@ local targetUsers = {
     "powoDYLANowoq",
 }
 
+-- 移除名單中的空字串
+for i = #targetUsers, 1, -1 do
+    if targetUsers[i] == "" then
+        table.remove(targetUsers, i)
+    end
+end
+
 -- 核心 UI 容器
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "Roblox_Ultra_Monitor_v5_PureMonitor"
@@ -51,13 +58,14 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Parent = TitleBar
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Position = UDim2.new(0, 20, 0, 0)
-TitleLabel.Size = UDim2.new(0, 600, 1, 0)
+TitleLabel.Size = UDim2.new(1, -120, 1, 0)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Text = "⚡ MULTI-MONITOR SYSTEM (準備中...)"
 TitleLabel.TextColor3 = Color3.fromRGB(240, 243, 255)
-TitleLabel.TextSize = 15
+TitleLabel.TextSize = 17 -- 字體加大 (原15)
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
+-- 關閉按鈕
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Parent = TitleBar
 CloseBtn.Text = "X"
@@ -65,8 +73,42 @@ CloseBtn.TextColor3 = Color3.fromRGB(150, 155, 170)
 CloseBtn.Size = UDim2.new(0, 48, 1, 0)
 CloseBtn.Position = UDim2.new(1, -48, 0, 0)
 CloseBtn.BackgroundTransparency = 1
-CloseBtn.TextSize = 16
+CloseBtn.TextSize = 18 -- 字體加大 (原16)
 CloseBtn.Font = Enum.Font.GothamBold
+
+-- 縮小按鈕 (放在標題列 X 旁邊)
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Parent = TitleBar
+MinimizeBtn.Text = "—"
+MinimizeBtn.TextColor3 = Color3.fromRGB(150, 155, 170)
+MinimizeBtn.Size = UDim2.new(0, 48, 1, 0)
+MinimizeBtn.Position = UDim2.new(1, -96, 0, 0)
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.TextSize = 16 -- 字體加大 (原14)
+MinimizeBtn.Font = Enum.Font.GothamBold
+
+-- 縮小後顯示的獨立懸浮展開按鈕
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 33)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = "👑"
+ToggleBtn.TextSize = 24 -- 字體加大 (原22)
+ToggleBtn.TextColor3 = Color3.fromRGB(56, 110, 245)
+ToggleBtn.Visible = false
+ToggleBtn.ZIndex = 10
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(1, 0) -- 圓形
+ToggleCorner.Parent = ToggleBtn
+
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Thickness = 2
+ToggleStroke.Color = Color3.fromRGB(56, 110, 245)
+ToggleStroke.Parent = ToggleBtn
 
 -- 【左側】滾動區
 local LeftContainer = Instance.new("ScrollingFrame")
@@ -107,7 +149,7 @@ SearchBox.Font = Enum.Font.Gotham
 SearchBox.PlaceholderText = "🔎 輸入玩家名稱或 ID..."
 SearchBox.Text = ""
 SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-SearchBox.TextSize = 13
+SearchBox.TextSize = 14 -- 字體加大 (原13)
 SearchBox.ClearTextOnFocus = false
 local SearchBoxCorner = Instance.new("UICorner")
 SearchBoxCorner.CornerRadius = UDim.new(0, 6)
@@ -126,17 +168,18 @@ SearchBtn.BackgroundColor3 = Color3.fromRGB(56, 110, 245)
 SearchBtn.Font = Enum.Font.GothamBold
 SearchBtn.Text = "搜尋"
 SearchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SearchBtn.TextSize = 13
+SearchBtn.TextSize = 14 -- 字體加大 (原13)
 local SearchBtnCorner = Instance.new("UICorner")
 SearchBtnCorner.CornerRadius = UDim.new(0, 6)
 SearchBtnCorner.Parent = SearchBtn
 
+-- 調整 DetailDetails 的高度，為底部「上下排列」的按鈕留出足夠空間 (原 -136 改為 -184)
 local DetailDetails = Instance.new("ScrollingFrame")
 DetailDetails.Parent = RightPanel
 DetailDetails.BackgroundTransparency = 1
 DetailDetails.Position = UDim2.new(0, 16, 0, 68)
-DetailDetails.Size = UDim2.new(1, -32, 1, -84)
-DetailDetails.CanvasSize = UDim2.new(0, 0, 0, 520)
+DetailDetails.Size = UDim2.new(1, -32, 1, -184)
+DetailDetails.CanvasSize = UDim2.new(0, 0, 0, 540)
 DetailDetails.ScrollBarThickness = 2
 DetailDetails.ScrollBarImageColor3 = Color3.fromRGB(45, 48, 64)
 
@@ -154,7 +197,6 @@ DetailAvatarStroke.Thickness = 2
 DetailAvatarStroke.Color = Color3.fromRGB(56, 110, 245)
 DetailAvatarStroke.Parent = DetailAvatar
 
--- 右側驗證標記 (改為文字型態，置於大頭貼右下方)
 local DetailVerified = Instance.new("TextLabel")
 DetailVerified.Size = UDim2.new(0, 22, 0, 22)
 DetailVerified.Position = UDim2.new(0.5, 26, 0, 86) 
@@ -167,17 +209,105 @@ DetailVerified.Visible = false
 DetailVerified.Parent = DetailDetails
 
 local DetailText = Instance.new("TextLabel")
-DetailText.Size = UDim2.new(1, 0, 0, 380)
+DetailText.Size = UDim2.new(1, 0, 0, 400)
 DetailText.Position = UDim2.new(0, 0, 0, 130)
 DetailText.BackgroundTransparency = 1
 DetailText.Font = Enum.Font.Code
-DetailText.TextSize = 13
+DetailText.TextSize = 15 -- 字體加大 (原13)
 DetailText.TextColor3 = Color3.fromRGB(185, 190, 210)
 DetailText.TextXAlignment = Enum.TextXAlignment.Left
 DetailText.TextYAlignment = Enum.TextYAlignment.Top
 DetailText.TextWrapped = true
 DetailText.Text = "請點擊左側玩家卡片\n或在上方輸入資訊進行檢索。"
 DetailText.Parent = DetailDetails
+
+-- ==========================================
+-- 調整與新增：右側區塊最底部「上下排列」的顯眼按鈕
+-- ==========================================
+local currentSelectedName = ""  -- 用於記錄當前檢視的玩家名稱
+local currentSelectedId = nil    -- 用於記錄當前檢視的玩家 ID
+
+-- 1. 傳送至搜尋按鈕 (排在上面，使用顯眼鮮豔藍色)
+local SendToSearchBtn = Instance.new("TextButton")
+SendToSearchBtn.Name = "SendToSearchBtn"
+SendToSearchBtn.Parent = RightPanel
+SendToSearchBtn.Size = UDim2.new(1, -32, 0, 40)
+SendToSearchBtn.Position = UDim2.new(0, 16, 1, -96) -- 倒數第二個位置
+SendToSearchBtn.BackgroundColor3 = Color3.fromRGB(37, 117, 252) -- 顯眼亮藍色
+SendToSearchBtn.Font = Enum.Font.GothamBold
+SendToSearchBtn.Text = " 👤 填入名稱至profiles"
+SendToSearchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SendToSearchBtn.TextSize = 14 -- 字體加大
+
+local SendToSearchCorner = Instance.new("UICorner")
+SendToSearchCorner.CornerRadius = UDim.new(0, 8)
+SendToSearchCorner.Parent = SendToSearchBtn
+
+-- 2. 複製個人檔案連結按鈕 (排在最下面，使用顯眼霓虹紫色)
+local CopyProfileBtn = Instance.new("TextButton")
+CopyProfileBtn.Name = "CopyProfileBtn"
+CopyProfileBtn.Parent = RightPanel
+CopyProfileBtn.Size = UDim2.new(1, -32, 0, 40)
+CopyProfileBtn.Position = UDim2.new(0, 16, 1, -48) -- 最底部位置
+CopyProfileBtn.BackgroundColor3 = Color3.fromRGB(168, 85, 247) -- 顯眼霓虹紫色
+CopyProfileBtn.Font = Enum.Font.GothamBold
+CopyProfileBtn.Text = " 🔗 複製Roblox個人檔案"
+CopyProfileBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyProfileBtn.TextSize = 14 -- 字體加大
+
+local CopyProfileCorner = Instance.new("UICorner")
+CopyProfileCorner.CornerRadius = UDim.new(0, 8)
+CopyProfileCorner.Parent = CopyProfileBtn
+
+-- 為新按鈕套用獨立的顯眼懸停動畫
+SendToSearchBtn.MouseEnter:Connect(function()
+    TweenService:Create(SendToSearchBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 95, 230)}):Play()
+end)
+SendToSearchBtn.MouseLeave:Connect(function()
+    TweenService:Create(SendToSearchBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(37, 117, 252)}):Play()
+end)
+
+CopyProfileBtn.MouseEnter:Connect(function()
+    TweenService:Create(CopyProfileBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(145, 60, 225)}):Play()
+end)
+CopyProfileBtn.MouseLeave:Connect(function()
+    TweenService:Create(CopyProfileBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(168, 85, 247)}):Play()
+end)
+
+-- 綁定按鈕點擊事件
+SendToSearchBtn.MouseButton1Click:Connect(function()
+    if currentSelectedName ~= "" then
+        local targetTextBox = game:GetService("Players").LocalPlayer.PlayerGui.PlayerLookup.Modal.SearchBar.NameTextBox
+        if targetTextBox then
+            targetTextBox.Text = currentSelectedName
+            local oldText = SendToSearchBtn.Text
+            SendToSearchBtn.Text = "✓ 已成功填入名稱！"
+            task.wait(1)
+            SendToSearchBtn.Text = oldText
+        else
+            SendToSearchBtn.Text = "❌ 找不到搜尋 UI 欄位"
+            task.wait(1)
+            SendToSearchBtn.Text = "📲 傳送至搜尋"
+        end
+    end
+end)
+
+CopyProfileBtn.MouseButton1Click:Connect(function()
+    if currentSelectedId then
+        local profileUrl = "https://www.roblox.com/users/" .. tostring(currentSelectedId) .. "/profile"
+        if setclipboard then
+            setclipboard(profileUrl)
+            local oldText = CopyProfileBtn.Text
+            CopyProfileBtn.Text = "✓ 網址已複製到剪貼簿！"
+            task.wait(1)
+            CopyProfileBtn.Text = oldText
+        else
+            CopyProfileBtn.Text = "❌ 執行緒不支援剪貼簿"
+            task.wait(1)
+            CopyProfileBtn.Text = "🔗 複製個人檔案"
+        end
+    end
+end)
 
 local monitoredPlayers = {}
 
@@ -210,6 +340,30 @@ local function getPlaceName(placeId)
     return success and result or "不公開的私有場景"
 end
 
+-- 封裝 UI 拖動功能
+local function makeDraggable(dragTarget, dragTrigger)
+    local dragging, dragInput, dragStart, startPos
+    dragTrigger.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = dragTarget.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    dragTrigger.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            dragTarget.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
 ---------------------------------------------
 -- 右側詳細面板數據加載與動態刷新
 ---------------------------------------------
@@ -217,6 +371,8 @@ local function showDetailByUserId(userId)
     DetailVerified.Visible = false
     DetailAvatar.Image = "https://www.roproxy.com/headshot-thumbnail/image?userId=" .. tostring(userId) .. "&width=150&height=150&format=png"
     DetailText.Text = "⏳ 正在同步雲端深度數據..."
+    
+    currentSelectedId = userId
 
     task.spawn(function()
         local detailRes = sendRequest({
@@ -233,7 +389,8 @@ local function showDetailByUserId(userId)
         if detailRes and detailRes.StatusCode == 200 then
             local detail = HttpService:JSONDecode(detailRes.Body)
             
-            -- 設定右側面板驗證狀態與文字備註
+            currentSelectedName = detail.name
+            
             local isVerified = detail.hasVerifiedBadge or false
             DetailVerified.Visible = isVerified
             local verifiedString = isVerified and "已驗證 ✅ (Verified)" or "未驗證 ❌"
@@ -284,6 +441,8 @@ local function showDetailByUserId(userId)
             )
         else
             DetailText.Text = "❌ 無法取得該玩家的詳細資料，API 請求被阻斷。"
+            currentSelectedName = ""
+            currentSelectedId = nil
         end
     end)
 end
@@ -323,7 +482,6 @@ local function initPlayerCards()
         ImgCorner.CornerRadius = UDim.new(0, 32)
         ImgCorner.Parent = AvatarImg
 
-        -- 左側卡片驗證標籤 (改為文字型態，精確貼合頭像右下角)
         local VerifiedIcon = Instance.new("TextLabel")
         VerifiedIcon.Name = "VerifiedIcon"
         VerifiedIcon.Size = UDim2.new(0, 18, 0, 18)
@@ -353,7 +511,7 @@ local function initPlayerCards()
         StatusLabel.Font = Enum.Font.GothamBold
         StatusLabel.Text = "連線中..."
         StatusLabel.TextColor3 = Color3.fromRGB(140, 145, 160)
-        StatusLabel.TextSize = 12
+        StatusLabel.TextSize = 14 -- 字體加大 (原12)
         StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
         StatusLabel.Parent = Card
 
@@ -362,7 +520,7 @@ local function initPlayerCards()
         InfoLabel.Position = UDim2.new(0, 96, 0, 16)
         InfoLabel.BackgroundTransparency = 1
         InfoLabel.Font = Enum.Font.Gotham
-        InfoLabel.TextSize = 13
+        InfoLabel.TextSize = 15 -- 字體加大 (原13)
         InfoLabel.TextColor3 = Color3.fromRGB(220, 225, 240)
         InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
         InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
@@ -409,12 +567,8 @@ local function initPlayerCards()
 
                     if detailRes and detailRes.StatusCode == 200 then
                         local detail = HttpService:JSONDecode(detailRes.Body)
-                        
-                        -- 當確認有驗證標章時，啟動卡片上的文字藍勾勾
                         local hasBadge = detail.hasVerifiedBadge or false
                         VerifiedIcon.Visible = hasBadge
-                        
-                        -- 如果有驗證，在文字名稱前加個圖案標記備註
                         local badgePrefix = hasBadge and " ☑️️ " or "  "
                         
                         monitoredPlayers[username].StaticTextTemplate = 
@@ -474,10 +628,14 @@ local function startPresenceLoop()
     task.spawn(function()
         while MainFrame and MainFrame.Parent do
             for i = 5, 1, -1 do
-                TitleLabel.Text = string.format("🛰️ MULTI-MONITOR SYSTEM [ ⏳ 00:0%d 後自動更新 ]", i)
-                task.wait(1)
+                if not MainFrame.Visible then task.wait(1) else
+                    TitleLabel.Text = string.format("🛰️ MULTI-MONITOR SYSTEM [ ⏳ 00:0%d 後自動更新 ]", i)
+                    task.wait(1)
+                end
             end
-            TitleLabel.Text = "🛰️ MULTI-MONITOR SYSTEM ( 🔄 同步雲端數據中... )"
+            if MainFrame.Visible then
+                TitleLabel.Text = "🛰️ MULTI-MONITOR SYSTEM ( 🔄 同步雲端數據中... )"
+            end
 
             local idList = {}
             local nameMap = {}
@@ -544,26 +702,33 @@ local function startPresenceLoop()
 end
 
 ---------------------------------------------
--- 面板關閉與拖動邏輯
+-- 面板關閉、縮小與拖動邏輯整合
 ---------------------------------------------
-local dragging, dragInput, dragStart, startPos
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true; dragStart = input.Position; startPos = MainFrame.Position
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-    end
-end)
-TitleBar.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
+makeDraggable(MainFrame, TitleBar)
+makeDraggable(ToggleBtn, ToggleBtn)
 
 CloseBtn.MouseEnter:Connect(function() CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100) end)
 CloseBtn.MouseLeave:Connect(function() CloseBtn.TextColor3 = Color3.fromRGB(150, 155, 170) end)
 CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
+MinimizeBtn.MouseEnter:Connect(function() MinimizeBtn.TextColor3 = Color3.fromRGB(56, 110, 245) end)
+MinimizeBtn.MouseLeave:Connect(function() MinimizeBtn.TextColor3 = Color3.fromRGB(150, 155, 170) end)
+MinimizeBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    ToggleBtn.Visible = true
+end)
+
+ToggleBtn.MouseEnter:Connect(function()
+    TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 38, 53)}):Play()
+end)
+ToggleBtn.MouseLeave:Connect(function()
+    TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(22, 24, 33)}):Play()
+end)
+ToggleBtn.MouseButton1Click:Connect(function()
+    ToggleBtn.Visible = false
+    MainFrame.Visible = true
+end)
+
+-- 啟動系統
 initPlayerCards()
 startPresenceLoop()
