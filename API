@@ -1,13 +1,9 @@
--- ==========================================
 -- 【系統參數配置區】
--- ==========================================
 local webhookUrl = ""       -- 填入您的 Discord Webhook 網址
 local pingId = ""           -- 填入 "everyone", "here", "ID"
 local isPingEnabled = false  -- 是否開啟@ (true/false)
 
-----------------------------------------------------------------
 -- [ 核心功能 ] Discord Webhook 發送與驗證函式
-----------------------------------------------------------------
 local function SendWebhook(url, msg)
     local data = {
         username = "Xu bot",
@@ -67,9 +63,7 @@ local function formatPing(pingInput)
     return nil, false
 end
 
-----------------------------------------------------------------
 -- [ 主監控程式結構 ] 
-----------------------------------------------------------------
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -77,22 +71,223 @@ local Players = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService") 
 local LocalPlayer = Players.LocalPlayer
 
--- ==========================================
 -- 【目標監控玩家名單】(可自由增加)
--- ==========================================
 local targetUsers = {
-    "powoDYLANowoq",
+    "NoctisAUS",
+    "giozvq",
+    "NovaExility",
+    "MollaAmar",
+    "ZeroZero_Two",
+    "Abso_Delete",
+    "SirReis",
+    "kyt0kyt0",
+    "Mertlcle",
+    "Daigrock",
+    "Axiore",
+    "BluxxyGaming",
+    "dethsmurf",
+    "CJ_Oyer",
+    "mrheffner_gg",
+	"vidsmurf",
+	"0BCLIFETIME",
+	"orkoal",
+	"Tacomura",
+	"rip_indra",
+	"Experimic",
+	"arowe",
+	"Uzi_London",
+	"Guashiem",
+	"torrtoise",
+	"ShafiDev",
+	"SylentAsura",
+	"ElG8T",
+	"my6thlife",
+	"AznWay",
+	"uranium_devil",
+	"Nat_7517",
+	"Krossful",
+	"Majestic_Queena",
+	"FindMotion",
+	"rip_bac0nha",
+	"arlthmetic",
+	"rip_fud",
+	"wenlocktoad",
+	"RealmKisame",
+	"mygame43",
+	"OGTeranas",
+	"testprem0",
+	"mkivtt",
+	"xonae",
+	"iSekai_iSekai",
+	"Uzoth",
+	"Zioles",
+	"numberskull999",
+	"imLockGod",
+	"KatakuriKloudz",
+	"Kaidozyuh",
+	"Rajo_END",
+	"KoopekulYT",
+	"MagicbusYT",
+	"Senmarine",
+	"jet5ss",
+	"CRBoneMillion",
+	"starcode_kitt",
+	"oofficialnoobie",
+	"JCDoesGaming_YT",
+	"TheRealFoltyn",
+	"TheGreatAced",
+	"StarCode_fer",
+	"Jujujutv1",
+	"MouseTheBoi",
+	"slat_real2",
+	"EnyuZee",
+	"NoobWithKitsunee",
+	"MeteoricRBLX",
+	"kyriemiles8",
+	"Sai_JinWoo",
+	"BloxyDRoblox",
+	"geladobiel",
+	"DefinitelyNotBaxtrix",
+	"WoozerBloxYT",
+	"divingintea",
+	"Heorua",
+	"HyperJay06_Official",
+	"Smythsterr",
+	"TyePHX",
+	"Lunoven",
+	"sappVFX",
+	"RealYurl",
+	"Generic_ult",
+	"P4CKSTABBER",
+	"MoraIins",
+	"FallenER0S",
+	"OutOfDinos",
+	"nopatrol",
+	"TobersDaArtisto",
+	"thienbaokhang1",
+	"Kuroxity",
+	"fl8mey",
+	"Bredddo",
+	"Jurillianio",
+	"EstheKing",
+	"baswbaswbasw",
+	"PuddingBumby",
+	"Disard0",
+	"Bread_Doppio",
+	"MuG3ED",
+	"tushai",
+	"Korwiaa",
+	"N4Animation",
+	"jers_e",
+	"r_Forbidden",
+	"UnrioChief1",
+	"deadninjstar87",
+	"LegendOfKio",
+	"SirZareli",
+	"Plokster",
+	"Marubravery",
+	"Artszy",
+	"TrucBiduleur100",
+	"AYoungPhienix",
+	"FriedLemonsLoL",
+	"SandiestSandy",
+	"iPrefectSoul",
+	"InfinityExtended",
+	"Adcium",
+	"DaylightSparkIe",
+	"Poifilion",
+	"xZenbrook",
+	"TrayDonce",
+	"khongco789",
+	"dutbooot",
+	"ExtremeBlastSS",
+	"alexoi20",
+	"wMadara_X",
+	"Glitch1ng12",
+	"Rusta_92",
+	"tolovemnice",
+	"IrohaIgarashiBaller",
+	"thesilliestminty",
+	"spiritualsound",
+	"PringleCanKid",
+	"truonked",
+	"corina1234x",
+	"icelandic123",
+	"corazonqr",
+	"rip_russiachat",
+	"vanxing",
+	"WELOVETOKYO",
+	"truownk",
+	"iIlillnickjenkinsill",
+	"DragonDojoOwner",
+	"fr33dim",
+	"ProtoValence",
+	"cooljustint1229",
+	"SkhypeXD",
+	"c0lbl0cks",
+	"CorvusCoraxx",
+	"APandaPoet",
+	"catchymelodies",
+	"lowendisekaialt",
+	"ignotuscaligo",
+	"MangoBytz",
+	"vqanxx",
+	"TretaTbh",
+	"0Krvs",
+	"rigtoni09",
+	"DevForumOps",
+	"BisoBlitz",
+	"eternallav",
+	"DevNexusCore",
+	"b0bbber",
+	"StalwartWarden",
+	"devils21091",
+	"Blotnik",
+	"kablowert",
+	"1OmniJelly1",
+	"RayBloxSunshine",
+	"newtonmetre",
+	"MrChickenRocket",
+	"golden_shellfish",
+	"Doonkahn",
+	"TB_Glitch",
+	"NoDankMemesAllowed",
+	"captainbramble",
+	"CosmoSloth",
+	"EGOTISMS",
+	"Felku",
+	"undercover_admin23",
+	"Arkesium",
+	"RosesAreBlueish",
+	"Suizei",
+	"Wrathsong",
+	"Quasiduck",
+	"Azarth",
+	"NOT_CRYTICAL",
+	"BachaBlox",
+	"drip_mama",
+	"wenloco",
+	"Phoeating",
+	"vgmsgame",
+	"brqod",
+	"sisterton",
+	"0MARIKENZ0",
+	"norperz",
+	"EIRodoIfo",
+	"sarcxsm",
+	"",
+	"",
+	"",
+	"",
 }
 
--- ==========================================
 -- 【防重複與過濾空字串處理】
--- ==========================================
-local seenUsers = {}      -- 用來記錄哪些名字已經處理過
-local cleanedUsers = {}   -- 儲存乾淨、不重複的名單
+local seenUsers = {}      
+local cleanedUsers = {}   
 
 for i = 1, #targetUsers do
     local name = targetUsers[i]
-    if name and name ~= "" then          -- 這裡就已經把空欄位 "" 擋掉了
+    if name and name ~= "" then          
         if not seenUsers[name] then       
             seenUsers[name] = true        
             table.insert(cleanedUsers, name) 
@@ -100,7 +295,14 @@ for i = 1, #targetUsers do
     end
 end
 
-targetUsers = cleanedUsers -- 此時的 targetUsers 已經是完美、沒空字串、沒重複的名單了
+targetUsers = cleanedUsers 
+
+-- 【分頁與過濾配置變數】
+local currentPage = 1
+local itemsPerPage = 10
+local isFilterInGame = false 
+local globalInGameCount = 0 -- 全域在線遊戲中人數統計
+local totalMonitoredCount = #targetUsers -- 總管理員人數
 
 -- 核心 UI 容器
 local ScreenGui = Instance.new("ScreenGui")
@@ -145,7 +347,7 @@ TitleLabel.Size = UDim2.new(1, -120, 1, 0)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Text = " 管理員&主播上線狀態 (準備中...)"
 TitleLabel.TextColor3 = Color3.fromRGB(240, 243, 255)
-TitleLabel.TextSize = 18
+TitleLabel.TextSize = 17
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 -- 關閉按鈕
@@ -198,7 +400,7 @@ local LeftContainer = Instance.new("ScrollingFrame")
 LeftContainer.Parent = MainFrame
 LeftContainer.BackgroundTransparency = 1
 LeftContainer.Position = UDim2.new(0, 16, 0, 64)
-LeftContainer.Size = UDim2.new(0, 584, 1, -80)
+LeftContainer.Size = UDim2.new(0, 584, 1, -124) 
 LeftContainer.CanvasSize = UDim2.new(0, 0, 0, 0) 
 LeftContainer.ScrollBarThickness = 4
 LeftContainer.ScrollBarImageColor3 = Color3.fromRGB(45, 48, 64)
@@ -207,6 +409,79 @@ local UIListLayout = Instance.new("UIListLayout")
 UIListLayout.Parent = LeftContainer
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 12)
+
+-- 【底部分頁與過濾控制列】
+local PageControls = Instance.new("Frame")
+PageControls.Name = "PageControls"
+PageControls.Parent = MainFrame
+PageControls.BackgroundTransparency = 1
+PageControls.Position = UDim2.new(0, 16, 0, 566)
+PageControls.Size = UDim2.new(0, 584, 0, 38)
+
+local PrevPageBtn = Instance.new("TextButton")
+PrevPageBtn.Name = "PrevPageBtn"
+PrevPageBtn.Parent = PageControls
+PrevPageBtn.Size = UDim2.new(0, 90, 1, 0)
+PrevPageBtn.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+PrevPageBtn.Font = Enum.Font.GothamBold
+PrevPageBtn.Text = "◀ 上一頁"
+PrevPageBtn.TextColor3 = Color3.fromRGB(200, 205, 220)
+PrevPageBtn.TextSize = 14
+local PrevCorner = Instance.new("UICorner")
+PrevCorner.CornerRadius = UDim.new(0, 6)
+PrevCorner.Parent = PrevPageBtn
+local PrevStroke = Instance.new("UIStroke")
+PrevStroke.Thickness = 1
+PrevStroke.Color = Color3.fromRGB(45, 48, 64)
+PrevStroke.Parent = PrevPageBtn
+
+-- 「只看遊戲中」勾選切換按鈕
+local FilterToggleBtn = Instance.new("TextButton")
+FilterToggleBtn.Name = "FilterToggleBtn"
+FilterToggleBtn.Parent = PageControls
+FilterToggleBtn.Size = UDim2.new(0, 140, 1, 0)
+FilterToggleBtn.Position = UDim2.new(0, 100, 0, 0)
+FilterToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+FilterToggleBtn.Font = Enum.Font.GothamBold
+FilterToggleBtn.Text = "🔍 只看遊戲中: ❌"
+FilterToggleBtn.TextColor3 = Color3.fromRGB(200, 205, 220)
+FilterToggleBtn.TextSize = 14
+local FilterCorner = Instance.new("UICorner")
+FilterCorner.CornerRadius = UDim.new(0, 6)
+FilterCorner.Parent = FilterToggleBtn
+local FilterStroke = Instance.new("UIStroke")
+FilterStroke.Thickness = 1
+FilterStroke.Color = Color3.fromRGB(45, 48, 64)
+FilterStroke.Parent = FilterToggleBtn
+
+local NextPageBtn = Instance.new("TextButton")
+NextPageBtn.Name = "NextPageBtn"
+NextPageBtn.Parent = PageControls
+NextPageBtn.Size = UDim2.new(0, 90, 1, 0)
+NextPageBtn.Position = UDim2.new(1, -90, 0, 0)
+NextPageBtn.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+NextPageBtn.Font = Enum.Font.GothamBold
+NextPageBtn.Text = "下一頁 ▶"
+NextPageBtn.TextColor3 = Color3.fromRGB(200, 205, 220)
+NextPageBtn.TextSize = 14
+local NextCorner = Instance.new("UICorner")
+NextCorner.CornerRadius = UDim.new(0, 6)
+NextCorner.Parent = NextPageBtn
+local NextStroke = Instance.new("UIStroke")
+NextStroke.Thickness = 1
+NextStroke.Color = Color3.fromRGB(45, 48, 64)
+NextStroke.Parent = NextPageBtn
+
+local PageLabel = Instance.new("TextLabel")
+PageLabel.Name = "PageLabel"
+PageLabel.Parent = PageControls
+PageLabel.Size = UDim2.new(1, -350, 1, 0)
+PageLabel.Position = UDim2.new(0, 250, 0, 0)
+PageLabel.BackgroundTransparency = 1
+PageLabel.Font = Enum.Font.GothamBold
+PageLabel.Text = "第 1 / 1 頁"
+PageLabel.TextColor3 = Color3.fromRGB(240, 243, 255)
+PageLabel.TextSize = 15
 
 -- 【右側】詳細面板
 local RightPanel = Instance.new("Frame")
@@ -303,9 +578,6 @@ DetailText.TextWrapped = true
 DetailText.Text = "點擊左側玩家或在上方搜尋玩家"
 DetailText.Parent = DetailDetails
 
--- ==========================================
--- 右側底部控制按鈕
--- ==========================================
 local currentSelectedName = "" 
 local currentSelectedId = nil  
 
@@ -389,9 +661,6 @@ end)
 
 local monitoredPlayers = {}
 
----------------------------------------------
--- 工具函式與通訊機制
----------------------------------------------
 local function sendRequest(options)
     local requestFunc = syn and syn.request or http_request or request
     if requestFunc then
@@ -441,9 +710,6 @@ local function makeDraggable(dragTarget, dragTrigger)
     end)
 end
 
----------------------------------------------
--- 右側詳細面板數據加載
----------------------------------------------
 local function showDetailByUserId(userId)
     DetailVerified.Visible = false
     DetailAvatar.Image = "https://www.roproxy.com/headshot-thumbnail/image?userId=" .. tostring(userId) .. "&width=150&height=150&format=png"
@@ -523,9 +789,108 @@ local function showDetailByUserId(userId)
     end)
 end
 
----------------------------------------------
--- 初始化與卡片生成 (左側卡片文字換行優化)
----------------------------------------------
+-- 【分頁與過濾器更新核心函式】
+local function updatePage()
+    if isFilterInGame then
+        PrevPageBtn.Visible = false
+        NextPageBtn.Visible = false
+        PageLabel.Position = UDim2.new(0, 0, 0, 0)
+        PageLabel.Size = UDim2.new(1, 0, 1, 0)
+        PageLabel.Text = "（無分頁限制）"
+
+        local visibleCount = 0
+        for _, username in ipairs(targetUsers) do
+            local pData = monitoredPlayers[username]
+            if pData and pData.Card then
+                if pData.currentPresenceType == 2 then 
+                    pData.Card.Visible = true
+                    visibleCount = visibleCount + 1
+                else
+                    pData.Card.Visible = false
+                end
+            end
+        end
+        LeftContainer.CanvasSize = UDim2.new(0, 0, 0, visibleCount * 122 + 20)
+    else
+        PrevPageBtn.Visible = true
+        NextPageBtn.Visible = true
+        PageLabel.Position = UDim2.new(0, 250, 0, 0)
+        PageLabel.Size = UDim2.new(1, -350, 1, 0)
+
+        local totalPages = math.ceil(#targetUsers / itemsPerPage)
+        if totalPages == 0 then totalPages = 1 end
+        
+        if currentPage > totalPages then currentPage = totalPages end
+        if currentPage < 1 then currentPage = 1 end
+        
+        PageLabel.Text = string.format("第 %d / %d 頁", currentPage, totalPages)
+        
+        local startIndex = (currentPage - 1) * itemsPerPage + 1
+        local endIndex = currentPage * itemsPerPage
+        
+        for index, username in ipairs(targetUsers) do
+            local pData = monitoredPlayers[username]
+            if pData and pData.Card then
+                if index >= startIndex and index <= endIndex then
+                    pData.Card.Visible = true
+                else
+                    pData.Card.Visible = false 
+                end
+            end
+        end
+        
+        local currentlyVisibleCount = math.min(itemsPerPage, #targetUsers - startIndex + 1)
+        if currentlyVisibleCount < 0 then currentlyVisibleCount = 0 end
+        LeftContainer.CanvasSize = UDim2.new(0, 0, 0, currentlyVisibleCount * 122 + 20)
+    end
+end
+
+-- 【優化：分批排隊獲取名單 ID，10人一組，絕不卡頓當機】
+local function resolveAllUserIdsInBatches()
+    task.spawn(function()
+        for i = 1, #targetUsers, 10 do
+            local batchNames = {}
+            for j = i, math.min(i + 9, #targetUsers) do
+                table.insert(batchNames, targetUsers[j])
+            end
+            
+            local userRes = sendRequest({
+                Url = "https://users.roproxy.com/v1/usernames/users",
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode({ usernames = batchNames, excludeBannedUsers = false })
+            })
+
+            if userRes and userRes.StatusCode == 200 then
+                local data = HttpService:JSONDecode(userRes.Body).data
+                for _, uData in ipairs(data) do
+                    local matchedName = nil
+                    for _, name in ipairs(targetUsers) do
+                        if name:lower() == uData.name:lower() then
+                            matchedName = name
+                            break
+                        end
+                    end
+                    
+                    if matchedName then
+                        local pData = monitoredPlayers[matchedName]
+                        if pData then
+                            pData.UserId = uData.id
+                            pData.AvatarImg.Image = string.format("https://www.roproxy.com/headshot-thumbnail/image?userId=%s&width=150&height=150&format=png", tostring(uData.id))
+                            pData.SavedDisplayName = uData.displayName
+                            pData.StaticTextTemplate = "暱稱: " .. uData.displayName .. "\n名稱: " .. uData.name .. "\nID: " .. tostring(uData.id)
+                            pData.InfoLabel.Text = pData.StaticTextTemplate
+                            pData.isFetched = true
+                        end
+                    end
+                end
+            end
+            task.wait(0.1) -- 批次間微小冷卻，確保 Roproxy 完全不當機
+        end
+    end)
+end
+
+-- 初始化建立卡片殼
 local function initPlayerCards()
     for index, username in ipairs(targetUsers) do
         local Card = Instance.new("TextButton")
@@ -536,6 +901,7 @@ local function initPlayerCards()
         Card.Text = ""
         Card.AutoButtonColor = false
         Card.Parent = LeftContainer
+        Card.Visible = false 
         
         local CardCorner = Instance.new("UICorner")
         CardCorner.CornerRadius = UDim.new(0, 8)
@@ -572,7 +938,7 @@ local function initPlayerCards()
 
         local StatusDot = Instance.new("Frame")
         StatusDot.Size = UDim2.new(0, 8, 0, 8)
-        StatusDot.Position = UDim2.new(0, 96, 0, 84) -- 微調位置配合多行文字
+        StatusDot.Position = UDim2.new(0, 96, 0, 84) 
         StatusDot.BackgroundColor3 = Color3.fromRGB(130, 135, 150)
         StatusDot.BorderSizePixel = 0
         StatusDot.Parent = Card
@@ -582,7 +948,7 @@ local function initPlayerCards()
 
         local StatusLabel = Instance.new("TextLabel")
         StatusLabel.Size = UDim2.new(0, 150, 0, 20)
-        StatusLabel.Position = UDim2.new(0, 110, 0, 78) -- 微調位置位置
+        StatusLabel.Position = UDim2.new(0, 110, 0, 78) 
         StatusLabel.BackgroundTransparency = 1
         StatusLabel.Font = Enum.Font.GothamBold
         StatusLabel.Text = "連線中..."
@@ -592,11 +958,11 @@ local function initPlayerCards()
         StatusLabel.Parent = Card
 
         local InfoLabel = Instance.new("TextLabel")
-        InfoLabel.Size = UDim2.new(1, -112, 0, 65) -- 稍微放大框架拉高容量
+        InfoLabel.Size = UDim2.new(1, -112, 0, 65) 
         InfoLabel.Position = UDim2.new(0, 96, 0, 12)
         InfoLabel.BackgroundTransparency = 1
         InfoLabel.Font = Enum.Font.Gotham
-        InfoLabel.TextSize = 15 -- 微調縮小字體確保完美呈現3行
+        InfoLabel.TextSize = 15 
         InfoLabel.TextColor3 = Color3.fromRGB(220, 225, 240)
         InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
         InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
@@ -620,59 +986,48 @@ local function initPlayerCards()
             StatusLabel = StatusLabel,
             InfoLabel = InfoLabel,
             VerifiedIcon = VerifiedIcon,
-            lastInGameStatus = false,   -- 儲存上一次是否在遊戲中的狀態
-            lastNotificationTime = 0,   -- 記錄最後一次發送通知的時間戳記
-            SavedDisplayName = username -- 預設顯示名稱
+            lastInGameStatus = false,   
+            lastNotificationTime = 0,   
+            SavedDisplayName = username,
+            isFetched = false,      
+            currentPresenceType = 0 
         }
-
-        task.spawn(function()
-            local userRes = sendRequest({
-                Url = "https://users.roproxy.com/v1/usernames/users",
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = HttpService:JSONEncode({ usernames = { username }, excludeBannedUsers = false })
-            })
-
-            if userRes and userRes.StatusCode == 200 then
-                local uData = HttpService:JSONDecode(userRes.Body).data[1]
-                if uData then
-                    local userId = uData.id
-                    monitoredPlayers[username].UserId = userId
-                    AvatarImg.Image = string.format("https://www.roproxy.com/headshot-thumbnail/image?userId=%s&width=150&height=150&format=png", tostring(userId))
-
-                    local detailRes = sendRequest({
-                        Url = "https://users.roproxy.com/v1/users/" .. tostring(userId),
-                        Method = "GET"
-                    })
-
-                    if detailRes and detailRes.StatusCode == 200 then
-                        local detail = HttpService:JSONDecode(detailRes.Body)
-                        local hasBadge = detail.hasVerifiedBadge or false
-                        VerifiedIcon.Visible = hasBadge
-                        
-                        -- 儲存顯示名稱供 Webhook 提取
-                        monitoredPlayers[username].SavedDisplayName = detail.displayName
-                        
-                        -- 完美換行模板整合
-                        monitoredPlayers[username].StaticTextTemplate = 
-                            "暱稱: " .. detail.displayName .. "\n" ..
-                            "名稱: " .. detail.name .. "\n" ..
-                            "ID: " .. tostring(userId)
-                            
-                        InfoLabel.Text = monitoredPlayers[username].StaticTextTemplate
-                    end
-                end
-            else
-                InfoLabel.Text = "❌ 找不到此玩家\n或 API 故障。"
-            end
-        end)
     end
-    LeftContainer.CanvasSize = UDim2.new(0, 0, 0, #targetUsers * 122 + 20)
+    updatePage()
+    resolveAllUserIdsInBatches() -- 異步啟動 ID 分批解析
 end
 
----------------------------------------------
--- 搜尋處理
----------------------------------------------
+-- 綁定按鈕事件
+PrevPageBtn.MouseButton1Click:Connect(function()
+    if currentPage > 1 then
+        currentPage = currentPage - 1
+        updatePage()
+    end
+end)
+
+NextPageBtn.MouseButton1Click:Connect(function()
+    local totalPages = math.ceil(#targetUsers / itemsPerPage)
+    if currentPage < totalPages then
+        currentPage = currentPage + 1
+        updatePage()
+    end
+end)
+
+FilterToggleBtn.MouseButton1Click:Connect(function()
+    isFilterInGame = not isFilterInGame
+    if isFilterInGame then
+        FilterToggleBtn.Text = "🔍 只看遊戲中: ☑️"
+        FilterToggleBtn.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
+    else
+        FilterToggleBtn.Text = "🔍 只看遊戲中: ❌"
+        FilterToggleBtn.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+    end
+    updatePage()
+end)
+
+applyHoverEffect(PrevPageBtn, Color3.fromRGB(28, 30, 42), Color3.fromRGB(38, 41, 58))
+applyHoverEffect(NextPageBtn, Color3.fromRGB(28, 30, 42), Color3.fromRGB(38, 41, 58))
+
 local function handleSearch()
     local text = SearchBox.Text:gsub("%s+", "")
     if text == "" then return end
@@ -706,146 +1061,164 @@ SearchBtn.MouseButton1Click:Connect(handleSearch)
 SearchBox.FocusLost:Connect(function(enterPressed) if enterPressed then handleSearch() end end)
 applyHoverEffect(SearchBtn, Color3.fromRGB(56, 110, 245), Color3.fromRGB(46, 95, 220))
 
----------------------------------------------
--- 定時刷新輪詢 (5秒)
----------------------------------------------
+-- 【核心 Presence 刷新循環：10人一批佇列掃描，提供全域統計且絕不卡死】
 local function startPresenceLoop()
     task.spawn(function()
         while MainFrame and MainFrame.Parent do
+            -- 倒數計時顯示，整合全域在線數統計
             for i = 5, 1, -1 do
                 if not MainFrame.Visible then task.wait(1) else
-                    TitleLabel.Text = string.format(" 管理員&主播上線狀態 [ ⏳ %d 秒後刷新 ]", i)
+                    TitleLabel.Text = string.format(" 管理員&主播上線狀態 (🎮 遊戲中: %d / 總計: %d 位) [ ⏳ %d 秒後刷新 ]", globalInGameCount, totalMonitoredCount, i)
                     task.wait(1)
                 end
             end
             if MainFrame.Visible then
-                TitleLabel.Text = " 管理員&主播上線狀態 ( 🔄 加載數據中... )"
+                TitleLabel.Text = string.format(" 管理員&主播上線狀態 (🎮 遊戲中: %d / 總計: %d 位) ( 🔄 加載數據中... )", globalInGameCount, totalMonitoredCount)
             end
 
-            local idList = {}
+            -- 收集目前所有已經成功獲取到 ID 的名單
+            local allIds = {}
             local nameMap = {}
-            for name, pData in pairs(monitoredPlayers) do
-                if pData.UserId then
-                    table.insert(idList, pData.UserId)
+            for _, name in ipairs(targetUsers) do
+                local pData = monitoredPlayers[name]
+                if pData and pData.UserId then
+                    table.insert(allIds, pData.UserId)
                     nameMap[tostring(pData.UserId)] = name
                 end
             end
 
-            if #idList > 0 then
-                local presenceRes = sendRequest({
-                    Url = "https://presence.roproxy.com/v1/presence/users",
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = HttpService:JSONEncode({ userIds = idList })
-                })
+            local allPresences = {}
 
-                if presenceRes and presenceRes.StatusCode == 200 then
-                    local presences = HttpService:JSONDecode(presenceRes.Body).userPresences
-                    
-                    local currentTime = os.time()
-                    local shouldSendWebhook = false
-                    local inGamePlayersThisCycle = {}
-
-                    -- 第一輪遍歷：更新 UI，同時確認是否有符合條件需要發送 Webhook
-                    for _, pInfo in ipairs(presences) do
-                        local targetName = nameMap[tostring(pInfo.userId)]
-                        local pData = monitoredPlayers[targetName]
-
-                        if pData then
-                            local pType = pInfo.userPresenceType
-                            local statusText = "離線"
-                            local statusColor = Color3.fromRGB(130, 135, 150)
-
-                            if pType == 0 then
-                                statusText = "離線"
-                                statusColor = Color3.fromRGB(130, 135, 150)
-                            elseif pType == 1 then
-                                statusText = "線上"
-                                statusColor = Color3.fromRGB(56, 140, 255)
-                            elseif pType == 2 then
-                                statusText = "遊戲中"
-                                statusColor = Color3.fromRGB(46, 204, 113)
-                            elseif pType == 3 then
-                                statusText = "Studio"
-                                statusColor = Color3.fromRGB(241, 196, 15)
-                            end
-
-                            TweenService:Create(pData.StatusDot, TweenInfo.new(0.3), {BackgroundColor3 = statusColor}):Play()
-                            pData.StatusLabel.Text = statusText
-                            pData.StatusLabel.TextColor3 = statusColor
-
-                            if pData.StaticTextTemplate then
-                                if pType == 2 then
-                                    task.spawn(function()
-                                        local gameName = getPlaceName(pInfo.placeId)
-                                        pData.InfoLabel.Text = pData.StaticTextTemplate .. string.format("\n🎮 當前活動: %s", gameName)
-                                    end)
-                                else
-                                    pData.InfoLabel.Text = pData.StaticTextTemplate
-                                end
-                            end
-
-                            -- 【核心 Webhook 發送控制邏輯】
-                            if pType == 2 then
-                                table.insert(inGamePlayersThisCycle, pData)
-                                
-                                local lastNotifyTime = pData.lastNotificationTime or 0
-                                -- 觸發條件：上一次不在遊戲中（新加入），或已持續在線超過 3 分鐘 (180秒)
-                                if not pData.lastInGameStatus or (currentTime - lastNotifyTime >= 180) then
-                                    shouldSendWebhook = true
-                                end
-                            end
-                        end
+            -- 【高階優化方案】：將全體名單每 10 人分為一組，分批發送 API 請求，完美迴避當機問題
+            if #allIds > 0 then
+                for batchStart = 1, #allIds, 10 do
+                    local batchIds = {}
+                    for j = batchStart, math.min(batchStart + 9, #allIds) do
+                        table.insert(batchIds, allIds[j])
                     end
 
-                    -- 滿足觸發條件且當前有任何管理員正在遊戲中，則彙整列表發送 Webhook
-                    if shouldSendWebhook and #inGamePlayersThisCycle > 0 and webhookUrl ~= "" then
-                        local messageLines = {}
+                    local presenceRes = sendRequest({
+                        Url = "https://presence.roproxy.com/v1/presence/users",
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = HttpService:JSONEncode({ userIds = batchIds })
+                    })
 
-                        -- 如果啟用 Ping 提醒，則先加入 @ 內容
-                        if isPingEnabled and pingId ~= "" then
-                            local pingStr, valid = formatPing(pingId)
-                            if valid and pingStr then
-                                table.insert(messageLines, pingStr)
-                            end
-                        end
-
-                        -- 依照指定格式組合所有「在遊戲中」的管理員名單
-                        for _, pData in ipairs(inGamePlayersThisCycle) do
-                            local dName = pData.SavedDisplayName or pData.Card.Name
-                            local uName = pData.Card.Name
-                            local uId = pData.UserId and tostring(pData.UserId) or "未知"
-                            
-                            local formattedItem = string.format("```%s(%s)在遊戲中```\n透過主頁加入他吧！\nhttps://www.roblox.com/users/%s/profile", dName, uName, uId)
-                            table.insert(messageLines, formattedItem)
-                            
-                            -- 重設該玩家的最後通知時間（避免未滿3分鐘再次發送）
-                            pData.lastNotificationTime = currentTime
-                        end
-
-                        -- 使用雙換行連接多名管理員資訊
-                        local finalPayload = table.concat(messageLines, "\n\n")
-                        SendWebhook(webhookUrl, finalPayload)
-                    end
-
-                    -- 第二輪遍歷：將此輪的狀態同步至 lastInGameStatus 供下一輪比對
-                    for _, pInfo in ipairs(presences) do
-                        local targetName = nameMap[tostring(pInfo.userId)]
-                        local pData = monitoredPlayers[targetName]
-                        if pData then
-                            pData.lastInGameStatus = (pInfo.userPresenceType == 2)
+                    if presenceRes and presenceRes.StatusCode == 200 then
+                        local userPresences = HttpService:JSONDecode(presenceRes.Body).userPresences
+                        for _, pInfo in ipairs(userPresences) do
+                            table.insert(allPresences, pInfo)
                         end
                     end
-
+                    task.wait(0.1) -- 每 10 人的請求間進行極微小喘息，保證效能流暢、絕不爆 API
                 end
+            end
+
+            -- 當完整獲取完全部批次的狀態後，開始統一更新數據
+            if #allPresences > 0 then
+                local currentTime = os.time()
+                local shouldSendWebhook = false
+                local inGamePlayersThisCycle = {}
+                local tempInGameCounter = 0 -- 暫時用來統計這輪的全域遊戲中人數
+
+                -- 第一輪遍歷：更新所有卡片的緩存狀態
+                for _, pInfo in ipairs(allPresences) do
+                    local targetName = nameMap[tostring(pInfo.userId)]
+                    local pData = monitoredPlayers[targetName]
+
+                    if pData then
+                        local pType = pInfo.userPresenceType
+                        pData.currentPresenceType = pType 
+                        
+                        local statusText = "離線"
+                        local statusColor = Color3.fromRGB(130, 135, 150)
+
+                        if pType == 0 then
+                            statusText = "離線"
+                            statusColor = Color3.fromRGB(130, 135, 150)
+                        elseif pType == 1 then
+                            statusText = "線上"
+                            statusColor = Color3.fromRGB(56, 140, 255)
+                        elseif pType == 2 then
+                            statusText = "遊戲中"
+                            statusColor = Color3.fromRGB(46, 204, 113)
+                            tempInGameCounter = tempInGameCounter + 1 -- 全域計數累加
+                        elseif pType == 3 then
+                            statusText = "Studio"
+                            statusColor = Color3.fromRGB(241, 196, 15)
+                        end
+
+                        TweenService:Create(pData.StatusDot, TweenInfo.new(0.3), {BackgroundColor3 = statusColor}):Play()
+                        pData.StatusLabel.Text = statusText
+                        pData.StatusLabel.TextColor3 = statusColor
+
+                        if pData.StaticTextTemplate then
+                            if pType == 2 then
+                                task.spawn(function()
+                                    local gameName = getPlaceName(pInfo.placeId)
+                                    pData.InfoLabel.Text = pData.StaticTextTemplate .. string.format("\n🎮 當前活動: %s", gameName)
+                                end)
+                            else
+                                pData.InfoLabel.Text = pData.StaticTextTemplate
+                            end
+                        end
+
+                        -- 【核心 Webhook 發送控制邏輯】
+                        if pType == 2 then
+                            table.insert(inGamePlayersThisCycle, pData)
+                            local lastNotifyTime = pData.lastNotificationTime or 0
+                            if not pData.lastInGameStatus or (currentTime - lastNotifyTime >= 180) then
+                                shouldSendWebhook = true
+                            end
+                        end
+                    end
+                end
+
+                -- 更新全域數值，供下一次計時器渲染
+                globalInGameCount = tempInGameCounter
+
+                -- 即時刷新當前頁面排版（包含過濾器邏輯自動反應）
+                updatePage()
+
+                -- Webhook 整合發送機制
+                if shouldSendWebhook and #inGamePlayersThisCycle > 0 and webhookUrl ~= "" then
+                    local messageLines = {}
+
+                    if isPingEnabled and pingId ~= "" then
+                        local pingStr, valid = formatPing(pingId)
+                        if valid and pingStr then
+                            table.insert(messageLines, pingStr)
+                        end
+                    end
+
+                    for _, pData in ipairs(inGamePlayersThisCycle) do
+                        local dName = pData.SavedDisplayName or pData.Card.Name
+                        local uName = pData.Card.Name
+                        local uId = pData.UserId and tostring(pData.UserId) or "未知"
+                        
+                        local formattedItem = string.format("```%s(%s)在遊戲中```\n透過主頁加入他吧！\nhttps://www.roblox.com/users/%s/profile", dName, uName, uId)
+                        table.insert(messageLines, formattedItem)
+                        pData.lastNotificationTime = currentTime
+                    end
+
+                    local finalPayload = table.concat(messageLines, "\n\n")
+                    SendWebhook(webhookUrl, finalPayload)
+                end
+
+                -- 第二輪遍歷：狀態同步
+                for _, pInfo in ipairs(allPresences) do
+                    local targetName = nameMap[tostring(pInfo.userId)]
+                    local pData = monitoredPlayers[targetName]
+                    if pData then
+                        pData.lastInGameStatus = (pInfo.userPresenceType == 2)
+                    end
+                end
+
             end
         end
     end)
 end
 
----------------------------------------------
--- 面板整合關閉與開合
----------------------------------------------
 makeDraggable(MainFrame, TitleBar)
 makeDraggable(ToggleBtn, ToggleBtn)
 
