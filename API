@@ -1,3 +1,75 @@
+-- ==========================================
+-- 【系統參數配置區】
+-- ==========================================
+local webhookUrl = ""       -- 填入您的 Discord Webhook 網址
+local pingId = ""           -- 填入 "everyone", "here", "ID"
+local isPingEnabled = false  -- 是否開啟@ (true/false)
+
+----------------------------------------------------------------
+-- [ 核心功能 ] Discord Webhook 發送與驗證函式
+----------------------------------------------------------------
+local function SendWebhook(url, msg)
+    local data = {
+        username = "Xu bot",
+        avatar_url = "https://files.catbox.moe/qfuvqz.jpg",
+        content = msg
+    }
+
+    local HttpService = game:GetService("HttpService")
+    local body = HttpService:JSONEncode(data)
+
+    local requestFunc = (syn and syn.request) 
+        or (http and http.request) 
+        or (fluxus and fluxus.request) 
+        or request
+
+    if requestFunc then
+        requestFunc({
+            Url = url,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = body
+        })
+        if WindUI and WindUI.Notify then
+            WindUI:Notify({ Title = "通知", Content = "訊息已嘗試送出！", Duration = 2 })
+        end
+    else
+        if WindUI and WindUI.Notify then
+            WindUI:Notify({ Title = "錯誤", Content = "此 Executor 不支援 HTTP Request", Duration = 3 })
+        end
+    end
+end
+
+local function formatPing(pingInput)
+    pingInput = pingInput:gsub("%s+", "")
+    
+    if pingInput == "" then 
+        return "@everyone ", true
+    end
+    
+    if pingInput == "everyone" or pingInput == "here" then
+        return "@" .. pingInput .. " ", true
+    end
+    
+    if tonumber(pingInput) then
+        return "<@" .. pingInput .. "> ", true
+    end
+    
+    if pingInput:sub(1,1) == "&" then
+        local roleId = pingInput:sub(2)
+        if tonumber(roleId) then
+            return "<@&" .. roleId .. "> ", true
+        end
+    end
+    
+    return nil, false
+end
+
+----------------------------------------------------------------
+-- [ 主監控程式結構 ] 
+----------------------------------------------------------------
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -60,9 +132,9 @@ TitleLabel.BackgroundTransparency = 1
 TitleLabel.Position = UDim2.new(0, 20, 0, 0)
 TitleLabel.Size = UDim2.new(1, -120, 1, 0)
 TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Text = "⚡ MULTI-MONITOR SYSTEM (準備中...)"
+TitleLabel.Text = " 管理員&主播上線狀態 (準備中...)"
 TitleLabel.TextColor3 = Color3.fromRGB(240, 243, 255)
-TitleLabel.TextSize = 17 -- 字體加大 (原15)
+TitleLabel.TextSize = 18
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 -- 關閉按鈕
@@ -73,10 +145,10 @@ CloseBtn.TextColor3 = Color3.fromRGB(150, 155, 170)
 CloseBtn.Size = UDim2.new(0, 48, 1, 0)
 CloseBtn.Position = UDim2.new(1, -48, 0, 0)
 CloseBtn.BackgroundTransparency = 1
-CloseBtn.TextSize = 18 -- 字體加大 (原16)
+CloseBtn.TextSize = 18 
 CloseBtn.Font = Enum.Font.GothamBold
 
--- 縮小按鈕 (放在標題列 X 旁邊)
+-- 縮小按鈕
 local MinimizeBtn = Instance.new("TextButton")
 MinimizeBtn.Parent = TitleBar
 MinimizeBtn.Text = "—"
@@ -84,7 +156,7 @@ MinimizeBtn.TextColor3 = Color3.fromRGB(150, 155, 170)
 MinimizeBtn.Size = UDim2.new(0, 48, 1, 0)
 MinimizeBtn.Position = UDim2.new(1, -96, 0, 0)
 MinimizeBtn.BackgroundTransparency = 1
-MinimizeBtn.TextSize = 16 -- 字體加大 (原14)
+MinimizeBtn.TextSize = 18 
 MinimizeBtn.Font = Enum.Font.GothamBold
 
 -- 縮小後顯示的獨立懸浮展開按鈕
@@ -96,13 +168,13 @@ ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
 ToggleBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 33)
 ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.Text = "👑"
-ToggleBtn.TextSize = 24 -- 字體加大 (原22)
+ToggleBtn.TextSize = 30 
 ToggleBtn.TextColor3 = Color3.fromRGB(56, 110, 245)
 ToggleBtn.Visible = false
 ToggleBtn.ZIndex = 10
 
 local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(1, 0) -- 圓形
+ToggleCorner.CornerRadius = UDim.new(1, 0)
 ToggleCorner.Parent = ToggleBtn
 
 local ToggleStroke = Instance.new("UIStroke")
@@ -149,7 +221,7 @@ SearchBox.Font = Enum.Font.Gotham
 SearchBox.PlaceholderText = "🔎 輸入玩家名稱或 ID..."
 SearchBox.Text = ""
 SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-SearchBox.TextSize = 14 -- 字體加大 (原13)
+SearchBox.TextSize = 16 
 SearchBox.ClearTextOnFocus = false
 local SearchBoxCorner = Instance.new("UICorner")
 SearchBoxCorner.CornerRadius = UDim.new(0, 6)
@@ -168,12 +240,11 @@ SearchBtn.BackgroundColor3 = Color3.fromRGB(56, 110, 245)
 SearchBtn.Font = Enum.Font.GothamBold
 SearchBtn.Text = "搜尋"
 SearchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SearchBtn.TextSize = 14 -- 字體加大 (原13)
+SearchBtn.TextSize = 16 
 local SearchBtnCorner = Instance.new("UICorner")
 SearchBtnCorner.CornerRadius = UDim.new(0, 6)
 SearchBtnCorner.Parent = SearchBtn
 
--- 調整 DetailDetails 的高度，為底部「上下排列」的按鈕留出足夠空間 (原 -136 改為 -184)
 local DetailDetails = Instance.new("ScrollingFrame")
 DetailDetails.Parent = RightPanel
 DetailDetails.BackgroundTransparency = 1
@@ -213,53 +284,50 @@ DetailText.Size = UDim2.new(1, 0, 0, 400)
 DetailText.Position = UDim2.new(0, 0, 0, 130)
 DetailText.BackgroundTransparency = 1
 DetailText.Font = Enum.Font.Code
-DetailText.TextSize = 15 -- 字體加大 (原13)
+DetailText.TextSize = 18 
 DetailText.TextColor3 = Color3.fromRGB(185, 190, 210)
 DetailText.TextXAlignment = Enum.TextXAlignment.Left
 DetailText.TextYAlignment = Enum.TextYAlignment.Top
 DetailText.TextWrapped = true
-DetailText.Text = "請點擊左側玩家卡片\n或在上方輸入資訊進行檢索。"
+DetailText.Text = "點擊左側玩家或在上方搜尋玩家"
 DetailText.Parent = DetailDetails
 
 -- ==========================================
--- 調整與新增：右側區塊最底部「上下排列」的顯眼按鈕
+-- 右側底部控制按鈕
 -- ==========================================
-local currentSelectedName = ""  -- 用於記錄當前檢視的玩家名稱
-local currentSelectedId = nil    -- 用於記錄當前檢視的玩家 ID
+local currentSelectedName = "" 
+local currentSelectedId = nil  
 
--- 1. 傳送至搜尋按鈕 (排在上面，使用顯眼鮮豔藍色)
 local SendToSearchBtn = Instance.new("TextButton")
 SendToSearchBtn.Name = "SendToSearchBtn"
 SendToSearchBtn.Parent = RightPanel
 SendToSearchBtn.Size = UDim2.new(1, -32, 0, 40)
-SendToSearchBtn.Position = UDim2.new(0, 16, 1, -96) -- 倒數第二個位置
-SendToSearchBtn.BackgroundColor3 = Color3.fromRGB(37, 117, 252) -- 顯眼亮藍色
+SendToSearchBtn.Position = UDim2.new(0, 16, 1, -96) 
+SendToSearchBtn.BackgroundColor3 = Color3.fromRGB(37, 117, 252) 
 SendToSearchBtn.Font = Enum.Font.GothamBold
 SendToSearchBtn.Text = " 👤 填入名稱至profiles"
 SendToSearchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SendToSearchBtn.TextSize = 14 -- 字體加大
+SendToSearchBtn.TextSize = 17 
 
 local SendToSearchCorner = Instance.new("UICorner")
 SendToSearchCorner.CornerRadius = UDim.new(0, 8)
 SendToSearchCorner.Parent = SendToSearchBtn
 
--- 2. 複製個人檔案連結按鈕 (排在最下面，使用顯眼霓虹紫色)
 local CopyProfileBtn = Instance.new("TextButton")
 CopyProfileBtn.Name = "CopyProfileBtn"
 CopyProfileBtn.Parent = RightPanel
 CopyProfileBtn.Size = UDim2.new(1, -32, 0, 40)
-CopyProfileBtn.Position = UDim2.new(0, 16, 1, -48) -- 最底部位置
-CopyProfileBtn.BackgroundColor3 = Color3.fromRGB(168, 85, 247) -- 顯眼霓虹紫色
+CopyProfileBtn.Position = UDim2.new(0, 16, 1, -48) 
+CopyProfileBtn.BackgroundColor3 = Color3.fromRGB(168, 85, 247) 
 CopyProfileBtn.Font = Enum.Font.GothamBold
 CopyProfileBtn.Text = " 🔗 複製Roblox個人檔案"
 CopyProfileBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CopyProfileBtn.TextSize = 14 -- 字體加大
+CopyProfileBtn.TextSize = 17 
 
 local CopyProfileCorner = Instance.new("UICorner")
 CopyProfileCorner.CornerRadius = UDim.new(0, 8)
 CopyProfileCorner.Parent = CopyProfileBtn
 
--- 為新按鈕套用獨立的顯眼懸停動畫
 SendToSearchBtn.MouseEnter:Connect(function()
     TweenService:Create(SendToSearchBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 95, 230)}):Play()
 end)
@@ -274,7 +342,6 @@ CopyProfileBtn.MouseLeave:Connect(function()
     TweenService:Create(CopyProfileBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(168, 85, 247)}):Play()
 end)
 
--- 綁定按鈕點擊事件
 SendToSearchBtn.MouseButton1Click:Connect(function()
     if currentSelectedName ~= "" then
         local targetTextBox = game:GetService("Players").LocalPlayer.PlayerGui.PlayerLookup.Modal.SearchBar.NameTextBox
@@ -333,14 +400,13 @@ local function applyHoverEffect(frame, normalColor, hoverColor)
 end
 
 local function getPlaceName(placeId)
-    if not placeId or placeId == 0 or placeId == "無" then return "未知遊戲場景" end
+    if not placeId or placeId == 0 or placeId == "無" or placeId == "" then return "未知遊戲場景" end
     local success, result = pcall(function()
         return MarketplaceService:GetProductInfo(tonumber(placeId)).Name
     end)
     return success and result or "不公開的私有場景"
 end
 
--- 封裝 UI 拖動功能
 local function makeDraggable(dragTarget, dragTrigger)
     local dragging, dragInput, dragStart, startPos
     dragTrigger.InputBegan:Connect(function(input)
@@ -365,7 +431,7 @@ local function makeDraggable(dragTarget, dragTrigger)
 end
 
 ---------------------------------------------
--- 右側詳細面板數據加載與動態刷新
+-- 右側詳細面板數據加載
 ---------------------------------------------
 local function showDetailByUserId(userId)
     DetailVerified.Visible = false
@@ -388,7 +454,6 @@ local function showDetailByUserId(userId)
 
         if detailRes and detailRes.StatusCode == 200 then
             local detail = HttpService:JSONDecode(detailRes.Body)
-            
             currentSelectedName = detail.name
             
             local isVerified = detail.hasVerifiedBadge or false
@@ -448,7 +513,7 @@ local function showDetailByUserId(userId)
 end
 
 ---------------------------------------------
--- 初始化與卡片生成 (左側)
+-- 初始化與卡片生成 (左側卡片文字換行優化)
 ---------------------------------------------
 local function initPlayerCards()
     for index, username in ipairs(targetUsers) do
@@ -496,7 +561,7 @@ local function initPlayerCards()
 
         local StatusDot = Instance.new("Frame")
         StatusDot.Size = UDim2.new(0, 8, 0, 8)
-        StatusDot.Position = UDim2.new(0, 96, 0, 80)
+        StatusDot.Position = UDim2.new(0, 96, 0, 84) -- 微調位置配合多行文字
         StatusDot.BackgroundColor3 = Color3.fromRGB(130, 135, 150)
         StatusDot.BorderSizePixel = 0
         StatusDot.Parent = Card
@@ -506,26 +571,27 @@ local function initPlayerCards()
 
         local StatusLabel = Instance.new("TextLabel")
         StatusLabel.Size = UDim2.new(0, 150, 0, 20)
-        StatusLabel.Position = UDim2.new(0, 110, 0, 74)
+        StatusLabel.Position = UDim2.new(0, 110, 0, 78) -- 微調位置位置
         StatusLabel.BackgroundTransparency = 1
         StatusLabel.Font = Enum.Font.GothamBold
         StatusLabel.Text = "連線中..."
         StatusLabel.TextColor3 = Color3.fromRGB(140, 145, 160)
-        StatusLabel.TextSize = 14 -- 字體加大 (原12)
+        StatusLabel.TextSize = 20 
         StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
         StatusLabel.Parent = Card
 
         local InfoLabel = Instance.new("TextLabel")
-        InfoLabel.Size = UDim2.new(1, -112, 0, 55)
-        InfoLabel.Position = UDim2.new(0, 96, 0, 16)
+        InfoLabel.Size = UDim2.new(1, -112, 0, 65) -- 稍微放大框架拉高容量
+        InfoLabel.Position = UDim2.new(0, 96, 0, 12)
         InfoLabel.BackgroundTransparency = 1
         InfoLabel.Font = Enum.Font.Gotham
-        InfoLabel.TextSize = 15 -- 字體加大 (原13)
+        InfoLabel.TextSize = 15 -- 微調縮小字體確保完美呈現3行
         InfoLabel.TextColor3 = Color3.fromRGB(220, 225, 240)
         InfoLabel.TextXAlignment = Enum.TextXAlignment.Left
         InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
         InfoLabel.TextWrapped = true
-        InfoLabel.Text = string.format("載入中...\nID: 獲取中...\n暱稱: 獲取中...", username)
+        InfoLabel.LineHeight = 1.1
+        InfoLabel.Text = string.format("暱稱: 獲取中...\n名稱: %s\nID: 獲取中...", username)
         InfoLabel.Parent = Card
         
         Card.MouseButton1Click:Connect(function()
@@ -542,7 +608,10 @@ local function initPlayerCards()
             StatusDot = StatusDot,
             StatusLabel = StatusLabel,
             InfoLabel = InfoLabel,
-            VerifiedIcon = VerifiedIcon
+            VerifiedIcon = VerifiedIcon,
+            lastInGameStatus = false,   -- 儲存上一次是否在遊戲中的狀態
+            lastNotificationTime = 0,   -- 記錄最後一次發送通知的時間戳記
+            SavedDisplayName = username -- 預設顯示名稱
         }
 
         task.spawn(function()
@@ -569,16 +638,21 @@ local function initPlayerCards()
                         local detail = HttpService:JSONDecode(detailRes.Body)
                         local hasBadge = detail.hasVerifiedBadge or false
                         VerifiedIcon.Visible = hasBadge
-                        local badgePrefix = hasBadge and " ☑️️ " or "  "
                         
+                        -- 儲存顯示名稱供 Webhook 提取
+                        monitoredPlayers[username].SavedDisplayName = detail.displayName
+                        
+                        -- 完美換行模板整合
                         monitoredPlayers[username].StaticTextTemplate = 
-                            badgePrefix .. detail.displayName .. " (" .. detail.name .. ")\n" ..
-                            " ID : " .. tostring(userId)
+                            "暱稱: " .. detail.displayName .. "\n" ..
+                            "名稱: " .. detail.name .. "\n" ..
+                            "ID: " .. tostring(userId)
+                            
                         InfoLabel.Text = monitoredPlayers[username].StaticTextTemplate
                     end
                 end
             else
-                InfoLabel.Text = "👤 " .. username .. "\n❌ 找不到此玩家或 API 故障。"
+                InfoLabel.Text = "❌ 找不到此玩家\n或 API 故障。"
             end
         end)
     end
@@ -629,12 +703,12 @@ local function startPresenceLoop()
         while MainFrame and MainFrame.Parent do
             for i = 5, 1, -1 do
                 if not MainFrame.Visible then task.wait(1) else
-                    TitleLabel.Text = string.format("🛰️ MULTI-MONITOR SYSTEM [ ⏳ 00:0%d 後自動更新 ]", i)
+                    TitleLabel.Text = string.format(" 管理員&主播上線狀態 [ ⏳ %d 秒後刷新 ]", i)
                     task.wait(1)
                 end
             end
             if MainFrame.Visible then
-                TitleLabel.Text = "🛰️ MULTI-MONITOR SYSTEM ( 🔄 同步雲端數據中... )"
+                TitleLabel.Text = " 管理員&主播上線狀態 ( 🔄 加載數據中... )"
             end
 
             local idList = {}
@@ -656,6 +730,12 @@ local function startPresenceLoop()
 
                 if presenceRes and presenceRes.StatusCode == 200 then
                     local presences = HttpService:JSONDecode(presenceRes.Body).userPresences
+                    
+                    local currentTime = os.time()
+                    local shouldSendWebhook = false
+                    local inGamePlayersThisCycle = {}
+
+                    -- 第一輪遍歷：更新 UI，同時確認是否有符合條件需要發送 Webhook
                     for _, pInfo in ipairs(presences) do
                         local targetName = nameMap[tostring(pInfo.userId)]
                         local pData = monitoredPlayers[targetName]
@@ -693,8 +773,59 @@ local function startPresenceLoop()
                                     pData.InfoLabel.Text = pData.StaticTextTemplate
                                 end
                             end
+
+                            -- 【核心 Webhook 發送控制邏輯】
+                            if pType == 2 then
+                                table.insert(inGamePlayersThisCycle, pData)
+                                
+                                local lastNotifyTime = pData.lastNotificationTime or 0
+                                -- 觸發條件：上一次不在遊戲中（新加入），或已持續在線超過 3 分鐘 (180秒)
+                                if not pData.lastInGameStatus or (currentTime - lastNotifyTime >= 180) then
+                                    shouldSendWebhook = true
+                                end
+                            end
                         end
                     end
+
+                    -- 滿足觸發條件且當前有任何管理員正在遊戲中，則彙整列表發送 Webhook
+                    if shouldSendWebhook and #inGamePlayersThisCycle > 0 and webhookUrl ~= "" then
+                        local messageLines = {}
+
+                        -- 如果啟用 Ping 提醒，則先加入 @ 內容
+                        if isPingEnabled and pingId ~= "" then
+                            local pingStr, valid = formatPing(pingId)
+                            if valid and pingStr then
+                                table.insert(messageLines, pingStr)
+                            end
+                        end
+
+                        -- 依照指定格式組合所有「在遊戲中」的管理員名單
+                        for _, pData in ipairs(inGamePlayersThisCycle) do
+                            local dName = pData.SavedDisplayName or pData.Card.Name
+                            local uName = pData.Card.Name
+                            local uId = pData.UserId and tostring(pData.UserId) or "未知"
+                            
+                            local formattedItem = string.format("```%s(%s)在遊戲中```\n透過主頁加入他吧！\nhttps://www.roblox.com/users/%s/profile", dName, uName, uId)
+                            table.insert(messageLines, formattedItem)
+                            
+                            -- 重設該玩家的最後通知時間（避免未滿3分鐘再次發送）
+                            pData.lastNotificationTime = currentTime
+                        end
+
+                        -- 使用雙換行連接多名管理員資訊
+                        local finalPayload = table.concat(messageLines, "\n\n")
+                        SendWebhook(webhookUrl, finalPayload)
+                    end
+
+                    -- 第二輪遍歷：將此輪的狀態同步至 lastInGameStatus 供下一輪比對
+                    for _, pInfo in ipairs(presences) do
+                        local targetName = nameMap[tostring(pInfo.userId)]
+                        local pData = monitoredPlayers[targetName]
+                        if pData then
+                            pData.lastInGameStatus = (pInfo.userPresenceType == 2)
+                        end
+                    end
+
                 end
             end
         end
@@ -702,7 +833,7 @@ local function startPresenceLoop()
 end
 
 ---------------------------------------------
--- 面板關閉、縮小與拖動邏輯整合
+-- 面板整合關閉與開合
 ---------------------------------------------
 makeDraggable(MainFrame, TitleBar)
 makeDraggable(ToggleBtn, ToggleBtn)
