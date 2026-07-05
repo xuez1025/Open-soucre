@@ -680,7 +680,7 @@ local function applyHoverEffect(frame, normalColor, hoverColor)
 end
 
 local function getPlaceName(placeId)
-    if not placeId or placeId == 0 or placeId == "無" or placeId == "" then return "未知遊戲場景" end
+    if not placeId or placeId == 0 or placeId == "無" or placeId == "" then return "無法取得" end
     local success, result = pcall(function()
         return MarketplaceService:GetProductInfo(tonumber(placeId)).Name
     end)
@@ -881,6 +881,11 @@ local function resolveAllUserIdsInBatches()
                             pData.StaticTextTemplate = "暱稱: " .. uData.displayName .. "\n名稱: " .. uData.name .. "\nID: " .. tostring(uData.id)
                             pData.InfoLabel.Text = pData.StaticTextTemplate
                             pData.isFetched = true
+
+                            -- 【修復】同步更新左側卡片的已驗證勾勾圖示
+                            if pData.VerifiedIcon then
+                                pData.VerifiedIcon.Visible = uData.hasVerifiedBadge or false
+                            end
                         end
                     end
                 end
