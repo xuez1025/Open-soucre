@@ -1,0 +1,281 @@
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+_G.HiddenGameUIsList = _G.HiddenGameUIsList or {}
+_G.HideGameUIState = false
+
+local function ToggleGameUI(state)
+    _G.HideGameUIState = state
+    if state then
+        table.clear(_G.HiddenGameUIsList)
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled == true and gui.Name ~= "XuPremiumLoading" then
+                table.insert(_G.HiddenGameUIsList, gui)
+                gui.Enabled = false
+            end
+        end
+    else
+        for _, gui in ipairs(_G.HiddenGameUIsList) do
+            if gui and gui.Parent then
+                gui.Enabled = true
+            end
+        end
+        table.clear(_G.HiddenGameUIsList)
+    end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "XuPremiumLoading"
+screenGui.IgnoreGuiInset = true 
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 99999
+screenGui.Parent = playerGui
+
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Background"
+mainFrame.Size = UDim2.new(1, 0, 1, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(6, 7, 10)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local bgGradient = Instance.new("UIGradient")
+bgGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(12, 14, 20)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(7, 8, 11)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(4, 5, 7))
+})
+bgGradient.Rotation = 135
+bgGradient.Parent = mainFrame
+
+local gridLines = Instance.new("Frame")
+gridLines.Name = "GridDecor"
+gridLines.Size = UDim2.new(1, 0, 1, 0)
+gridLines.BackgroundTransparency = 1
+gridLines.Parent = mainFrame
+
+local uiStrokeBg = Instance.new("UIStroke")
+uiStrokeBg.Color = Color3.fromRGB(0, 198, 251)
+uiStrokeBg.Thickness = 1
+uiStrokeBg.Transparency = 0.96
+uiStrokeBg.Parent = gridLines
+
+local contentFrame = Instance.new("CanvasGroup")
+contentFrame.Name = "Content"
+contentFrame.Size = UDim2.new(0, 500, 0, 250)
+contentFrame.Position = UDim2.new(0.5, 0, 0.48, 0) 
+contentFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, 0, 0, 50)
+titleLabel.Position = UDim2.new(0, 0, 0.1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.BuilderSansBold 
+titleLabel.TextSize = 42
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Text = "無 限 抽 果"
+titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+titleLabel.Parent = contentFrame
+
+local subTitleLabel = Instance.new("TextLabel")
+subTitleLabel.Name = "SubTitleLabel"
+subTitleLabel.Size = UDim2.new(1, 0, 0, 15)
+subTitleLabel.Position = UDim2.new(0, 0, 0.32, 0)
+subTitleLabel.BackgroundTransparency = 1
+subTitleLabel.Font = Enum.Font.Code
+subTitleLabel.TextSize = 15
+subTitleLabel.TextColor3 = Color3.fromRGB(0, 198, 251)
+subTitleLabel.Text = "全台第一無限果實掛"
+subTitleLabel.TextTransparency = 0.3
+subTitleLabel.Parent = contentFrame
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "StatusLabel"
+statusLabel.Size = UDim2.new(1, 0, 0, 20)
+statusLabel.Position = UDim2.new(0, 0, 0.52, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.RobotoMono
+statusLabel.TextSize = 12
+statusLabel.TextColor3 = Color3.fromRGB(120, 130, 150) 
+statusLabel.Text = "加載中... 0%"
+statusLabel.Parent = contentFrame
+
+local barBackground = Instance.new("Frame")
+barBackground.Name = "BarBackground"
+barBackground.Size = UDim2.new(0, 400, 0, 4)
+barBackground.Position = UDim2.new(0.5, 0, 0.65, 0)
+barBackground.AnchorPoint = Vector2.new(0.5, 0)
+barBackground.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+barBackground.BorderSizePixel = 0
+barBackground.Parent = contentFrame
+
+local barCorner = Instance.new("UICorner")
+barCorner.CornerRadius = UDim.new(1, 0) 
+barCorner.Parent = barBackground
+
+local barFill = Instance.new("Frame")
+barFill.Name = "BarFill"
+barFill.Size = UDim2.new(0, 0, 1, 0)
+barFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255) 
+barFill.BorderSizePixel = 0
+barFill.Parent = barBackground
+
+local fillCorner = barCorner:Clone()
+fillCorner.Parent = barFill
+
+local barGradient = Instance.new("UIGradient")
+barGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 242, 254)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(79, 172, 254))
+})
+barGradient.Parent = barFill
+
+local barGlow = Instance.new("Frame")
+barGlow.Name = "Glow"
+barGlow.Size = UDim2.new(1, 10, 1, 6)
+barGlow.Position = UDim2.new(0.5, 0, 0.5, 0)
+barGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+barGlow.BackgroundColor3 = Color3.fromRGB(0, 198, 251)
+barGlow.BackgroundTransparency = 0.7
+barGlow.BorderSizePixel = 0
+barGlow.Parent = barFill
+
+local glowCorner = Instance.new("UICorner")
+glowCorner.CornerRadius = UDim.new(1, 0)
+glowCorner.Parent = barGlow
+
+local isInterrupted = false
+local loopRunning = true
+local inputConnection 
+
+task.spawn(function()
+    while screenGui and screenGui.Parent and not isInterrupted do
+        if barGlow and barGlow.Parent then
+            TweenService:Create(barGlow, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0, true), {
+                BackgroundTransparency = 0.85
+            }):Play()
+        end
+        task.wait(2)
+    end
+end)
+
+inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end 
+    if input.KeyCode == Enum.KeyCode.G then
+        isInterrupted = true
+        loopRunning = false
+        
+        if inputConnection then
+            inputConnection:Disconnect()
+        end
+        
+        ToggleGameUI(false)
+        
+        if setfpscap then
+            pcall(function() setfpscap(0) end)
+        end
+        
+        screenGui:Destroy()
+    end
+end)
+
+task.spawn(function()
+    local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+    local commF = remotes and remotes:WaitForChild("CommF_", 10)
+    
+    if not commF then 
+        warn("[XuPremium] 找不到伺服器遠端事件，定時重置功能未啟動。")
+        return 
+    end
+
+    while loopRunning and not isInterrupted do
+        pcall(function()
+            commF:InvokeServer("BlackbeardReward", "Refund", "2")
+        end)
+        
+        pcall(function()
+            commF:InvokeServer("BlackbeardReward", "Reroll", "2")
+        end)
+        
+        task.wait(0.5)
+    end
+end)
+
+task.spawn(function()
+    ToggleGameUI(true)
+    
+    if setfpscap then
+        pcall(function() setfpscap(5) end)
+    end
+
+    for i = 0, 100 do
+        if isInterrupted then return end
+        
+        if i < 100 then
+            statusLabel.Text = "LOADING SYSTEM ASSETS... " .. i .. "%"
+        end
+        
+        TweenService:Create(barFill, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {
+            Size = UDim2.new(i / 100, 0, 1, 0)
+        }):Play()
+        
+        if i < 70 then
+            task.wait(math.random(70, 101) / 100)
+        elseif i == 70 then
+            task.wait(0.5)
+        elseif i > 70 and i < 90 then
+            task.wait(math.random(260, 341) / 100)
+        elseif i == 90 then
+            task.wait(0.5)
+        elseif i > 90 and i < 100 then
+            task.wait(math.random(550, 651) / 100)
+        end
+    end
+    
+    if isInterrupted then return end
+
+    loopRunning = false
+    
+    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 170) 
+    statusLabel.Text = "[ SUCCESS ] ALL CORE ASSETS SYSTEM DEPLOYED."
+    titleLabel.Text = "SYSTEM READY"
+    subTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 170)
+    
+    TweenService:Create(titleLabel, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        TextSize = 46,
+        TextColor3 = Color3.fromRGB(0, 255, 170)
+    }):Play()
+    
+    task.wait(1.5)
+    
+    if inputConnection then
+        inputConnection:Disconnect()
+    end
+    
+    if isInterrupted then return end
+
+    local fadeInfo = TweenInfo.new(0.8, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+    
+    TweenService:Create(contentFrame, fadeInfo, { Position = UDim2.new(0.5, 0, 0.52, 0) })--:Play()
+    TweenService:Create(mainFrame, fadeInfo, { BackgroundTransparency = 1 }):Play()
+    
+    local lastTween = TweenService:Create(contentFrame, fadeInfo, { GroupTransparency = 1 })
+    lastTween:Play()
+    lastTween.Completed:Wait()
+    
+    if not isInterrupted then
+        ToggleGameUI(false)
+        if setfpscap then
+            pcall(function() setfpscap(0) end)
+        end
+        screenGui:Destroy() 
+    end
+end)
