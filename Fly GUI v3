@@ -1,0 +1,478 @@
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+
+local speaker = Players.LocalPlayer
+
+-- ===== UI 建立 =====
+local main = Instance.new("ScreenGui")
+main.Name = "ModernFlyGui_Neon"
+main.Parent = speaker:WaitForChild("PlayerGui")
+main.ResetOnSpawn = false
+main.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- 主框架 (Main Frame)
+local Frame = Instance.new("Frame")
+Frame.Name = "MainFrame"
+Frame.Parent = main
+Frame.BackgroundColor3 = Color3.fromRGB(15, 16, 22)
+Frame.BackgroundTransparency = 0.15
+Frame.Position = UDim2.new(0.1, 0, 0.35, 0)
+Frame.Size = UDim2.new(0, 250, 0, 195)
+Frame.ClipsDescendants = true
+Frame.Active = true
+Frame.Draggable = true
+
+local FrameCorner = Instance.new("UICorner")
+FrameCorner.CornerRadius = UDim.new(0, 12)
+FrameCorner.Parent = Frame
+
+-- 主邊框 (RGB 霓虹邊框)
+local FrameStroke = Instance.new("UIStroke")
+FrameStroke.Thickness = 2
+FrameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+FrameStroke.Parent = Frame
+
+-- 頂部標題列 (Top Bar)
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Parent = Frame
+TopBar.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+TopBar.BackgroundTransparency = 0.2
+TopBar.Size = UDim2.new(1, 0, 0, 38)
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 12)
+TopCorner.Parent = TopBar
+
+local TopCover = Instance.new("Frame")
+TopCover.Parent = TopBar
+TopCover.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+TopCover.BackgroundTransparency = 0.2
+TopCover.BorderSizePixel = 0
+TopCover.Position = UDim2.new(0, 0, 1, -8)
+TopCover.Size = UDim2.new(1, 0, 0, 8)
+
+-- 標題 (RGB 霓虹文字)
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Parent = TopBar
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Position = UDim2.new(0, 12, 0, 0)
+TitleLabel.Size = UDim2.new(0, 150, 1, 0)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Text = "⚡ FLY GUI V3"
+TitleLabel.TextSize = 14
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- 窗口控制按鈕區
+local Controls = Instance.new("Frame")
+Controls.Parent = TopBar
+Controls.BackgroundTransparency = 1
+Controls.Position = UDim2.new(1, -65, 0, 0)
+Controls.Size = UDim2.new(0, 60, 1, 0)
+
+-- 最小化按鈕
+local mini = Instance.new("TextButton")
+mini.Parent = Controls
+mini.BackgroundTransparency = 1
+mini.Position = UDim2.new(0, 0, 0, 0)
+mini.Size = UDim2.new(0, 28, 1, 0)
+mini.Font = Enum.Font.GothamBold
+mini.Text = "-"
+mini.TextColor3 = Color3.fromRGB(180, 185, 200)
+mini.TextSize = 13
+
+-- 關閉按鈕
+local closebutton = Instance.new("TextButton")
+closebutton.Parent = Controls
+closebutton.BackgroundTransparency = 1
+closebutton.Position = UDim2.new(0, 30, 0, 0)
+closebutton.Size = UDim2.new(0, 28, 1, 0)
+closebutton.Font = Enum.Font.GothamBold
+closebutton.Text = "x"
+closebutton.TextColor3 = Color3.fromRGB(255, 90, 90)
+closebutton.TextSize = 14
+
+-- 內容容器
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Parent = Frame
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Position = UDim2.new(0, 10, 0, 46)
+ContentFrame.Size = UDim2.new(1, -20, 1, -54)
+
+-- ===== 功能按鈕 =====
+
+-- 穿牆按鈕
+local noclip = Instance.new("TextButton")
+noclip.Name = "NoclipButton"
+noclip.Parent = ContentFrame
+noclip.BackgroundColor3 = Color3.fromRGB(28, 31, 43)
+noclip.Position = UDim2.new(0, 0, 0, 0)
+noclip.Size = UDim2.new(0.48, -4, 0, 55)
+noclip.Font = Enum.Font.GothamBold
+noclip.Text = "穿牆\n[ OFF ]"
+noclip.TextColor3 = Color3.fromRGB(160, 165, 185)
+noclip.TextSize = 13
+
+local noclipCorner = Instance.new("UICorner")
+noclipCorner.CornerRadius = UDim.new(0, 10)
+noclipCorner.Parent = noclip
+
+local noclipStroke = Instance.new("UIStroke")
+noclipStroke.Color = Color3.fromRGB(45, 50, 68)
+noclipStroke.Thickness = 1.2
+noclipStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+noclipStroke.Parent = noclip
+
+-- 飛行按鈕
+local onof = Instance.new("TextButton")
+onof.Name = "FlyButton"
+onof.Parent = ContentFrame
+onof.BackgroundColor3 = Color3.fromRGB(28, 31, 43)
+onof.Position = UDim2.new(0.52, 4, 0, 0)
+onof.Size = UDim2.new(0.48, -4, 0, 55)
+onof.Font = Enum.Font.GothamBold
+onof.Text = "飛行\n[ OFF ]"
+onof.TextColor3 = Color3.fromRGB(160, 165, 185)
+onof.TextSize = 13
+
+local onofCorner = Instance.new("UICorner")
+onofCorner.CornerRadius = UDim.new(0, 10)
+onofCorner.Parent = onof
+
+local onofStroke = Instance.new("UIStroke")
+onofStroke.Color = Color3.fromRGB(45, 50, 68)
+onofStroke.Thickness = 1.2
+onofStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+onofStroke.Parent = onof
+
+-- 速度控制面板
+local SpeedPanel = Instance.new("Frame")
+SpeedPanel.Parent = ContentFrame
+SpeedPanel.BackgroundColor3 = Color3.fromRGB(22, 24, 34)
+SpeedPanel.BackgroundTransparency = 0.3
+SpeedPanel.Position = UDim2.new(0, 0, 0, 65)
+SpeedPanel.Size = UDim2.new(1, 0, 0, 55)
+
+local speedCorner = Instance.new("UICorner")
+speedCorner.CornerRadius = UDim.new(0, 10)
+speedCorner.Parent = SpeedPanel
+
+local speedStroke = Instance.new("UIStroke")
+speedStroke.Color = Color3.fromRGB(40, 45, 60)
+speedStroke.Thickness = 1
+speedStroke.Parent = SpeedPanel
+
+-- 減速按鈕
+local mine = Instance.new("TextButton")
+mine.Parent = SpeedPanel
+mine.BackgroundColor3 = Color3.fromRGB(35, 39, 54)
+mine.Position = UDim2.new(0, 8, 0.5, -17)
+mine.Size = UDim2.new(0, 34, 0, 34)
+mine.Font = Enum.Font.GothamBold
+mine.Text = "-"
+mine.TextColor3 = Color3.fromRGB(255, 255, 255)
+mine.TextSize = 14
+
+local mineCorner = Instance.new("UICorner")
+mineCorner.CornerRadius = UDim.new(0, 8)
+mineCorner.Parent = mine
+
+-- 速度顯示
+local speed = Instance.new("TextLabel")
+speed.Parent = SpeedPanel
+speed.BackgroundTransparency = 1
+speed.Position = UDim2.new(0, 45, 0, 0)
+speed.Size = UDim2.new(1, -90, 1, 0)
+speed.Font = Enum.Font.GothamBold
+speed.Text = "速度: 1"
+speed.TextColor3 = Color3.fromRGB(240, 240, 255)
+speed.TextSize = 14
+
+-- 加速按鈕
+local plus = Instance.new("TextButton")
+plus.Parent = SpeedPanel
+plus.BackgroundColor3 = Color3.fromRGB(35, 39, 54)
+plus.Position = UDim2.new(1, -42, 0.5, -17)
+plus.Size = UDim2.new(0, 34, 0, 34)
+plus.Font = Enum.Font.GothamBold
+plus.Text = "+"
+plus.TextColor3 = Color3.fromRGB(255, 255, 255)
+plus.TextSize = 14
+
+local plusCorner = Instance.new("UICorner")
+plusCorner.CornerRadius = UDim.new(0, 8)
+plusCorner.Parent = plus
+
+-- ===== 狀態變量與邏輯 =====
+local speeds = 1
+local noclipOn = false
+local noclipConnection = nil
+local flying = false
+local flyConnection = nil
+local isMinimized = false
+
+-- 按鍵方向對映監聽 (修復了按鍵無反應的問題)
+local ctrl = {f = 0, b = 0, l = 0, r = 0, u = 0, d = 0}
+local keyMap = {
+    [Enum.KeyCode.W] = "f",
+    [Enum.KeyCode.S] = "b",
+    [Enum.KeyCode.A] = "l",
+    [Enum.KeyCode.D] = "r",
+    [Enum.KeyCode.Space] = "u",
+    [Enum.KeyCode.LeftShift] = "d",
+    [Enum.KeyCode.E] = "u",
+    [Enum.KeyCode.Q] = "d"
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    local dir = keyMap[input.KeyCode]
+    if dir then
+        ctrl[dir] = (dir == "b" or dir == "l" or dir == "d") and -1 or 1
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    local dir = keyMap[input.KeyCode]
+    if dir then
+        ctrl[dir] = 0
+    end
+end)
+
+-- ===== 🌈 動態 RGB / 霓虹彩虹循環 =====
+local hue = 0
+RunService.RenderStepped:Connect(function(delta)
+    hue = (hue + delta * 0.25) % 1
+    local rgbColor = Color3.fromHSV(hue, 0.8, 1)
+    
+    FrameStroke.Color = rgbColor
+    TitleLabel.TextColor3 = rgbColor
+
+    if noclipOn then
+        noclipStroke.Color = rgbColor
+    end
+    if flying then
+        onofStroke.Color = rgbColor
+    end
+end)
+
+-- 補間動畫輔助函式
+local function tween(obj, properties, time, easingStyle)
+    TweenService:Create(obj, TweenInfo.new(time or 0.2, easingStyle or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties):Play()
+end
+
+-- 動態按鈕互動 (Hover & Click 特效)
+local function setupInteractions(btn, baseColor, hoverColor)
+    btn.MouseEnter:Connect(function()
+        tween(btn, {BackgroundColor3 = hoverColor, Size = btn.Size + UDim2.new(0, 2, 0, 2), Position = btn.Position - UDim2.new(0, 1, 0, 1)}, 0.15)
+    end)
+    btn.MouseLeave:Connect(function()
+        tween(btn, {BackgroundColor3 = baseColor, Size = btn.Size - UDim2.new(0, 2, 0, 2), Position = btn.Position + UDim2.new(0, 1, 0, 1)}, 0.15)
+    end)
+    btn.MouseButton1Down:Connect(function()
+        tween(btn, {Size = btn.Size - UDim2.new(0, 4, 0, 4), Position = btn.Position + UDim2.new(0, 2, 0, 2)}, 0.08)
+    end)
+    btn.MouseButton1Up:Connect(function()
+        tween(btn, {Size = btn.Size + UDim2.new(0, 4, 0, 4), Position = btn.Position - UDim2.new(0, 2, 0, 2)}, 0.08)
+    end)
+end
+
+setupInteractions(mine, Color3.fromRGB(35, 39, 54), Color3.fromRGB(50, 56, 76))
+setupInteractions(plus, Color3.fromRGB(35, 39, 54), Color3.fromRGB(50, 56, 76))
+
+-- 系統發送 Notifications
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "⚡ 飛行 GUI V3";
+        Text = "作者:Xu";
+        Icon = "rbxthumb://type=Asset&id=5107182114&w=150&h=150";
+        Duration = 4;
+    })
+end)
+
+-- ===== 穿牆邏輯 =====
+noclip.MouseButton1Click:Connect(function()
+    noclipOn = not noclipOn
+    if noclipOn then
+        noclip.Text = "穿牆\n[ ON ]"
+        noclip.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tween(noclip, {BackgroundColor3 = Color3.fromRGB(0, 170, 120)})
+        
+        noclipConnection = RunService.Stepped:Connect(function()
+            local char = speaker.Character
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        noclip.Text = "穿牆\n[ OFF ]"
+        noclip.TextColor3 = Color3.fromRGB(160, 165, 185)
+        tween(noclip, {BackgroundColor3 = Color3.fromRGB(28, 31, 43)})
+        noclipStroke.Color = Color3.fromRGB(45, 50, 68)
+        
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        local char = speaker.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+end)
+
+-- ===== 關閉飛行並清理物件 =====
+local function stopFlying()
+    flying = false
+    onof.Text = "飛行\n[ OFF ]"
+    onof.TextColor3 = Color3.fromRGB(160, 165, 185)
+    tween(onof, {BackgroundColor3 = Color3.fromRGB(28, 31, 43)})
+    onofStroke.Color = Color3.fromRGB(45, 50, 68)
+
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+
+    local char = speaker.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+        if root then
+            local bg = root:FindFirstChild("FlyBodyGyro")
+            local bv = root:FindFirstChild("FlyBodyVelocity")
+            if bg then bg:Destroy() end
+            if bv then bv:Destroy() end
+        end
+        if char:FindFirstChild("Animate") then
+            char.Animate.Disabled = false
+        end
+    end
+end
+
+-- ===== 飛行邏輯 (已徹底修復) =====
+onof.MouseButton1Click:Connect(function()
+    if flying then
+        stopFlying()
+    else
+        flying = true
+        onof.Text = "飛行\n[ ON ]"
+        onof.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tween(onof, {BackgroundColor3 = Color3.fromRGB(120, 60, 235)})
+
+        local char = speaker.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+
+        if not rootPart or not hum then return end
+
+        hum.PlatformStand = true
+        if char:FindFirstChild("Animate") then
+            char.Animate.Disabled = true
+        end
+
+        -- 建立飛行物理力
+        local bg = Instance.new("BodyGyro")
+        bg.Name = "FlyBodyGyro"
+        bg.P = 9e4
+        bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+        bg.cframe = rootPart.CFrame
+        bg.Parent = rootPart
+
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "FlyBodyVelocity"
+        bv.velocity = Vector3.new(0, 0, 0)
+        bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.Parent = rootPart
+
+        local baseSpeed = 50
+
+        flyConnection = RunService.RenderStepped:Connect(function()
+            if not flying or not rootPart or not rootPart.Parent or not hum or hum.Health <= 0 then
+                stopFlying()
+                return
+            end
+
+            local cam = workspace.CurrentCamera
+            local forward = cam.CFrame.LookVector * (ctrl.f + ctrl.b)
+            local right = cam.CFrame.RightVector * (ctrl.r + ctrl.l)
+            local up = Vector3.new(0, ctrl.u + ctrl.d, 0)
+
+            local moveDir = forward + right + up
+
+            if moveDir.Magnitude > 0 then
+                bv.velocity = moveDir.Unit * (baseSpeed * speeds)
+            else
+                bv.velocity = Vector3.new(0, 0, 0)
+            end
+
+            bg.cframe = cam.CFrame
+        end)
+    end
+end)
+
+-- 角色重生時自動清理飛行
+speaker.CharacterAdded:Connect(function()
+    stopFlying()
+end)
+
+-- 加速按鈕
+plus.MouseButton1Down:Connect(function()
+    speeds = speeds + 1
+    speed.Text = "速度: " .. tostring(speeds)
+end)
+
+-- 減速按鈕
+mine.MouseButton1Down:Connect(function()
+    if speeds <= 1 then
+        speeds = 1
+        speed.Text = "最低速度: 1"
+        task.wait(0.8)
+        speed.Text = "速度: " .. tostring(speeds)
+    else
+        speeds = speeds - 1
+        speed.Text = "速度: " .. tostring(speeds)
+    end
+end)
+
+-- ===== 視窗控制邏輯 =====
+
+-- 關閉動畫
+closebutton.MouseButton1Click:Connect(function()
+    stopFlying()
+    if noclipConnection then noclipConnection:Disconnect() end
+    tween(Frame, {Size = UDim2.new(0, 250, 0, 0), BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Back)
+    task.wait(0.2)
+    main:Destroy()
+end)
+
+-- 縮小 / 展開動畫
+mini.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        ContentFrame.Visible = false
+        tween(Frame, {Size = UDim2.new(0, 250, 0, 38)}, 0.25, Enum.EasingStyle.Quart)
+        mini.Text = "□"
+    else
+        tween(Frame, {Size = UDim2.new(0, 250, 0, 195)}, 0.25, Enum.EasingStyle.Quart)
+        task.wait(0.12)
+        ContentFrame.Visible = true
+        mini.Text = "—"
+    end
+end)
