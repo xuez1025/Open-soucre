@@ -215,15 +215,13 @@ local flying = false
 local flyConnection = nil
 local isMinimized = false
 
--- 按鍵方向對映監聽 (修復了按鍵無反應的問題)
+-- 按鍵方向對映監聽 (已移除 Space 與 LeftShift)
 local ctrl = {f = 0, b = 0, l = 0, r = 0, u = 0, d = 0}
 local keyMap = {
     [Enum.KeyCode.W] = "f",
     [Enum.KeyCode.S] = "b",
     [Enum.KeyCode.A] = "l",
     [Enum.KeyCode.D] = "r",
-    [Enum.KeyCode.Space] = "u",
-    [Enum.KeyCode.LeftShift] = "d",
     [Enum.KeyCode.E] = "u",
     [Enum.KeyCode.Q] = "d"
 }
@@ -365,7 +363,7 @@ local function stopFlying()
     end
 end
 
--- ===== 飛行邏輯 (已徹底修復) =====
+-- ===== 飛行邏輯 =====
 onof.MouseButton1Click:Connect(function()
     if flying then
         stopFlying()
