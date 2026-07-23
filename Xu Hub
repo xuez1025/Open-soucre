@@ -505,7 +505,6 @@ local function globalTweenTo(targetCFrame, callback)
 
     _G.isMovementActive = true
     
-    -- 開啟 Tween 時，呼叫全域控制啟用 Noclip
     _G.SetNoclipState(true)
 
     _G.ActiveTween = TweenService:Create(
@@ -538,7 +537,7 @@ local function IsSilentAimAlly(player)
         and main.Allies:FindFirstChild("Container")
         and main.Allies.Container:FindFirstChild("Allies")
         and main.Allies.Container.Allies:FindFirstChild("ScrollingFrame")
-        and main.Allies.Container.Allies.ScrollingFrame:FindFirstChild("Frame")
+        and main.Allies.Container.Allies:FindFirstChild("Frame")
     if not frame then return false end
     return frame:FindFirstChild(player.Name) ~= nil
 end
@@ -563,78 +562,79 @@ local function GetSilentAimOrigin()
     return p
 end
 
-local SnapLineThickness = 2.5 -- 基礎粗細
-local RainbowSnapLine = true   -- 開啟動態虹光呼吸效果（設為 false 則為單一發光色）
-local LaserPulseSpeed = 8      -- 呼吸燈/霓虹變色速度 (數值越高變色越快)
-local BaseLaserColor = Color3.fromRGB(255, 0, 100) -- 非虹光模式下的發光主色
+local SnapLineThickness = 2.8
+local RainbowSnapLine = true
+local LaserPulseSpeed = 10
+local BaseLaserColor = Color3.fromRGB(0, 240, 255) -- 高亮霓虹青色
 
 local FovCircle = Drawing.new("Circle")
-FovCircle.NumSides = 64
-FovCircle.Thickness = 2
+FovCircle.NumSides = 96
+FovCircle.Thickness = 1.5
 FovCircle.Color = Color3.fromRGB(255, 255, 255)
 FovCircle.Filled = false
 FovCircle.Transparency = 1
 FovCircle.Visible = false
 table.insert(_G.G_SilentAimDrawings, FovCircle)
 
+local LaserGlowLayers = {}
+for i = 1, 7 do
+    local glowLine = Drawing.new("Line")
+    glowLine.Visible = false
+    table.insert(_G.G_SilentAimDrawings, glowLine)
+    table.insert(LaserGlowLayers, glowLine)
+end
+
 local SnapLineCore = Drawing.new("Line")
 SnapLineCore.Visible = false
 table.insert(_G.G_SilentAimDrawings, SnapLineCore)
 
-local SnapLineGlow = Drawing.new("Line")
-SnapLineGlow.Visible = false
-table.insert(_G.G_SilentAimDrawings, SnapLineGlow)
+local LaserBeads = {}
+for i = 1, 6 do
+    local bead = Drawing.new("Circle")
+    bead.NumSides = 16
+    bead.Filled = true
+    bead.Visible = false
+    table.insert(_G.G_SilentAimDrawings, bead)
+    table.insert(LaserBeads, bead)
+end
 
-local SnapLineGlowMid = Drawing.new("Line")
-SnapLineGlowMid.Visible = false
-table.insert(_G.G_SilentAimDrawings, SnapLineGlowMid)
+local TargetLockRings = {}
+for i = 1, 4 do
+    local ring = Drawing.new("Circle")
+    ring.NumSides = 48
+    ring.Thickness = (i == 1) and 2.5 or 1.2
+    ring.Filled = false
+    ring.Visible = false
+    table.insert(_G.G_SilentAimDrawings, ring)
+    table.insert(TargetLockRings, ring)
+end
 
-local SnapLineGlowOuter = Drawing.new("Line")
-SnapLineGlowOuter.Visible = false
-table.insert(_G.G_SilentAimDrawings, SnapLineGlowOuter)
+local TargetLockCenterDot = Drawing.new("Circle")
+TargetLockCenterDot.NumSides = 20
+TargetLockCenterDot.Filled = true
+TargetLockCenterDot.Visible = false
+table.insert(_G.G_SilentAimDrawings, TargetLockCenterDot)
 
-local LaserBead1 = Drawing.new("Circle")
-LaserBead1.NumSides = 12
-LaserBead1.Filled = true
-LaserBead1.Visible = false
-table.insert(_G.G_SilentAimDrawings, LaserBead1)
-
-local LaserBead2 = Drawing.new("Circle")
-LaserBead2.NumSides = 12
-LaserBead2.Filled = true
-LaserBead2.Visible = false
-table.insert(_G.G_SilentAimDrawings, LaserBead2)
-
-local TargetLockRing = Drawing.new("Circle")
-TargetLockRing.NumSides = 32
-TargetLockRing.Thickness = 1.5
-TargetLockRing.Filled = false
-TargetLockRing.Visible = false
-table.insert(_G.G_SilentAimDrawings, TargetLockRing)
-
-local TargetLockRingOuter = Drawing.new("Circle")
-TargetLockRingOuter.NumSides = 32
-TargetLockRingOuter.Thickness = 1
-TargetLockRingOuter.Filled = false
-TargetLockRingOuter.Visible = false
-table.insert(_G.G_SilentAimDrawings, TargetLockRingOuter)
-
-local TargetLockRingInner = Drawing.new("Circle")
-TargetLockRingInner.NumSides = 16
-TargetLockRingInner.Filled = true
-TargetLockRingInner.Visible = false
-table.insert(_G.G_SilentAimDrawings, TargetLockRingInner)
+local TargetCornerBrackets = {}
+for i = 1, 8 do
+    local line = Drawing.new("Line")
+    line.Thickness = 2.2
+    line.Visible = false
+    table.insert(_G.G_SilentAimDrawings, line)
+    table.insert(TargetCornerBrackets, line)
+end
 
 local currentSilentAimTarget = nil
 local currentSilentAimTargetPos = nil
+local currentTargetDistance = math.huge
 
 local function GetClosestTarget()
     local closest = nil
-    local shortest = math.huge 
+    local shortest = math.huge
 
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
+    if not myRoot then return nil, math.huge end
 
     local function check(character)
         if not IsAlive(character) then return end
@@ -672,7 +672,7 @@ local function GetClosestTarget()
             end
         end
     end
-    
+
     if _G.G_SilentAimTargetMobs then
         local enemiesFolder = workspace:FindFirstChild("Enemies")
         if enemiesFolder then
@@ -681,221 +681,258 @@ local function GetClosestTarget()
             end
         end
     end
-    return closest
+    return closest, shortest
 end
 
-if not disableHook then
-    pcall(function()
-        local MouseModuleInstance = ReplicatedStorage:FindFirstChild("Mouse")
-        if MouseModuleInstance then
-            local MouseModule = require(MouseModuleInstance)
-            if typeof(MouseModule) == "table" then
-                local realStore = {}
-                realStore.Hit = rawget(MouseModule, "Hit")
-                realStore.Target = rawget(MouseModule, "Target")
+if not _G.G_SilentAimHooked then
+    _G.G_SilentAimHooked = true
 
-                local mmt = getrawmetatable(MouseModule)
-                if mmt and not isreadonly(mmt) then
+    task.spawn(function()
+        local MouseModuleInstance = ReplicatedStorage:WaitForChild("Mouse", 5)
+        if MouseModuleInstance then
+            pcall(function()
+                local MouseModule = require(MouseModuleInstance)
+                if typeof(MouseModule) == "table" then
+                    local realStore = {
+                        Hit = rawget(MouseModule, "Hit"),
+                        Target = rawget(MouseModule, "Target")
+                    }
+
+                    local mmt = getrawmetatable(MouseModule) or {}
                     setreadonly(mmt, false)
-                else
-                    mmt = {}
+
+                    rawset(MouseModule, "Hit", nil)
+                    rawset(MouseModule, "Target", nil)
+
+                    mmt.__index = function(self, key)
+                        if key == "Hit" then
+                            if _G.G_SilentAimEnabled and currentSilentAimTargetPos then
+                                return CFrame.new(currentSilentAimTargetPos)
+                            end
+                            return realStore.Hit
+                        elseif key == "Target" then
+                            if _G.G_SilentAimEnabled and currentSilentAimTarget then
+                                return currentSilentAimTarget
+                            end
+                            return realStore.Target
+                        end
+                        return rawget(self, key)
+                    end
+
+                    mmt.__newindex = function(self, key, value)
+                        if key == "Hit" or key == "Target" then
+                            realStore[key] = value
+                        else
+                            rawset(self, key, value)
+                        end
+                    end
+                    setreadonly(mmt, true)
                     setmetatable(MouseModule, mmt)
                 end
-
-                rawset(MouseModule, "Hit", nil)
-                rawset(MouseModule, "Target", nil)
-
-                mmt.__index = function(self, key)
-                    if key == "Hit" then
-                        if _G.G_SilentAimEnabled and currentSilentAimTargetPos then
-                            return CFrame.new(currentSilentAimTargetPos)
-                        end
-                        return realStore.Hit
-                    elseif key == "Target" then
-                        if _G.G_SilentAimEnabled and currentSilentAimTarget then
-                            return currentSilentAimTarget
-                        end
-                        return realStore.Target
-                    end
-                    return rawget(self, key)
-                end
-
-                mmt.__newindex = function(self, key, value)
-                    if key == "Hit" or key == "Target" then
-                        realStore[key] = value
-                    else
-                        rawset(self, key, value)
-                    end
-                end
-                setreadonly(mmt, true)
-            end
+            end)
         end
     end)
 
-    local oldIndex
-    oldIndex = hookmetamethod(game, "__index", function(self, key)
-        if not checkcaller() and _G.G_SilentAimEnabled and currentSilentAimTargetPos and self == mouse then
-            local targetPos = currentSilentAimTargetPos
-            local camPos = Camera.CFrame.Position
-            
-            if key == "Hit" then
-                return CFrame.new(targetPos)
-            elseif key == "Target" then
-                return currentSilentAimTarget
-            elseif key == "UnitRay" then
-                return Ray.new(camPos, (targetPos - camPos).Unit)
-            elseif key == "Origin" then
-                return camPos
-            elseif key == "Direction" then
-                return (targetPos - camPos).Unit
+    local gmt = getrawmetatable(game)
+    if gmt then
+        setreadonly(gmt, false)
+        local oldIndex = gmt.__index
+        local mouse = LocalPlayer:GetMouse()
+
+        gmt.__index = newcclosure(function(self, key)
+            if not checkcaller() and _G.G_SilentAimEnabled and currentSilentAimTargetPos and self == mouse then
+                local targetPos = currentSilentAimTargetPos
+                local camPos = Camera.CFrame.Position
+
+                if key == "Hit" then
+                    return CFrame.new(targetPos)
+                elseif key == "Target" then
+                    return currentSilentAimTarget
+                elseif key == "UnitRay" then
+                    return Ray.new(camPos, (targetPos - camPos).Unit)
+                elseif key == "Origin" then
+                    return CFrame.new(camPos)
+                elseif key == "Direction" then
+                    return (targetPos - camPos).Unit
+                end
             end
-        end
-        return oldIndex(self, key)
-    end)
+            return oldIndex(self, key)
+        end)
+        setreadonly(gmt, true)
+    end
 end
+
+local function HideAllLaserDrawings()
+    for _, glow in ipairs(LaserGlowLayers) do glow.Visible = false end
+    SnapLineCore.Visible = false
+    for _, bead in ipairs(LaserBeads) do bead.Visible = false end
+    for _, ring in ipairs(TargetLockRings) do ring.Visible = false end
+    TargetLockCenterDot.Visible = false
+    for _, bracket in ipairs(TargetCornerBrackets) do bracket.Visible = false end
+end
+
+if _G.G_SilentAimLoop then _G.G_SilentAimLoop:Disconnect() end
 
 _G.G_SilentAimLoop = RunService.RenderStepped:Connect(function()
     local origin = GetSilentAimOrigin()
+    local clockTime = os.clock()
 
     if _G.G_SilentAimShowFOV then
         FovCircle.Visible = true
         FovCircle.Radius = _G.G_SilentAimFOV or 150
         FovCircle.Position = origin
-        FovCircle.Thickness = _G.G_SilentAimFOVThickness or 2
-        FovCircle.Transparency = _G.G_SilentAimFOVTransparency or 1
+        FovCircle.Thickness = _G.G_SilentAimFOVThickness or 1.8
+        FovCircle.Color = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
+        FovCircle.Transparency = _G.G_SilentAimFOVTransparency or 0.85
     else
         FovCircle.Visible = false
     end
 
-    currentSilentAimTarget = GetClosestTarget()
+    currentSilentAimTarget, currentTargetDistance = GetClosestTarget()
     currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
     _G.G_SilentAimTargetPos = currentSilentAimTargetPos
 
     if _G.G_SilentAimShowLine and currentSilentAimTargetPos then
         local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
         if onScreen then
-            local clockTime = os.clock()
             local targetScreenPos = Vector2.new(pos.X, pos.Y)
             local lineVector = targetScreenPos - origin
-            
-            -- 高級光學動態色彩計算（引入色差 Phase Shift 技術）
-            local laserColor = BaseLaserColor
-            local glowColorOuter = BaseLaserColor
-            local glowColorMid = BaseLaserColor
-            
-            if RainbowSnapLine then
-                local baseHue = (clockTime * LaserPulseSpeed * 0.04) % 1
-                laserColor = Color3.fromHSV(baseHue, 0.85, 1)
-                -- 外層和中層色相微調，營造華麗的高級邊緣光暈（色差視覺感）
-                glowColorMid = Color3.fromHSV((baseHue + 0.04) % 1, 0.85, 0.95)
-                glowColorOuter = Color3.fromHSV((baseHue + 0.08) % 1, 0.80, 0.90)
-            else
-                -- 單色模式：引入微妙的亮暗冷暖 Lerp 讓色澤更飽滿
-                local lerpFactor = (math.sin(clockTime * LaserPulseSpeed) + 1) / 2
-                laserColor = BaseLaserColor:Lerp(Color3.fromRGB(255, 230, 240), lerpFactor * 0.2)
-            end
-            
-            -- 複合雙重呼吸波形
+
+            local clampedDist = math.clamp(currentTargetDistance, 10, 300)
+            local distFactor = (clampedDist - 10) / (300 - 10)
+
+            local distanceBaseRadius = math.clamp(38 * (1 - distFactor * 0.5), 14, 45)
+            local glowThicknessScale = 1 + (distFactor * 0.5)
+            local particleSpeedMultiplier = 1.2 + ((1 - distFactor) * 1.8)
+
+            local baseHue = (clockTime * LaserPulseSpeed * 0.06) % 1
             local pulseWave = math.sin(clockTime * LaserPulseSpeed)
-            local cosWave = math.cos(clockTime * LaserPulseSpeed * 1.3)
-            local glowAlphaMultiplier = 0.75 + (pulseWave * 0.25)
-            
-            -- [層級 1：最外層環境氛圍光暈] — 超寬幅 Bloom 暈染
-            SnapLineGlowOuter.Visible = true
-            SnapLineGlowOuter.From = origin
-            SnapLineGlowOuter.To = targetScreenPos
-            SnapLineGlowOuter.Color = glowColorOuter
-            SnapLineGlowOuter.Thickness = SnapLineThickness * 8.5
-            SnapLineGlowOuter.Transparency = 0.10 * glowAlphaMultiplier
+            local cosPulse = math.cos(clockTime * LaserPulseSpeed * 1.4)
+            local alphaPulse = 0.85 + (pulseWave * 0.15)
 
-            -- [層級 2：中層能量擴散波]
-            SnapLineGlowMid.Visible = true
-            SnapLineGlowMid.From = origin
-            SnapLineGlowMid.To = targetScreenPos
-            SnapLineGlowMid.Color = glowColorMid
-            SnapLineGlowMid.Thickness = SnapLineThickness * 4.0
-            SnapLineGlowMid.Transparency = 0.30 * glowAlphaMultiplier
+            local coreColor, glowColorBase
+            if RainbowSnapLine then
+                coreColor = Color3.fromRGB(255, 255, 255)
+                glowColorBase = Color3.fromHSV(baseHue, 0.85, 1)
+            else
+                local lerpFactor = (pulseWave + 1) / 2
+                glowColorBase = BaseLaserColor:Lerp(Color3.fromRGB(180, 240, 255), lerpFactor * 0.4)
+                coreColor = Color3.fromRGB(245, 255, 255)
+            end
 
-            -- [層級 3：內層高飽和強光核心 Aura]
-            SnapLineGlow.Visible = true
-            SnapLineGlow.From = origin
-            SnapLineGlow.To = targetScreenPos
-            SnapLineGlow.Color = laserColor
-            SnapLineGlow.Thickness = SnapLineThickness * 1.8
-            SnapLineGlow.Transparency = 0.70 * glowAlphaMultiplier
+            local glowMultipliers = {14.0, 9.0, 5.5, 3.2, 2.0, 1.3, 0.8}
+            local alphaMultipliers = {0.03, 0.06, 0.12, 0.22, 0.38, 0.60, 0.85}
 
-            -- [層級 4：最內層高亮射線實體芯] — 仿實體雷射的白熾芯
+            for i, glow in ipairs(LaserGlowLayers) do
+                glow.Visible = true
+                glow.From = origin
+                glow.To = targetScreenPos
+                glow.Thickness = SnapLineThickness * glowMultipliers[i] * glowThicknessScale
+
+                if RainbowSnapLine then
+                    local phaseShift = (baseHue + (i * 0.02)) % 1
+                    glow.Color = Color3.fromHSV(phaseShift, 0.8, 1)
+                else
+                    glow.Color = glowColorBase
+                end
+                glow.Transparency = alphaMultipliers[i] * alphaPulse
+            end
+
             SnapLineCore.Visible = true
             SnapLineCore.From = origin
             SnapLineCore.To = targetScreenPos
-            SnapLineCore.Color = RainbowSnapLine and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(255, 215, 235)
-            SnapLineCore.Thickness = SnapLineThickness * 0.55
+            SnapLineCore.Color = coreColor
+            SnapLineCore.Thickness = SnapLineThickness * 0.8
             SnapLineCore.Transparency = 1.0
 
-            -- ==================== [新增特效] 動態電漿能量流 (Plasma Beads) ====================
-            -- 粒子 1
-            local progress1 = (clockTime * 0.75) % 1
-            LaserBead1.Visible = true
-            LaserBead1.Position = origin + (lineVector * progress1)
-            LaserBead1.Radius = SnapLineThickness * (1.5 + math.sin(clockTime * 15) * 0.4)
-            LaserBead1.Color = Color3.fromRGB(255, 255, 255)
-            LaserBead1.Transparency = 0.85 * (1 - progress1) -- 接近目標時自然淡出
-            
-            -- 粒子 2 (相位交錯)
-            local progress2 = (clockTime * 0.75 + 0.5) % 1
-            LaserBead2.Visible = true
-            LaserBead2.Position = origin + (lineVector * progress2)
-            LaserBead2.Radius = SnapLineThickness * (1.2 + math.cos(clockTime * 12) * 0.3)
-            LaserBead2.Color = laserColor
-            LaserBead2.Transparency = 0.70 * (1 - progress2)
+            for i, bead in ipairs(LaserBeads) do
+                local speed = (0.4 + (i * 0.1)) * particleSpeedMultiplier
+                local offset = (i - 1) * (1 / #LaserBeads)
+                local progress = (clockTime * speed + offset) % 1
 
-            -- ==================== [新增特效] 三層式高級戰術鎖定 HUD ====================
-            local baseRingRadius = 7 + (pulseWave + 1) * 3
-            
-            -- 1. 主鎖定環
-            TargetLockRing.Visible = true
-            TargetLockRing.Position = targetScreenPos
-            TargetLockRing.Radius = baseRingRadius
-            TargetLockRing.Color = RainbowSnapLine and Color3.fromRGB(255, 255, 255) or laserColor
-            TargetLockRing.Transparency = 0.5 + ((math.cos(clockTime * LaserPulseSpeed) + 1) / 2) * 0.4
+                bead.Visible = true
+                bead.Position = origin + (lineVector * progress)
 
-            -- 2. 外圍相位擴散環 (淡雅、科幻刻度感)
-            TargetLockRingOuter.Visible = true
-            TargetLockRingOuter.Position = targetScreenPos
-            TargetLockRingOuter.Radius = baseRingRadius * 1.75 + (cosWave * 2)
-            TargetLockRingOuter.Color = glowColorMid
-            TargetLockRingOuter.Transparency = 0.22 * glowAlphaMultiplier
+                local beadPulse = math.sin(clockTime * 20 + i) * 0.5 + 1
+                bead.Radius = SnapLineThickness * (1.1 + beadPulse * 0.6)
+                bead.Color = RainbowSnapLine and Color3.fromHSV((baseHue + progress * 0.3) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
 
-            -- 3. 中心高亮精確聚焦針點 (Solid Core Pointer)
-            TargetLockRingInner.Visible = true
-            TargetLockRingInner.Position = targetScreenPos
-            TargetLockRingInner.Radius = 2.0 + (pulseWave * 0.4)
-            TargetLockRingInner.Color = Color3.fromRGB(255, 255, 255)
-            TargetLockRingInner.Transparency = 0.95
-            
+                local fadeMask = math.sin(progress * math.pi) -- 兩端漸隱，中間亮起
+                bead.Transparency = 0.95 * fadeMask
+            end
+
+            local currentRadius = distanceBaseRadius + (pulseWave * 2.5)
+
+            TargetLockRings[1].Visible = true
+            TargetLockRings[1].Position = targetScreenPos
+            TargetLockRings[1].Radius = currentRadius
+            TargetLockRings[1].Color = glowColorBase
+            TargetLockRings[1].Transparency = 0.9
+
+            TargetLockRings[2].Visible = true
+            TargetLockRings[2].Position = targetScreenPos
+            TargetLockRings[2].Radius = currentRadius * 1.55 + (cosPulse * 4)
+            TargetLockRings[2].Color = RainbowSnapLine and Color3.fromHSV((baseHue + 0.12) % 1, 0.85, 1) or glowColorBase
+            TargetLockRings[2].Transparency = 0.4 * alphaPulse
+
+            TargetLockRings[3].Visible = true
+            TargetLockRings[3].Position = targetScreenPos
+            TargetLockRings[3].Radius = math.max(3, currentRadius * 0.4 - (pulseWave * 1.5))
+            TargetLockRings[3].Color = Color3.fromRGB(255, 255, 255)
+            TargetLockRings[3].Transparency = 0.95
+
+            TargetLockRings[4].Visible = true
+            TargetLockRings[4].Position = targetScreenPos
+            TargetLockRings[4].Radius = currentRadius * 2.2
+            TargetLockRings[4].Color = glowColorBase
+            TargetLockRings[4].Transparency = 0.15
+
+            TargetLockCenterDot.Visible = true
+            TargetLockCenterDot.Position = targetScreenPos
+            TargetLockCenterDot.Radius = math.clamp(distanceBaseRadius * 0.12, 1.8, 3.5)
+            TargetLockCenterDot.Color = RainbowSnapLine and Color3.fromHSV(baseHue, 1, 1) or Color3.fromRGB(255, 255, 255)
+            TargetLockCenterDot.Transparency = 1.0
+
+            local boxSize = currentRadius * 1.3
+            local bracketLen = boxSize * 0.45
+            local rotation = clockTime * (1.5 + (1 - distFactor)) -- 近距離旋轉更快
+
+            local corners = {
+                Vector2.new(-boxSize, -boxSize),
+                Vector2.new(boxSize, -boxSize),
+                Vector2.new(boxSize, boxSize),
+                Vector2.new(-boxSize, boxSize)
+            }
+
+            for i = 1, 4 do
+                local offset = corners[i]
+                local cosR, sinR = math.cos(rotation), math.sin(rotation)
+                local rotX = offset.X * cosR - offset.Y * sinR
+                local rotY = offset.X * sinR + offset.Y * cosR
+                local cornerPos = targetScreenPos + Vector2.new(rotX, rotY)
+
+                local dirX = (i == 1 or i == 4) and 1 or -1
+                local dirY = (i == 1 or i == 2) and 1 or -1
+
+                local lineH = TargetCornerBrackets[(i - 1) * 2 + 1]
+                lineH.Visible = true
+                lineH.From = cornerPos
+                lineH.To = cornerPos + Vector2.new(dirX * bracketLen * cosR, dirX * bracketLen * sinR)
+                lineH.Color = glowColorBase
+                lineH.Transparency = 0.85
+
+                local lineV = TargetCornerBrackets[(i - 1) * 2 + 2]
+                lineV.Visible = true
+                lineV.From = cornerPos
+                lineV.To = cornerPos + Vector2.new(-dirY * bracketLen * sinR, dirY * bracketLen * cosR)
+                lineV.Color = glowColorBase
+                lineV.Transparency = 0.85
+            end
         else
-            -- 目標不在屏幕上時隱藏所有繪圖元件
-            SnapLineCore.Visible = false
-            SnapLineGlow.Visible = false
-            SnapLineGlowMid.Visible = false
-            SnapLineGlowOuter.Visible = false
-            LaserBead1.Visible = false
-            LaserBead2.Visible = false
-            TargetLockRing.Visible = false
-            TargetLockRingOuter.Visible = false
-            TargetLockRingInner.Visible = false
+            HideAllLaserDrawings()
         end
     else
-        -- 關閉射線顯示時隱藏所有繪圖元件
-        SnapLineCore.Visible = false
-        SnapLineGlow.Visible = false
-        SnapLineGlowMid.Visible = false
-        SnapLineGlowOuter.Visible = false
-        LaserBead1.Visible = false
-        LaserBead2.Visible = false
-        TargetLockRing.Visible = false
-        TargetLockRingOuter.Visible = false
-        TargetLockRingInner.Visible = false
+        HideAllLaserDrawings()
     end
 end)
 
@@ -4020,7 +4057,8 @@ Tabs["遊戲內設定"]:Button({ Title = "移除岩漿",
 })
 
 Tabs["遊戲內設定"]:Button({
-    Title = "移除鬼船傷害",
+    Title = "清除鬼船傷害物件",
+    Desc = "清理對玩家有傷害的物件",
     Callback = function()
         local lavaPartsFolder = workspace.Map.GhostShipInterior.LavaParts
         local children = lavaPartsFolder:GetChildren()
