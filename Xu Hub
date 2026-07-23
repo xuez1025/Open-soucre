@@ -404,6 +404,15 @@ for themeName, _ in pairs(availableThemes) do
     table.insert(themeList, themeName)
 end
 
+--New Server Hop
+_G.G_ServerRegion = "Singapore"
+_G.G_HopPlayerRange = "1-12"
+_G.G_HopBountyRange = "大於3m"
+_G.G_HopMinPlayers = 1
+_G.G_HopMaxPlayers = 12
+_G.G_HopMinBounty = 3000001
+_G.G_HopMaxBounty = 999999999
+
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
@@ -3089,6 +3098,176 @@ function ServerCore:FindAndHop(mode)
     end)
 end
 
+--New Server Hop
+local RegionValues = {
+    "Oregon",
+    "Florida",
+    "Texas",
+    "California",
+    "Hong Kong",
+    "Germany",
+    "Brazil",
+    "Singapore",
+}
+
+local PlayerRangeValues = {
+    "1-12",
+    "3-12",
+    "5-12",
+    "7-12",
+    "9-12",
+}
+
+local BountyRangeValues = {
+    "大於3m",
+    "大於5m",
+    "大於10m",
+    "大於15m",
+    "大於25m",
+    "大於35m",
+    "大於50m",
+}
+
+local function ContainsValue(list, value)
+    for _, item in ipairs(list) do
+        if item == value then
+            return true
+        end
+    end
+    return false
+end
+
+if not ContainsValue(PlayerRangeValues, _G.G_HopPlayerRange) then
+    _G.G_HopPlayerRange = "1-12"
+end
+
+if not ContainsValue(BountyRangeValues, _G.G_HopBountyRange) then
+    _G.G_HopBountyRange = "大於3m"
+end
+
+if not ContainsValue(RegionValues, _G.G_ServerRegion) then
+    _G.G_ServerRegion = "Singapore"
+end
+
+local function FormatNumber(n)
+    local s = tostring(math.floor(tonumber(n) or 0))
+    local left, num, right = s:match("^([^%d]*%d)(%d*)(.-)$")
+    return left .. (num:reverse():gsub("(%d%d%d)", "%1,"):reverse()) .. right
+end
+
+local function ApplyPlayerRange(label)
+    _G.G_HopPlayerRange = label
+
+    local minPlayers, maxPlayers = label:match("(%d+)%-(%d+)")
+    if minPlayers and maxPlayers then
+        _G.G_HopMinPlayers = tonumber(minPlayers)
+        _G.G_HopMaxPlayers = tonumber(maxPlayers)
+        return
+    end
+
+    _G.G_HopMinPlayers = 1
+    _G.G_HopMaxPlayers = 12
+end
+
+local function ParseBountyToken(token)
+    if not token then
+        return nil
+    end
+
+    local num, unit = token:match("([%d%.]+)([Mm]?)")
+    if not num then
+        return nil
+    end
+
+    local value = tonumber(num)
+    if not value then
+        return nil
+    end
+
+    if unit and unit:lower() == "m" then
+        value = value * 1000000
+    end
+
+    return value
+end
+
+local function ApplyBountyRange(label)
+    _G.G_HopBountyRange = label
+
+    local minOnly = label:match("大於([%d%.]+[Mm]?)")
+    if minOnly then
+        local minBounty = ParseBountyToken(minOnly) or 0
+        -- 「大於」按嚴格大於處理：大於3m => 最低 3000001
+        _G.G_HopMinBounty = minBounty + 1
+        _G.G_HopMaxBounty = 999999999
+        return
+    end
+
+    _G.G_HopMinBounty = 0
+    _G.G_HopMaxBounty = 999999999
+end
+
+ApplyPlayerRange(_G.G_HopPlayerRange)
+ApplyBountyRange(_G.G_HopBountyRange)
+
+local function ParseServerInfo(text)
+    if type(text) ~= "string" or text == "" then
+        return nil
+    end
+
+    local region = text:match("Region:%s*(.-)%s*%-%s*Players:")
+    local currentPlayers, maxPlayers = text:match("Players:%s*(%d+)%s*/%s*(%d+)")
+    local bountyText = text:match("Bounty:%s*([%d,]+)")
+
+    if not currentPlayers or not maxPlayers or not bountyText then
+        return nil
+    end
+
+    local bounty = tonumber((bountyText:gsub(",", "")))
+    if not bounty then
+        return nil
+    end
+
+    return {
+        Region = region or "Unknown",
+        Players = tonumber(currentPlayers),
+        MaxPlayers = tonumber(maxPlayers),
+        Bounty = bounty,
+        Raw = text,
+    }
+end
+
+local function IsServerAllowed(info)
+    if not info then
+        return false
+    end
+
+    if info.Players < _G.G_HopMinPlayers or info.Players > _G.G_HopMaxPlayers then
+        return false
+    end
+
+    if info.Bounty < _G.G_HopMinBounty or info.Bounty > _G.G_HopMaxBounty then
+        return false
+    end
+
+    return true
+end
+
+local function BuildFilterText()
+    return "地區: " .. tostring(_G.G_ServerRegion)
+        .. "\n人數: " .. tostring(_G.G_HopPlayerRange)
+        .. " (" .. _G.G_HopMinPlayers .. "-" .. _G.G_HopMaxPlayers .. ")"
+        .. "\n賞金: " .. tostring(_G.G_HopBountyRange)
+        .. " (" .. FormatNumber(_G.G_HopMinBounty) .. " - " .. FormatNumber(_G.G_HopMaxBounty) .. ")"
+end
+
+local function BuildServerInfoText(info, job)
+    return "地區: " .. tostring(info.Region)
+        .. "\n人數: " .. info.Players .. "/" .. info.MaxPlayers
+        .. "\n賞金: " .. FormatNumber(info.Bounty)
+        .. "\nJobId: " .. tostring(job)
+end
+
 ----------------------------------------
 -- 分類
 ----------------------------------------
@@ -4647,6 +4826,219 @@ Tabs["Server"]:Button({
         ServerCore:TeleportToServer(JobId) 
     end
 })
+
+Tabs["Server"]:Section({ Title = "New Server Hop" })
+
+Tabs["Server"]:Paragraph({
+    Title = "當前篩選",
+    Desc = BuildFilterText(),
+})
+
+Tabs["Server"]:Paragraph({
+    Title = "跳服狀態",
+    Desc = "等待開始",
+})
+
+local function SetParagraphDesc(paragraph, text)
+    if not paragraph then
+        return
+    end
+
+    if paragraph.SetDesc then
+        paragraph:SetDesc(text)
+    elseif paragraph.Set then
+        paragraph:Set({ Desc = text })
+    end
+end
+
+local function RefreshFilterParagraph()
+    SetParagraphDesc(FilterParagraph, BuildFilterText())
+end
+
+Tabs["Server"]:Dropdown({
+    Title = "選擇地區",
+    Values = RegionValues,
+    Value = _G.G_ServerRegion,
+    Callback = function(v)
+        _G.G_ServerRegion = v
+        RefreshFilterParagraph()
+    end,
+})
+
+Tabs["Server"]:Dropdown({
+    Title = "選擇人數",
+    Values = PlayerRangeValues,
+    Value = _G.G_HopPlayerRange,
+    Callback = function(v)
+        ApplyPlayerRange(v)
+        RefreshFilterParagraph()
+    end,
+})
+
+Tabs["Server"]:Dropdown({
+    Title = "選擇賞金",
+    Values = BountyRangeValues,
+    Value = _G.G_HopBountyRange,
+    Callback = function(v)
+        ApplyBountyRange(v)
+        RefreshFilterParagraph()
+    end,
+})
+
+local function StartServerHop()
+    if getgenv().IsServerHopping == true then
+        WindUI:Notify({
+            Title = "自動跳服",
+            Content = "跳服已在進行中",
+            Duration = 3,
+        })
+        return
+    end
+
+    getgenv().IsServerHopping = true
+    getgenv().ShuttingDown = true
+
+    SetParagraphDesc(StatusParagraph, "準備跳服...\n" .. BuildFilterText())
+    WindUI:Notify({
+        Title = "自動跳服",
+        Content = "準備跳服...\n\n" .. BuildFilterText(),
+        Icon = "wind",
+        Duration = 8,
+    })
+
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+    if not PlayerGui:FindFirstChild("ServerBrowser") then
+        getgenv().IsServerHopping = false
+        SetParagraphDesc(StatusParagraph, "失敗: 未找到 ServerBrowser")
+        return
+    end
+
+    PlayerGui.ServerBrowser.Enabled = true
+    task.wait(0.1)
+
+    local Filters = PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
+    local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
+    local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
+
+    if not TextBox then
+        getgenv().IsServerHopping = false
+        SetParagraphDesc(StatusParagraph, "失敗: 未找到區域輸入框")
+        return
+    end
+
+    TextBox.Text = _G.G_ServerRegion
+
+    local Filters = Filters or PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
+    local Full = Filters and Filters:FindFirstChild("Full")
+    local FullCheck = Full and Full:FindFirstChild("Check")
+    if FullCheck then
+        FullCheck.Text = "\226\156\148\239\184\143"
+        task.wait(0.1)
+    end
+
+    local ScrollingFrame = PlayerGui.ServerBrowser.Frame.ScrollingFrame
+    local FakeScroll = PlayerGui.ServerBrowser.Frame.FakeScroll
+    local Inside = FakeScroll.Inside
+
+    task.spawn(function()
+        while getgenv().IsServerHopping do
+            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
+            task.wait(0.3)
+        end
+    end)
+
+    task.wait()
+
+    local currentJobId = game.JobId
+    local ServerBrowserRemote = ReplicatedStorage:WaitForChild("__ServerBrowser")
+
+    task.spawn(function()
+        while getgenv().IsServerHopping do
+            local matched = 0
+
+            for _, template in ipairs(Inside:GetChildren()) do
+                if template.Name == "Template" then
+                    local joinButton = template:FindFirstChild("Join")
+                    local textLabel = template:FindFirstChild("TextLabel")
+                    local info = textLabel and ParseServerInfo(textLabel.Text)
+
+                    if joinButton and info then
+                        if IsServerAllowed(info) then
+                            matched = matched + 1
+                            local job = joinButton:GetAttribute("Job")
+                            if job and tostring(job):find("-", 1, true) then
+                                job = tostring(job)
+
+                                if job ~= currentJobId then
+                                    local serverText = BuildServerInfoText(info, job)
+                                    SetParagraphDesc(StatusParagraph, "嘗試跳服\n" .. serverText)
+                                    WindUI:Notify({
+                                        Title = "匹配到伺服器",
+                                        Content = serverText,
+                                        Icon = "wind",
+                                        Duration = 6,
+                                    })
+
+                                    local success = pcall(function()
+                                        ServerBrowserRemote:InvokeServer("teleport", job)
+                                    end)
+
+                                    if not success then
+                                        local success2 = pcall(function()
+                                            ServerBrowserRemote:InvokeServer("teleport", job)
+                                        end)
+
+                                        if not success2 then
+                                            SetParagraphDesc(StatusParagraph, "跳服失敗\n" .. serverText)
+                                            WindUI:Notify({
+                                                Title = "自動跳服",
+                                                Content = "跳服失敗\n\n請重新加入遊戲",
+                                                Icon = "wind",
+                                                Duration = 10,
+                                            })
+                                        end
+                                    end
+
+                                    task.wait(0.3)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if matched == 0 then
+                SetParagraphDesc(StatusParagraph, "掃描中, 暫無符合條件的伺服器\n" .. BuildFilterText())
+            end
+
+            task.wait(3)
+        end
+    end)
+end
+
+Tabs["Server"]:Button({
+    Title = "開始跳服",
+    Callback = function()
+        StartServerHop()
+    end,
+})
+
+Tabs["Server"]:Button({
+    Title = "停止跳服",
+    Callback = function()
+        getgenv().IsServerHopping = false
+        getgenv().ShuttingDown = false
+        SetParagraphDesc(StatusParagraph, "已停止")
+        WindUI:Notify({
+            Title = "自動跳服",
+            Content = "已停止跳服",
+            Duration = 2,
+        })
+    end,
+})
+
+RefreshFilterParagraph()
 
 Tabs["Other"]:Section({ Title = "其他" })
 
