@@ -747,7 +747,8 @@ end
 -- ========================================================
 --  Metatable / Mouse Hooking (改向實際彈道)
 -- ========================================================
-if not _G.G_SilentAimHooked then
+-- [新增防止崩潰機制]: 若檢測到不支援，直接跳過 Hook，避免執行器報錯
+if not _G.G_SilentAimHooked and not disableHook then
     _G.G_SilentAimHooked = true
 
     task.spawn(function()
@@ -3523,7 +3524,10 @@ Tabs["Aimbot&M1"]:Section({ Title = "Gun Aura" })
 Tabs["Aimbot&M1"]:Toggle({
     Title = "槍 M1",
     Value = _G.DragonGunM1,
+    Locked = disableHook,
+    LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil,
     Callback = function(v) 
+        if disableHook then return end 
         _G.DragonGunM1 = v
     end
 })
