@@ -4020,8 +4020,7 @@ Tabs["遊戲內設定"]:Button({ Title = "移除岩漿",
 })
 
 Tabs["遊戲內設定"]:Button({
-    Title = "清除鬼船傷害物件",
-    Desc = "清理對玩家有傷害的物件",
+    Title = "移除鬼船傷害",
     Callback = function()
         local lavaPartsFolder = workspace.Map.GhostShipInterior.LavaParts
         local children = lavaPartsFolder:GetChildren()
