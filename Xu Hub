@@ -161,13 +161,14 @@ _G.G_SilentAimTargetMobs      = false
 _G.G_SilentAimTeamCheck       = false
 _G.G_SilentAimDrawings        = _G.G_SilentAimDrawings or {}
 
-_G.G_SilentAimSkills          = _G.G_SilentAimSkills or {
+_G.G_SilentAimSkills = _G.G_SilentAimSkills or {
     ["M1 (普攻)"] = true,
-    ["Z"]    = true,
-    ["X"]    = true,
-    ["C"]    = true,
-    ["V"]    = true,
-    ["F"]    = true
+    ["Z"] = true,
+    ["X"] = true,
+    ["C"] = true,
+    ["V"] = true,
+    ["F"] = true,
+    ["R"] = true
 }
 
 --DragonGuun
@@ -535,7 +536,6 @@ end
 --aimbot
 local LastSkillPressed = "M1 (普攻)"
 
--- 監聽按鍵輸入（忽略聊天框打字）
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if UserInputService:GetFocusedTextBox() then return end
 
@@ -551,6 +551,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         LastSkillPressed = "V"
     elseif input.KeyCode == Enum.KeyCode.F then
         LastSkillPressed = "F"
+    elseif input.KeyCode == Enum.KeyCode.R then
+        LastSkillPressed = "R"
     end
 end)
 
@@ -3453,8 +3455,8 @@ Tabs["Aimbot&M1"]:Toggle({
 
 Tabs["Aimbot&M1"]:Dropdown({ 
     Title = "自瞄招式", 
-    Values = { "M1 (普攻)", "Z", "X", "C", "V", "F" }, 
-    Value = { "M1 (普攻)", "Z", "X", "C", "V", "F" },
+    Values = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" }, 
+    Value = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" },
     Multi = true, 
     Callback = function(v) 
         _G.G_SilentAimSkills = v 
