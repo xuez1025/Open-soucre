@@ -154,12 +154,21 @@ _G.G_SilentAimShowFOV         = false
 _G.G_SilentAimFOV             = 150
 _G.G_SilentAimFOVThickness    = 5
 _G.G_SilentAimFOVTransparency = 1
-_G.G_SilentAimFOVMode          = "跟随鼠標"
+_G.G_SilentAimFOVMode         = "跟随鼠標"
 _G.G_SilentAimShowLine        = false
 _G.G_SilentAimTargetPlayers   = false
 _G.G_SilentAimTargetMobs      = false
 _G.G_SilentAimTeamCheck       = false
-_G.G_SilentAimDrawings        = {}
+_G.G_SilentAimDrawings        = _G.G_SilentAimDrawings or {}
+
+_G.G_SilentAimSkills          = _G.G_SilentAimSkills or {
+    ["M1 (普攻)"] = true,
+    ["Z"]    = true,
+    ["X"]    = true,
+    ["C"]    = true,
+    ["V"]    = true,
+    ["F"]    = true
+}
 
 --DragonGuun
 _G.DragonGunM1 = false
@@ -524,6 +533,52 @@ local function globalTweenTo(targetCFrame, callback)
 end
 
 --aimbot
+local LastSkillPressed = "M1 (普攻)"
+
+-- 監聽按鍵輸入（忽略聊天框打字）
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if UserInputService:GetFocusedTextBox() then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        LastSkillPressed = "M1 (普攻)"
+    elseif input.KeyCode == Enum.KeyCode.Z then
+        LastSkillPressed = "Z"
+    elseif input.KeyCode == Enum.KeyCode.X then
+        LastSkillPressed = "X"
+    elseif input.KeyCode == Enum.KeyCode.C then
+        LastSkillPressed = "C"
+    elseif input.KeyCode == Enum.KeyCode.V then
+        LastSkillPressed = "V"
+    elseif input.KeyCode == Enum.KeyCode.F then
+        LastSkillPressed = "F"
+    end
+end)
+
+local function IsSkillSelected(skillName)
+    local skills = _G.G_SilentAimSkills
+    if not skills then return true end
+    if type(skills) == "table" then
+        if next(skills) == nil then return false end
+
+        if skills[skillName] ~= nil then
+            return skills[skillName] == true
+        end
+
+        for _, v in pairs(skills) do
+            if v == skillName then
+                return true
+            end
+        end
+
+        return false
+    end
+    return true
+end
+
+local function IsCurrentSkillEnabled()
+    return IsSkillSelected(LastSkillPressed)
+end
+
 local function IsAlive(character)
     if not character then return false end
     local hum = character:FindFirstChildOfClass("Humanoid")
@@ -562,10 +617,13 @@ local function GetSilentAimOrigin()
     return p
 end
 
+-- ========================================================
+--  Drawing 視覺特效物件初始化
+-- ========================================================
 local SnapLineThickness = 2.8
 local RainbowSnapLine = true
 local LaserPulseSpeed = 10
-local BaseLaserColor = Color3.fromRGB(0, 240, 255) -- 高亮霓虹青色
+local BaseLaserColor = Color3.fromRGB(0, 240, 255)
 
 local FovCircle = Drawing.new("Circle")
 FovCircle.NumSides = 96
@@ -684,6 +742,9 @@ local function GetClosestTarget()
     return closest, shortest
 end
 
+-- ========================================================
+--  Metatable / Mouse Hooking (改向實際彈道)
+-- ========================================================
 if not _G.G_SilentAimHooked then
     _G.G_SilentAimHooked = true
 
@@ -706,12 +767,12 @@ if not _G.G_SilentAimHooked then
 
                     mmt.__index = function(self, key)
                         if key == "Hit" then
-                            if _G.G_SilentAimEnabled and currentSilentAimTargetPos then
+                            if _G.G_SilentAimEnabled and currentSilentAimTargetPos and IsCurrentSkillEnabled() then
                                 return CFrame.new(currentSilentAimTargetPos)
                             end
                             return realStore.Hit
                         elseif key == "Target" then
-                            if _G.G_SilentAimEnabled and currentSilentAimTarget then
+                            if _G.G_SilentAimEnabled and currentSilentAimTarget and IsCurrentSkillEnabled() then
                                 return currentSilentAimTarget
                             end
                             return realStore.Target
@@ -740,7 +801,7 @@ if not _G.G_SilentAimHooked then
         local mouse = LocalPlayer:GetMouse()
 
         gmt.__index = newcclosure(function(self, key)
-            if not checkcaller() and _G.G_SilentAimEnabled and currentSilentAimTargetPos and self == mouse then
+            if not checkcaller() and _G.G_SilentAimEnabled and currentSilentAimTargetPos and self == mouse and IsCurrentSkillEnabled() then
                 local targetPos = currentSilentAimTargetPos
                 local camPos = Camera.CFrame.Position
 
@@ -762,6 +823,9 @@ if not _G.G_SilentAimHooked then
     end
 end
 
+-- ========================================================
+--  繪圖與主邏輯循環 (RenderStepped)
+-- ========================================================
 local function HideAllLaserDrawings()
     for _, glow in ipairs(LaserGlowLayers) do glow.Visible = false end
     SnapLineCore.Visible = false
@@ -792,6 +856,7 @@ _G.G_SilentAimLoop = RunService.RenderStepped:Connect(function()
     currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
     _G.G_SilentAimTargetPos = currentSilentAimTargetPos
 
+    -- [核心修復] 只要開啟「顯示射線」且鎖定到目標，就常駐繪製射線，不再要求 IsCurrentSkillEnabled()
     if _G.G_SilentAimShowLine and currentSilentAimTargetPos then
         local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
         if onScreen then
@@ -857,7 +922,7 @@ _G.G_SilentAimLoop = RunService.RenderStepped:Connect(function()
                 bead.Radius = SnapLineThickness * (1.1 + beadPulse * 0.6)
                 bead.Color = RainbowSnapLine and Color3.fromHSV((baseHue + progress * 0.3) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
 
-                local fadeMask = math.sin(progress * math.pi) -- 兩端漸隱，中間亮起
+                local fadeMask = math.sin(progress * math.pi)
                 bead.Transparency = 0.95 * fadeMask
             end
 
@@ -895,7 +960,7 @@ _G.G_SilentAimLoop = RunService.RenderStepped:Connect(function()
 
             local boxSize = currentRadius * 1.3
             local bracketLen = boxSize * 0.45
-            local rotation = clockTime * (1.5 + (1 - distFactor)) -- 近距離旋轉更快
+            local rotation = clockTime * (1.5 + (1 - distFactor))
 
             local corners = {
                 Vector2.new(-boxSize, -boxSize),
@@ -2140,7 +2205,6 @@ local function StartAutoFpsLock()
                 local skills = main:FindFirstChild("Skills")
                 if not skills then return end
                 
-                -- 依據配置表尋找對應技能
                 for _, config in ipairs(skillConfigs) do
                     for _, styleName in ipairs(config.styles) do
                         local styleFolder = skills:FindFirstChild(styleName)
@@ -2152,7 +2216,6 @@ local function StartAutoFpsLock()
                                     cooldown:SetAttribute("AutoFpsBound", true)
                                     local fullCdSize = UDim2.new(1, 0, 1, -1)
                                     
-                                    -- 當前如果是滿冷卻狀態直接限制 FPS
                                     if cooldown.Size == fullCdSize then
                                         if not isLocked and setfpscap then
                                             isLocked = true
@@ -2160,7 +2223,6 @@ local function StartAutoFpsLock()
                                         end
                                     end
                                     
-                                    -- 監聽冷卻條變化
                                     local conn = cooldown:GetPropertyChangedSignal("Size"):Connect(function()
                                         if not autoFpsLockRunning then return end
                                         
@@ -3386,6 +3448,16 @@ Tabs["Aimbot&M1"]:Toggle({
     Callback = function(v) 
         if disableHook then return end 
         _G.G_SilentAimEnabled = v 
+    end 
+})
+
+Tabs["Aimbot&M1"]:Dropdown({ 
+    Title = "自瞄招式", 
+    Values = { "M1 (普攻)", "Z", "X", "C", "V", "F" }, 
+    Value = { "M1 (普攻)", "Z", "X", "C", "V", "F" },
+    Multi = true, 
+    Callback = function(v) 
+        _G.G_SilentAimSkills = v 
     end 
 })
 
