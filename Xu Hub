@@ -324,9 +324,10 @@ _G.AutoKenEnabled = false
 _G.AutoEnablePVP = false
 _G.AutoV3_Enabled = false
 _G.AutoV4_Enabled = false
+
+--auto flee
 _G.AutoFlee = false
 _G.AutoFleeHP = 30
-
 local fleeConnection = nil
 
 --Teleport
@@ -1495,7 +1496,7 @@ local function SetupFlightComponents(hrp)
     local char = hrp.Parent
     if char then
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and not test.Massless then
+            if part:IsA("BasePart") and not part.Massless then
                 totalMass = totalMass + part:GetMass()
             end
         end
@@ -1552,9 +1553,24 @@ local function StartFTPFlight()
         hum:ChangeState(Enum.HumanoidStateType.Physics)
     end
     
-    _G.SetNoclipState(true)
+    if type(_G.SetNoclipState) == "function" then
+        _G.SetNoclipState(true)
+    end
 
     _G.FTP_FlightConn = RunService.RenderStepped:Connect(function()
+        -- ⭐️ 逃跑優先檢查 ⭐️
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if _G.AutoFlee and hum and hum.Health > 0 then
+            local hpPercent = (hum.Health / hum.MaxHealth) * 100
+            if hpPercent <= (_G.AutoFleeHP or 30) then
+                if _G.FTP_LinearVelocity then
+                    _G.FTP_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+                return -- 暫停鎖人1飛行，讓自動逃跑拉高角色
+            end
+        end
+
         if not _G.FTP_Enabled or not _G.TargetPlayer then 
             if _G.FTP_LinearVelocity then _G.FTP_LinearVelocity.VectorVelocity = Vector3.new(0,0,0) end
             return 
@@ -1566,7 +1582,9 @@ end
 local function StopFTPFlight()
     _G.FTP_Enabled = false
     
-    _G.SetNoclipState(false)
+    if type(_G.SetNoclipState) == "function" then
+        _G.SetNoclipState(false)
+    end
 
     if _G.FTP_FlightConn then _G.FTP_FlightConn:Disconnect(); _G.FTP_FlightConn = nil end
     ClearFlightComponents()
@@ -1686,7 +1704,7 @@ local function SetupFlightComponents2(hrp)
     vf.ApplyAtCenterOfMass    = true
     vf.Attachment0            = att
     vf.Force                  = Vector3.new(0, totalMass * workspace.Gravity, 0)
-    vf.Parent                 = hrp
+    vf.Parent                  = hrp
     _G.FTP2_AntiGravity       = vf
 end
 
@@ -1768,13 +1786,6 @@ local function FlyToTargetLogic2(plr)
     end
 end
 
-local function setPlatformStand(state)
-    pcall(function()
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.PlatformStand = state end
-    end)
-end
-
 local function StartFTPFlight2()
     if _G.FTP2_Enabled then return end
     _G.FTP2_Enabled = true
@@ -1794,6 +1805,19 @@ local function StartFTPFlight2()
 
     _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
+
+        -- ⭐️ 逃跑優先檢查 ⭐️
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if _G.AutoFlee and hum and hum.Health > 0 then
+            local hpPercent = (hum.Health / hum.MaxHealth) * 100
+            if hpPercent <= (_G.AutoFleeHP or 30) then
+                if _G.FTP2_LinearVelocity then
+                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+                return -- 暫停鎖人2傳送與飛行，讓自動逃跑拉高角色
+            end
+        end
         
         if type(UpdatePositionHistory) == "function" then
             UpdatePositionHistory()
@@ -2799,7 +2823,7 @@ local function StartAutoFlee()
             task.wait(0.01)
             pcall(function()
                 local char = LocalPlayer.Character
-                local hum = char and char:FindFirstChild("Humanoid")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if not hum or not hrp or hum.Health <= 0 then return end
                 
@@ -3672,53 +3696,16 @@ Tabs["Players"]:Button({
 })
 
 Tabs["Players"]:Toggle({ 
-    Title = "傳送玩家", 
-    Desc = "持續傳送到目標玩家", 
-    Value = _G.PlayerTP_Enabled,
-    Callback = function(state)
-        _G.PlayerTP_Enabled = state
-        
-        if _G.PlayerTP_Enabled then
-            -- 檢查是否有選擇目標
-            if not _G.TargetPlayer then
-                WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", Duration = 3 })
-                return
-            end
-            
-            -- 如果之前殘留連線，先安全斷開
-            if _G.PlayerTP_Connection then 
-                _G.PlayerTP_Connection:Disconnect() 
-                _G.PlayerTP_Connection = nil
-            end
-            
-            -- 建立新的 Heartbeat 連線
-            _G.PlayerTP_Connection = game:GetService("RunService").Heartbeat:Connect(function()
-                -- 安全檢查：確保自己與目標玩家的元件都存在
-                local localPlayer = game.Players.LocalPlayer
-                if _G.TargetPlayer and _G.TargetPlayer.Character and _G.TargetPlayer.Character:FindFirstChild("HumanoidRootPart") and localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    localPlayer.Character.HumanoidRootPart.CFrame = _G.TargetPlayer.Character.HumanoidRootPart.CFrame
-                end
-            end)
-        else
-            -- 關閉開關時，中斷連線並清空變數
-            if _G.PlayerTP_Connection then 
-                _G.PlayerTP_Connection:Disconnect() 
-                _G.PlayerTP_Connection = nil 
-            end
-        end
-    end
-})
-
-Tabs["Players"]:Toggle({ 
-    Title = "鎖人", 
+    Title = "鎖人 1", 
     Desc = "持續飛行到目標玩家", 
     Value = _G.FTP_Enabled,
     Callback = function(state)
         if state then
             if not _G.TargetPlayer then
-                WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", duration = 3 })
+                if WindUI then WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", duration = 3 }) end
                 return
             end
+            if _G.FTP2_Enabled then StopFTPFlight2() end -- 防止雙開衝擊
             StartFTPFlight()
         else
             StopFTPFlight()
@@ -3728,14 +3715,15 @@ Tabs["Players"]:Toggle({
 
 Tabs["Players"]:Toggle({ 
     Title  = "鎖人 2 (捷徑)", 
-    Desc   = "自動抓取最快捷徑鎖人", 
+    Desc   = "自動抓取最快捷徑傳送與鎖人", 
     Value  = _G.FTP2_Enabled,
     Callback = function(state)
         if state then
             if not _G.TargetPlayer then
-                WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", duration = 3 })
+                if WindUI then WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", duration = 3 }) end
                 return
             end
+            if _G.FTP_Enabled then StopFTPFlight() end -- 防止雙開衝擊
             StartFTPFlight2()
         else
             StopFTPFlight2()
@@ -4308,7 +4296,7 @@ Tabs["自動"]:Toggle({
     Callback = function(v)
         _G.AutoFlee = v
         if v then StartAutoFlee() else StopAutoFlee() end
-        SaveConfiguration()
+        if SaveConfiguration then SaveConfiguration() end
     end
 })
 
@@ -4321,7 +4309,7 @@ Tabs["自動"]:Slider({
     },
     Callback = function(v)
         _G.AutoFleeHP = v
-        SaveConfiguration()
+        if SaveConfiguration then SaveConfiguration() end
     end
 })
 
