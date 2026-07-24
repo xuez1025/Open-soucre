@@ -171,7 +171,7 @@ _G.G_SilentAimSkills = _G.G_SilentAimSkills or {
     ["R"] = true
 }
 
---DragonGuun
+--DragonGun
 _G.DragonGunM1 = false
 _G.AttackMobs = false
 _G.AttackPlayers = false
@@ -270,7 +270,7 @@ _G.HipHeightEnabled = false
 local defaultHipHeight = nil
 
 --點擊傳送
-_G.ClickTP = false -- 點擊傳送的開關狀態，改為獨立的全域變數
+_G.ClickTP = false
 
 --移除動作
 _G.RemoveAnim = false
@@ -589,13 +589,20 @@ local function IsAlive(character)
     return hum ~= nil and hum.Health > 0 and root ~= nil
 end
 
+-- 強化版盟友UI檢測（兼容兩種界面的層級結構）
 local function IsSilentAimAlly(player)
+    if not player then return false end
     local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
-    local frame = main and main:FindFirstChild("Allies")
-        and main.Allies:FindFirstChild("Container")
-        and main.Allies.Container:FindFirstChild("Allies")
-        and main.Allies.Container.Allies:FindFirstChild("ScrollingFrame")
-        and main.Allies.Container.Allies:FindFirstChild("Frame")
+    if not main then return false end
+    
+    local allies = main:FindFirstChild("Allies")
+    local container = allies and allies:FindFirstChild("Container")
+    local subAllies = container and container:FindFirstChild("Allies")
+    if not subAllies then return false end
+
+    local frame = subAllies:FindFirstChild("Frame") 
+        or (subAllies:FindFirstChild("ScrollingFrame") and subAllies.ScrollingFrame:FindFirstChild("Frame"))
+
     if not frame then return false end
     return frame:FindFirstChild(player.Name) ~= nil
 end
@@ -748,7 +755,6 @@ end
 -- ========================================================
 --  Metatable / Mouse Hooking (改向實際彈道)
 -- ========================================================
--- [新增防止崩潰機制]: 若檢測到不支援，直接跳過 Hook，避免執行器報錯
 if not _G.G_SilentAimHooked and not disableHook then
     _G.G_SilentAimHooked = true
 
@@ -860,7 +866,6 @@ _G.G_SilentAimLoop = RunService.RenderStepped:Connect(function()
     currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
     _G.G_SilentAimTargetPos = currentSilentAimTargetPos
 
-    -- [核心修復] 只要開啟「顯示射線」且鎖定到目標，就常駐繪製射線，不再要求 IsCurrentSkillEnabled()
     if _G.G_SilentAimShowLine and currentSilentAimTargetPos then
         local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
         if onScreen then
@@ -1017,7 +1022,6 @@ task.spawn(function()
     local ShootFunction
     local V_Idx = { v26 = 12, v22 = 13, v25 = 14, v21 = 15, v23 = 16, v24 = 17, v27 = 18 }
     
-    -- 初始化並獲取官方 CombatController 中的射擊核心函數
     local function InitDragonGun()
         local success, result = pcall(require, ReplicatedStorage:WaitForChild("Controllers"):WaitForChild("CombatController"))
         if success and type(result) == "table" and result.Attack then 
@@ -1025,7 +1029,6 @@ task.spawn(function()
         end
     end
     
-    -- 計算下一次射擊的合法驗證碼 (Validator) 與次數
     local function GetNextValidator()
         if not ShootFunction then InitDragonGun() end
         if not ShootFunction then return 0, 0 end
@@ -1059,7 +1062,7 @@ task.spawn(function()
         return math.floor(v9 / v4 * 16777215), v7
     end
     
-    -- 搜尋並鎖定最近的目標 (NPC怪物 / 玩家)
+    -- 搜尋並鎖定最近的目標 (已整合隊伍與同盟防護)
     local function GetClosestTarget()
         local char = LocalPlayer.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1084,11 +1087,14 @@ task.spawn(function()
         if _G.AttackPlayers then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
-                    local pHum = player.Character:FindFirstChildOfClass("Humanoid")
-                    local pRoot = player.Character:FindFirstChild("HumanoidRootPart")
-                    if pHum and pHum.Health > 0 and pRoot then
-                        local d = (pRoot.Position - myPos).Magnitude
-                        if d < dist then dist = d; closest = pRoot end
+                    -- 隊伍/盟友檢測核心：如果開啟隊伍檢測且該玩家不是敵人，則跳過
+                    if not _G.G_SilentAimTeamCheck or IsSilentAimEnemy(player) then
+                        local pHum = player.Character:FindFirstChildOfClass("Humanoid")
+                        local pRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                        if pHum and pHum.Health > 0 and pRoot then
+                            local d = (pRoot.Position - myPos).Magnitude
+                            if d < dist then dist = d; closest = pRoot end
+                        end
                     end
                 end
             end
@@ -3527,7 +3533,7 @@ Tabs["Aimbot&M1"]:Dropdown({
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 範圍大小", 
-    Value = { Min = 10, Max = 500, Default = _G.G_SilentAimFOV }, 
+    Value = { Min = 10, Max = 1000, Default = _G.G_SilentAimFOV }, 
     Callback = function(v) _G.G_SilentAimFOV = v end 
 })
 
