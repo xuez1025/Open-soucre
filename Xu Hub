@@ -1619,10 +1619,10 @@ local function GetCurrentWorldEntrances()
     -- 二海 (World 2)
     elseif placeId == 4442272183 or placeId == 79091703265657 then
         pool = {
-            { Arg = Vector3.new(2284.90, 15.53, 905.47), Dest = Vector3.new(2285, 15, 905) },
-            { Arg = Vector3.new(-286.98, 296.13, 597.89), Dest = Vector3.new(-287, 306, 598) },
-            { Arg = Vector3.new(923.21, 126.97, 32852.83), Dest = Vector3.new(923, 125, 32853) },
-            { Arg = Vector3.new(-6508.55, 89.03, -132.83), Dest = Vector3.new(-6509, 83, -133) }
+            { Arg = Vector3.new(2284.90, 50.53, 905.47), Dest = Vector3.new(2285, 15, 905) },
+            { Arg = Vector3.new(-286.98, 331.13, 597.89), Dest = Vector3.new(-287, 306, 598) },
+            { Arg = Vector3.new(923.21, 161.97, 32852.83), Dest = Vector3.new(923, 125, 32853) },
+            { Arg = Vector3.new(-6508.55, 124.03, -132.83), Dest = Vector3.new(-6509, 83, -133) }
         }
     -- 三海 (World 3)
     elseif placeId == 7449423635 or placeId == 100117331123089 then
