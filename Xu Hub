@@ -31,7 +31,9 @@ local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
 local RegisterHit = Net:WaitForChild("RE/RegisterHit")
 local RemoteSeed = Net:FindFirstChild("seed")
 
--- Aimbot check
+----------------------------------------
+-- Hook Check
+----------------------------------------
 local executorName = (identifyexecutor and identifyexecutor()) or "Unknown"
 local lowerName = string.lower(executorName)
 
@@ -47,6 +49,7 @@ end
 
 local isMissingFunctions = (hookmetamethod == nil) or (getrawmetatable == nil) or (setreadonly == nil)
 
+-- 如果是不支援的執行器或缺少必要 Hook 函數，則禁用自瞄功能
 local disableHook = isUnsupportedName or isMissingFunctions
 
 if disableHook then
@@ -64,6 +67,28 @@ if disableHook then
         end)
     end)
 end
+
+----------------------------------------
+-- White List
+----------------------------------------
+local Whitelist = {
+    "powoMILOowoq",
+    "ez_"
+}
+
+local function IsWhitelisted()
+    if not LocalPlayer then return false end
+    local playerName = LocalPlayer.Name
+    
+    for _, pattern in ipairs(Whitelist) do
+        if string.find(playerName, pattern, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local isWhitelisted = IsWhitelisted()
 
 --Server Hop
 local PlaceId = game.PlaceId
@@ -324,6 +349,13 @@ _G.AutoKenEnabled = false
 _G.AutoEnablePVP = false
 _G.AutoV3_Enabled = false
 _G.AutoV4_Enabled = false
+
+--自動順步
+_G.AutoSoru = false
+local AutoSoruConn = nil
+local LastSoruTime = 0
+local SORU_COOLDOWN = 10
+local MAX_SORU_DISTANCE = 900
 
 --auto flee
 _G.AutoFlee = false
@@ -2821,6 +2853,115 @@ local function ToggleV4Loop(enable)
     end
 end
 
+--自動順步
+local function SoruTo(targetPosition)
+    local Character = LocalPlayer.Character
+    if not Character then return false end
+
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+    local Humanoid = Character:FindFirstChild("Humanoid")
+    if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then return false end
+
+    local startCFrame = HumanoidRootPart.CFrame
+    local finalPos = targetPosition
+    local finalCFrame = (startCFrame - startCFrame.Position) + finalPos + Vector3.new(0, HumanoidRootPart.Size.Y * 1.5, 0)
+
+    local randomId = math.random(1, 999999999)
+    
+    -- 發送 Soru 請求
+    ReplicatedStorage.Remotes.CommE:FireServer(
+        "Soru",
+        startCFrame,
+        finalCFrame,
+        workspace:GetServerTimeNow(),
+        randomId
+    )
+    return true
+end
+
+-- 尋找最近的存活玩家 (回傳玩家與距離)
+local function GetClosestPlayerForSoru()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    local Character = LocalPlayer.Character
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then
+        return nil, math.huge
+    end
+
+    local myPos = Character.HumanoidRootPart.Position
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local otherChar = player.Character
+            local otherHum = otherChar and otherChar:FindFirstChild("Humanoid")
+            local otherRoot = otherChar and otherChar:FindFirstChild("HumanoidRootPart")
+            if otherHum and otherRoot and otherHum.Health > 0 then
+                local distance = (otherRoot.Position - myPos).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+
+    return closestPlayer, shortestDistance
+end
+
+local function SoruToClosestPlayer()
+    if tick() - LastSoruTime < SORU_COOLDOWN then
+        return
+    end
+
+    local targetPlayer, distance = GetClosestPlayerForSoru()
+    
+    if not targetPlayer or distance > MAX_SORU_DISTANCE then 
+        return 
+    end
+
+    local targetChar = targetPlayer.Character
+    if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+        local targetPos = (targetChar.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)).Position
+        
+        local success = SoruTo(targetPos)
+        
+        if success then
+            LastSoruTime = tick() -- 更新上次發送時間
+            
+            pcall(function()
+                WindUI:Notify({
+                    Title = "自動順步",
+                    Content = string.format("觸發：%s (%dM)", targetPlayer.Name, math.floor(distance)),
+                    Duration = 3,
+                    Icon = "zap"
+                })
+            end)
+        end
+    end
+end
+
+local function StartAutoSoru()
+    if AutoSoruConn then return end
+    AutoSoruConn = task.spawn(function()
+        while _G.AutoSoru do
+            pcall(SoruToClosestPlayer)
+            task.wait(1) -- 保持 1 秒檢查一次
+        end
+    end)
+end
+
+local function StopAutoSoru()
+    if AutoSoruConn then
+        task.cancel(AutoSoruConn)
+        AutoSoruConn = nil
+    end
+end
+
+if _G.AutoSoru and isWhitelisted then 
+    StartAutoSoru() 
+end
+
 --Auto flee
 local function StartAutoFlee()
     if fleeConnection then return end
@@ -4293,6 +4434,28 @@ Tabs["自動"]:Toggle({
     Callback = function(state)
         _G.AutoV4_Enabled = state
         ToggleV4Loop(state)
+    end
+})
+
+Tabs["自動"]:Toggle({
+    Title = "自動順步",
+    Desc = "自動順步至最近玩家(龍族)",
+    State = isWhitelisted and (_G.AutoSoru or false),
+    Locked = not isWhitelisted,
+    LockedTitle = not isWhitelisted and "未在玩家白名單中(無法使用)" or nil,
+    Callback = function(v)
+        if not isWhitelisted then return end
+        
+        _G.AutoSoru = v
+        if v then
+            StartAutoSoru()
+        else
+            StopAutoSoru()
+        end
+        
+        if type(SaveConfiguration) == "function" then
+            pcall(SaveConfiguration)
+        end
     end
 })
 
