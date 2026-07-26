@@ -119,8 +119,6 @@ if getgenv().XuHubLoaded then
     return
 end
 
-getgenv().XuHubLoaded = true
-
 ----------------------------------------
 -- WindUI
 ----------------------------------------
@@ -129,42 +127,65 @@ local WindUI = loadstring(request({
 }).Body)()
 
 WindUI:Popup({
-    Title   = "Xu-Hub",
-    Icon    = "shield-check",
+    Title = "Xu-Hub",
+    Icon = "shield-check",
     Content = "歡迎使用 Xu-Hub！點擊執行以啟動完整介面",
     Buttons = {
-        { Title="取消", Callback=function() end, Variant="Tertiary" },
-        { Title="執行", Icon="play", Variant="Primary",
-          Callback=function()
+        {
+            Title = "取消",
+            Variant = "Tertiary",
+            Callback = function()
+            end
+        },
+        {
+            Title = "執行",
+            Icon = "play",
+            Variant = "Primary",
+            Callback = function()
+                getgenv().XuHubLoaded = true
 
-WindUI:SetTheme(_G.Theme)
+                WindUI:SetTheme(_G.Theme)
 
-local Window = WindUI:CreateWindow({
-    Title         = "Xu-hub",
-    Icon          = "user-check",
-    Author        = "by xuez1025",
-    Folder        = "Xu-Hub",
-    Size          = UDim2.fromOffset(700, 800),
-    Transparent   = true,
-    Theme         = "Dark",
-    Acrylic       = false,
-    HideSearchBar = false,
-    SideBarWidth  = 200,
-    User = {
-        Enabled   = true, Anonymous = false,
-        Callback  = function() notify(LocalPlayer.Name, "ID: "..LocalPlayer.UserId, 3) end
-    },
-    OpenButton = {
-        Title           = "Xu-hub",
-        CornerRadius    = UDim.new(1, 0),
-        StrokeThickness = 3,
-        Enabled         = true,
-        OnlyMobile      = false,
-        Draggable       = true,
-        OnlyIcon        = false,
-        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
-    }
-})
+                local Window = WindUI:CreateWindow({
+                    Title = "Xu-hub",
+                    Icon = "user-check",
+                    Author = "by xuez1025",
+                    Folder = "Xu-Hub",
+                    Size = UDim2.fromOffset(700, 800),
+                    Transparent = true,
+                    Theme = "Dark",
+                    Acrylic = false,
+                    HideSearchBar = false,
+                    SideBarWidth = 200,
+                    User = {
+                        Enabled = true,
+                        Anonymous = false,
+                        Callback = function()
+                            notify(LocalPlayer.Name, "ID: "..LocalPlayer.UserId, 3)
+                        end
+                    },
+                    OpenButton = {
+                        Title = "Xu-hub",
+                        CornerRadius = UDim.new(1,0),
+                        StrokeThickness = 3,
+                        Enabled = true,
+                        OnlyMobile = false,
+                        Draggable = true,
+                        OnlyIcon = false,
+                        Color = ColorSequence.new(
+                            Color3.fromHex("#7F00FF"),
+                            Color3.fromHex("#00C6FF")
+                        ),
+                    }
+                })
+
+                local originalDestroy = Window.Destroy
+                Window.Destroy = function(self, ...)
+                    getgenv().XuHubLoaded = nil
+                    if originalDestroy then
+                        return originalDestroy(self, ...)
+                    end
+                end
 
 ----------------------------------------
 --全域變數
