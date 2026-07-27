@@ -331,17 +331,19 @@ local autoFpsLockRunning = false
 local autoFpsLockSignals = {}
 
 --ESP Players
-_G.ESP_Master          = false
-_G.ESP_ShowName        = false
-_G.ESP_ShowHealth      = false
-_G.ESP_ShowDistance    = false
-_G.ESP_ShowTracers     = false
-_G.ESP_TeamColor       = false
-_G.ESP_ShowLevel       = false
-_G.ESP_ShowPVPStatus   = false
-_G.ESP_TracerColor     = Color3.fromRGB(255, 255, 255)
-_G.ESP_HighlightColor  = Color3.fromRGB(30, 30, 30)
-_G.ESP_FontSize        = 14
+_G.ESP_Master        = false
+_G.ESP_ShowName      = false
+_G.ESP_ShowHealth    = false
+_G.ESP_ShowDistance  = false
+_G.ESP_ShowTracers   = false
+_G.ESP_TeamColor     = false
+_G.ESP_ShowLevel     = false
+_G.ESP_ShowBounty    = false
+_G.ESP_ShowPVPStatus = false
+_G.ESP_ShowFruit     = false -- [新增] 水果 ESP 開關
+_G.ESP_TracerColor   = Color3.fromRGB(255, 255, 255)
+_G.ESP_HighlightColor= Color3.fromRGB(30, 30, 30)
+_G.ESP_FontSize      = 14
 
 local Tracers = {}
 
@@ -2420,7 +2422,7 @@ local function createESP(p)
         h.Name = "ESP_Highlight"
         h.FillColor = _G.ESP_HighlightColor
         h.OutlineColor = Color3.fromRGB(255, 255, 255)
-        h.FillTransparency = 0.55 -- 微調透明度，更有輕盈科技感
+        h.FillTransparency = 0.55
         h.OutlineTransparency = 0.1
         h.Adornee = char
         h.Parent = char
@@ -2430,14 +2432,14 @@ local function createESP(p)
         local bill = Instance.new("BillboardGui")
         bill.Name = "ESP_Billboard"
         bill.AlwaysOnTop = true
-        bill.Size = UDim2.new(0, 200, 0, 110)
+        bill.Size = UDim2.new(0, 200, 0, 140) -- 加高高度以適應顯示果實
         bill.StudsOffset = Vector3.new(0, 4.5, 0)
         bill.Adornee = head
         bill.Parent = head
         
         local text = Instance.new("TextLabel", bill)
         text.Name = "InfoLabel"
-        text.Size = UDim2.new(1, 0, 0, 80)
+        text.Size = UDim2.new(1, 0, 0, 110)
         text.BackgroundTransparency = 1
         text.TextStrokeTransparency = 0.1
         text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
@@ -2449,8 +2451,8 @@ local function createESP(p)
         
         local barBG = Instance.new("Frame", bill)
         barBG.Name = "HealthBarBG"
-        barBG.Size = UDim2.new(0, 110, 0, 5) -- 稍微細化，看起來更精緻
-        barBG.Position = UDim2.new(0.5, -55, 0, 90)
+        barBG.Size = UDim2.new(0, 110, 0, 5)
+        barBG.Position = UDim2.new(0.5, -55, 0, 120)
         barBG.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         barBG.BorderSizePixel = 0
         barBG.Visible = false
@@ -2492,7 +2494,7 @@ local function updateTracer(p, targetHRP)
             else
                 tr.Color = _G.ESP_TracerColor
             end
-            tr.Thickness = 1.8 -- 稍微加粗，線條邊緣更平滑
+            tr.Thickness = 1.8
             tr.Transparency = 0.75
         else
             removeTracer(p)
@@ -2523,22 +2525,18 @@ RunService.RenderStepped:Connect(function()
                         local barBG = bill:FindFirstChild("HealthBarBG")
                         local barFG = barBG and barBG:FindFirstChild("HealthBarFG")
                         
-                        -- 更新隊伍顏色
                         if _G.ESP_TeamColor and p.TeamColor then
                             h.OutlineColor = p.TeamColor.Color
                         else
                             h.OutlineColor = Color3.fromRGB(255, 255, 255)
                         end
                         
-                        -- 富文本（RichText）精美字串構建
                         local display = ""
                         
-                        -- 1. 玩家名稱 (純白粗體)
                         if _G.ESP_ShowName then 
                             display = display .. "<b>" .. p.Name .. "</b>\n" 
                         end
                         
-                        -- 2. 等級 (已修改為純白配色)
                         if _G.ESP_ShowLevel then
                             local lv = "???"
                             local data = p:FindFirstChild("Data") or p:FindFirstChild("leaderstats")
@@ -2546,7 +2544,56 @@ RunService.RenderStepped:Connect(function()
                             display = display .. '<font color="#FFFFFF">Lv. ' .. tostring(lv) .. '</font>\n'
                         end
                         
-                        -- 3. PVP 狀態 (霓虹綠 / 警示紅)
+                        if _G.ESP_ShowBounty then
+                            local bounty = 0
+                            local ls = p:FindFirstChild("leaderstats")
+                            if ls then
+                                local b = ls:FindFirstChild("Bounty/Honor") or ls:FindFirstChild("Bounty") or ls:FindFirstChild("Honor")
+                                if b then bounty = b.Value end
+                            end
+                            
+                            local bountyStr = ""
+                            if bounty >= 1000000 then
+                                bountyStr = string.format("%.2fM", bounty / 1000000)
+                            elseif bounty >= 1000 then
+                                bountyStr = string.format("%.1fK", bounty / 1000)
+                            else
+                                bountyStr = tostring(bounty)
+                            end
+                            
+                            display = display .. '<font color="#FFFFFF">賞金: ' .. bountyStr .. '</font>\n'
+                        end
+
+                        if _G.ESP_ShowFruit then
+                            local fruitName = nil
+                            
+                            local data = p:FindFirstChild("Data")
+                            if data and data:FindFirstChild("DevilFruit") and data.DevilFruit.Value ~= "" then
+                                fruitName = data.DevilFruit.Value
+                            end
+                            
+                            if not fruitName or fruitName == "" then
+                                local tool = char:FindFirstChildOfClass("Tool")
+                                if tool and (string.find(tool.Name, "Fruit") or string.find(tool.Name, "果實")) then
+                                    fruitName = tool.Name
+                                else
+                                    local bp = p:FindFirstChild("Backpack")
+                                    if bp then
+                                        for _, item in ipairs(bp:GetChildren()) do
+                                            if item:IsA("Tool") and (string.find(item.Name, "Fruit") or string.find(item.Name, "果實")) then
+                                                fruitName = item.Name .. " (背包)"
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+
+                            if fruitName and fruitName ~= "" then
+                                display = display .. '<font color="#FFFFFF">Fruit: ' .. tostring(fruitName) .. '</font>\n'
+                            end
+                        end
+                        
                         if _G.ESP_ShowPVPStatus then
                             local pvpActive = CheckPVP(p)
                             if pvpActive then
@@ -2556,7 +2603,6 @@ RunService.RenderStepped:Connect(function()
                             end
                         end
                         
-                        -- 4. 血量文字與距離 (已修改為純白配色)
                         local hpText = ""
                         if _G.ESP_ShowHealth then 
                             hpText = '<font color="#FFFFFF">HP: ' .. math.floor(hum2.Health) .. "/" .. math.floor(hum2.MaxHealth) .. '</font> '
@@ -2571,20 +2617,17 @@ RunService.RenderStepped:Connect(function()
                             display = display .. hpText .. distText .. "\n"
                         end
                         
-                        -- 寫入文字與字體大小
                         if info then 
                             info.Text = display 
                             info.TextSize = _G.ESP_FontSize
                         end
                         
-                        -- 動態動態血條與動態漸層色更新
                         if barBG and barFG then
                             if _G.ESP_ShowHealth then
                                 barBG.Visible = true
                                 local hpPercent = math.clamp(hum2.Health / hum2.MaxHealth, 0, 1)
                                 barFG.Size = UDim2.fromScale(hpPercent, 1)
                                 
-                                -- 絲滑的紅黃綠動態血條漸變色（保留原本血條顏色動態效果）
                                 if hpPercent > 0.5 then
                                     barFG.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent) * 2, 255, 50)
                                 else
@@ -4199,6 +4242,16 @@ Tabs["ESP"]:Toggle({
 Tabs["ESP"]:Toggle({
     Title = "顯示等級", Value = _G.ESP_ShowLevel,
     Callback = function(state) _G.ESP_ShowLevel = state end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示賞金", Value = _G.ESP_ShowBounty,
+    Callback = function(state) _G.ESP_ShowBounty = state end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示水果", Value = _G.ESP_ShowFruit, -- [新增] UI 選單 Toggle
+    Callback = function(state) _G.ESP_ShowFruit = state end
 })
 
 Tabs["ESP"]:Toggle({
