@@ -89,6 +89,7 @@ local function IsWhitelisted()
 end
 
 local isWhitelisted = IsWhitelisted()
+local isLocked = not isWhitelisted
 
 --Server Hop
 local PlaceId = game.PlaceId
@@ -2923,7 +2924,7 @@ end
 
 --自動順步
 local function SoruTo(targetPosition)
-    local Character = LocalPlayer.Character
+    local Character = LocalPlayer and LocalPlayer.Character
     if not Character then return false end
 
     local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
@@ -2936,7 +2937,6 @@ local function SoruTo(targetPosition)
 
     local randomId = math.random(1, 999999999)
     
-    -- 發送 Soru 請求
     ReplicatedStorage.Remotes.CommE:FireServer(
         "Soru",
         startCFrame,
@@ -2947,12 +2947,11 @@ local function SoruTo(targetPosition)
     return true
 end
 
--- 尋找最近的存活玩家 (回傳玩家與距離)
 local function GetClosestPlayerForSoru()
     local closestPlayer = nil
     local shortestDistance = math.huge
 
-    local Character = LocalPlayer.Character
+    local Character = LocalPlayer and LocalPlayer.Character
     if not Character or not Character:FindFirstChild("HumanoidRootPart") then
         return nil, math.huge
     end
@@ -2995,15 +2994,17 @@ local function SoruToClosestPlayer()
         local success = SoruTo(targetPos)
         
         if success then
-            LastSoruTime = tick() -- 更新上次發送時間
+            LastSoruTime = tick()
             
             pcall(function()
-                WindUI:Notify({
-                    Title = "自動順步",
-                    Content = string.format("觸發：%s (%dM)", targetPlayer.Name, math.floor(distance)),
-                    Duration = 3,
-                    Icon = "zap"
-                })
+                if WindUI then
+                    WindUI:Notify({
+                        Title = "自動順步",
+                        Content = string.format("觸發：%s (%dM)", targetPlayer.Name, math.floor(distance)),
+                        Duration = 3,
+                        Icon = "zap"
+                    })
+                end
             end)
         end
     end
@@ -3014,7 +3015,7 @@ local function StartAutoSoru()
     AutoSoruConn = task.spawn(function()
         while _G.AutoSoru do
             pcall(SoruToClosestPlayer)
-            task.wait(1) -- 保持 1 秒檢查一次
+            task.wait(1)
         end
     end)
 end
@@ -4353,8 +4354,7 @@ Tabs["遊戲內設定"]:Button({ Title = "移除岩漿",
 })
 
 Tabs["遊戲內設定"]:Button({
-    Title = "清除鬼船傷害物件",
-    Desc = "清理對玩家有傷害的物件",
+    Title = "移除鬼船傷害",
     Callback = function()
         local lavaPartsFolder = workspace.Map.GhostShipInterior.LavaParts
         local children = lavaPartsFolder:GetChildren()
@@ -4523,11 +4523,11 @@ Tabs["自動"]:Toggle({
 Tabs["自動"]:Toggle({
     Title = "自動順步",
     Desc = "自動順步至最近玩家(龍族)",
-    State = isWhitelisted and (_G.AutoSoru or false),
-    Locked = not isWhitelisted,
-    LockedTitle = not isWhitelisted and "未在玩家白名單中(無法使用)" or nil,
+    Value = _G.AutoSoru,
+    Locked = isLocked,
+    LockedTitle = isLocked and "非特定授權玩家（無法使用）" or nil,
     Callback = function(v)
-        if not isWhitelisted then return end
+        if isLocked then return end
         
         _G.AutoSoru = v
         if v then
