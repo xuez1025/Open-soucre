@@ -20,7 +20,7 @@ Frame.Parent = main
 Frame.BackgroundColor3 = Color3.fromRGB(15, 16, 22)
 Frame.BackgroundTransparency = 0.15
 Frame.Position = UDim2.new(0.1, 0, 0.35, 0)
-Frame.Size = UDim2.new(0, 250, 0, 195)
+Frame.Size = UDim2.new(0, 250, 0, 260)
 Frame.ClipsDescendants = true
 Frame.Active = true
 Frame.Draggable = true
@@ -207,6 +207,52 @@ local plusCorner = Instance.new("UICorner")
 plusCorner.CornerRadius = UDim.new(0, 8)
 plusCorner.Parent = plus
 
+-- ===== 垂直升降 UI 按鈕（已對調位置：左側下降 / 右側上升） =====
+
+-- 下降按鈕 (左側)
+local downButton = Instance.new("TextButton")
+downButton.Name = "DownButton"
+downButton.Parent = ContentFrame
+downButton.BackgroundColor3 = Color3.fromRGB(28, 31, 43)
+downButton.Position = UDim2.new(0, 0, 0, 130)
+downButton.Size = UDim2.new(0.48, -4, 0, 55)
+downButton.Font = Enum.Font.GothamBold
+downButton.Text = "下降"
+downButton.TextColor3 = Color3.fromRGB(200, 210, 240)
+downButton.TextSize = 13
+
+local downCorner = Instance.new("UICorner")
+downCorner.CornerRadius = UDim.new(0, 10)
+downCorner.Parent = downButton
+
+local downStroke = Instance.new("UIStroke")
+downStroke.Color = Color3.fromRGB(45, 50, 68)
+downStroke.Thickness = 1.2
+downStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+downStroke.Parent = downButton
+
+-- 上升按鈕 (右側)
+local upButton = Instance.new("TextButton")
+upButton.Name = "UpButton"
+upButton.Parent = ContentFrame
+upButton.BackgroundColor3 = Color3.fromRGB(28, 31, 43)
+upButton.Position = UDim2.new(0.52, 4, 0, 130)
+upButton.Size = UDim2.new(0.48, -4, 0, 55)
+upButton.Font = Enum.Font.GothamBold
+upButton.Text = "上升"
+upButton.TextColor3 = Color3.fromRGB(200, 210, 240)
+upButton.TextSize = 13
+
+local upCorner = Instance.new("UICorner")
+upCorner.CornerRadius = UDim.new(0, 10)
+upCorner.Parent = upButton
+
+local upStroke = Instance.new("UIStroke")
+upStroke.Color = Color3.fromRGB(45, 50, 68)
+upStroke.Thickness = 1.2
+upStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+upStroke.Parent = upButton
+
 -- ===== 狀態變量與邏輯 =====
 local speeds = 1
 local noclipOn = false
@@ -215,8 +261,10 @@ local flying = false
 local flyConnection = nil
 local isMinimized = false
 
--- 按鍵方向對映監聽 (已移除 Space 與 LeftShift)
+-- 方向控制表
 local ctrl = {f = 0, b = 0, l = 0, r = 0, u = 0, d = 0}
+
+-- 鍵盤監聽（保留 WASD 前後左右）
 local keyMap = {
     [Enum.KeyCode.W] = "f",
     [Enum.KeyCode.S] = "b",
@@ -239,6 +287,27 @@ UserInputService.InputEnded:Connect(function(input)
     if dir then
         ctrl[dir] = 0
     end
+end)
+
+-- ===== UI 按鈕按住 / 釋放事件監聽 =====
+downButton.MouseButton1Down:Connect(function()
+    ctrl.d = -1
+end)
+downButton.MouseButton1Up:Connect(function()
+    ctrl.d = 0
+end)
+downButton.MouseLeave:Connect(function()
+    ctrl.d = 0
+end)
+
+upButton.MouseButton1Down:Connect(function()
+    ctrl.u = 1
+end)
+upButton.MouseButton1Up:Connect(function()
+    ctrl.u = 0
+end)
+upButton.MouseLeave:Connect(function()
+    ctrl.u = 0
 end)
 
 -- ===== 🌈 動態 RGB / 霓虹彩虹循環 =====
@@ -281,6 +350,8 @@ end
 
 setupInteractions(mine, Color3.fromRGB(35, 39, 54), Color3.fromRGB(50, 56, 76))
 setupInteractions(plus, Color3.fromRGB(35, 39, 54), Color3.fromRGB(50, 56, 76))
+setupInteractions(downButton, Color3.fromRGB(28, 31, 43), Color3.fromRGB(45, 52, 75))
+setupInteractions(upButton, Color3.fromRGB(28, 31, 43), Color3.fromRGB(45, 52, 75))
 
 -- 系統發送 Notifications
 pcall(function()
@@ -334,6 +405,8 @@ end)
 -- ===== 關閉飛行並清理物件 =====
 local function stopFlying()
     flying = false
+    ctrl.u = 0
+    ctrl.d = 0
     onof.Text = "飛行\n[ OFF ]"
     onof.TextColor3 = Color3.fromRGB(160, 165, 185)
     tween(onof, {BackgroundColor3 = Color3.fromRGB(28, 31, 43)})
@@ -468,7 +541,7 @@ mini.MouseButton1Click:Connect(function()
         tween(Frame, {Size = UDim2.new(0, 250, 0, 38)}, 0.25, Enum.EasingStyle.Quart)
         mini.Text = "□"
     else
-        tween(Frame, {Size = UDim2.new(0, 250, 0, 195)}, 0.25, Enum.EasingStyle.Quart)
+        tween(Frame, {Size = UDim2.new(0, 250, 0, 260)}, 0.25, Enum.EasingStyle.Quart)
         task.wait(0.12)
         ContentFrame.Visible = true
         mini.Text = "—"
