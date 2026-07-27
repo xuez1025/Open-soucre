@@ -195,19 +195,19 @@ _G.ActiveTween = nil
 _G.isMovementActive = false -- 統一用這個代表
 
 --aimbot
-_G.G_SilentAimEnabled         = false 
-_G.G_SilentAimShowFOV         = false
-_G.G_SilentAimFOV             = 150
-_G.G_SilentAimFOVThickness    = 5
-_G.G_SilentAimFOVTransparency = 1
-_G.G_SilentAimFOVMode         = "跟随鼠標"
-_G.G_SilentAimShowLine        = false
-_G.G_SilentAimTargetPlayers   = false
-_G.G_SilentAimTargetMobs      = false
-_G.G_SilentAimTeamCheck       = false
-_G.G_SilentAimDrawings        = _G.G_SilentAimDrawings or {}
+_G.SilentAimEnabled         = false 
+_G.SilentAimShowFOV         = false
+_G.SilentAimFOV             = 150
+_G.SilentAimFOVThickness    = 5
+_G.SilentAimFOVTransparency = 1
+_G.SilentAimFOVMode         = "跟随鼠標"
+_G.SilentAimShowLine        = false
+_G.SilentAimTargetPlayers   = false
+_G.SilentAimTargetMobs      = false
+_G.SilentAimTeamCheck       = false
+_G.SilentAimDrawings        = {}
 
-_G.G_SilentAimSkills = _G.G_SilentAimSkills or {
+_G.SilentAimSkills = {
     ["M1 (普攻)"] = true,
     ["Z"] = true,
     ["X"] = true,
@@ -611,7 +611,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 local function IsSkillSelected(skillName)
-    local skills = _G.G_SilentAimSkills
+    local skills = _G.SilentAimSkills
     if not skills then return true end
     if type(skills) == "table" then
         if next(skills) == nil then return false end
@@ -642,7 +642,6 @@ local function IsAlive(character)
     return hum ~= nil and hum.Health > 0 and root ~= nil
 end
 
--- 強化版盟友UI檢測（兼容兩種界面的層級結構）
 local function IsSilentAimAlly(player)
     if not player then return false end
     local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
@@ -673,16 +672,13 @@ end
 
 local function GetSilentAimOrigin()
     local p = UserInputService:GetMouseLocation()
-    if _G.G_SilentAimFOVMode == "屏幕中心" or p.X <= 0 or p.Y <= 0 then
+    if _G.SilentAimFOVMode == "屏幕中心" or p.X <= 0 or p.Y <= 0 then
         local v = Camera.ViewportSize
         return Vector2.new(v.X / 2, v.Y / 2)
     end
     return p
 end
 
--- ========================================================
---  Drawing 視覺特效物件初始化
--- ========================================================
 local SnapLineThickness = 2.8
 local RainbowSnapLine = true
 local LaserPulseSpeed = 10
@@ -695,19 +691,19 @@ FovCircle.Color = Color3.fromRGB(255, 255, 255)
 FovCircle.Filled = false
 FovCircle.Transparency = 1
 FovCircle.Visible = false
-table.insert(_G.G_SilentAimDrawings, FovCircle)
+table.insert(_G.SilentAimDrawings, FovCircle)
 
 local LaserGlowLayers = {}
 for i = 1, 7 do
     local glowLine = Drawing.new("Line")
     glowLine.Visible = false
-    table.insert(_G.G_SilentAimDrawings, glowLine)
+    table.insert(_G.SilentAimDrawings, glowLine)
     table.insert(LaserGlowLayers, glowLine)
 end
 
 local SnapLineCore = Drawing.new("Line")
 SnapLineCore.Visible = false
-table.insert(_G.G_SilentAimDrawings, SnapLineCore)
+table.insert(_G.SilentAimDrawings, SnapLineCore)
 
 local LaserBeads = {}
 for i = 1, 6 do
@@ -715,7 +711,7 @@ for i = 1, 6 do
     bead.NumSides = 16
     bead.Filled = true
     bead.Visible = false
-    table.insert(_G.G_SilentAimDrawings, bead)
+    table.insert(_G.SilentAimDrawings, bead)
     table.insert(LaserBeads, bead)
 end
 
@@ -726,7 +722,7 @@ for i = 1, 4 do
     ring.Thickness = (i == 1) and 2.5 or 1.2
     ring.Filled = false
     ring.Visible = false
-    table.insert(_G.G_SilentAimDrawings, ring)
+    table.insert(_G.SilentAimDrawings, ring)
     table.insert(TargetLockRings, ring)
 end
 
@@ -734,14 +730,14 @@ local TargetLockCenterDot = Drawing.new("Circle")
 TargetLockCenterDot.NumSides = 20
 TargetLockCenterDot.Filled = true
 TargetLockCenterDot.Visible = false
-table.insert(_G.G_SilentAimDrawings, TargetLockCenterDot)
+table.insert(_G.SilentAimDrawings, TargetLockCenterDot)
 
 local TargetCornerBrackets = {}
 for i = 1, 8 do
     local line = Drawing.new("Line")
     line.Thickness = 2.2
     line.Visible = false
-    table.insert(_G.G_SilentAimDrawings, line)
+    table.insert(_G.SilentAimDrawings, line)
     table.insert(TargetCornerBrackets, line)
 end
 
@@ -765,12 +761,12 @@ local function GetClosestTarget()
         local dist = (part.Position - myRoot.Position).Magnitude
 
         local passFOV = true
-        if _G.G_SilentAimShowFOV then
+        if _G.SilentAimShowFOV then
             local origin = GetSilentAimOrigin()
             local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
             if onScreen then
                 local screenDist = (Vector2.new(pos.X, pos.Y) - origin).Magnitude
-                if screenDist > (_G.G_SilentAimFOV or 150) then
+                if screenDist > _G.SilentAimFOV then
                     passFOV = false
                 end
             else
@@ -784,17 +780,17 @@ local function GetClosestTarget()
         end
     end
 
-    if _G.G_SilentAimTargetPlayers then
+    if _G.SilentAimTargetPlayers then
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
-                if not _G.G_SilentAimTeamCheck or IsSilentAimEnemy(player) then
+                if not _G.SilentAimTeamCheck or IsSilentAimEnemy(player) then
                     check(player.Character)
                 end
             end
         end
     end
 
-    if _G.G_SilentAimTargetMobs then
+    if _G.SilentAimTargetMobs then
         local enemiesFolder = workspace:FindFirstChild("Enemies")
         if enemiesFolder then
             for _, enemy in ipairs(enemiesFolder:GetChildren()) do
@@ -805,11 +801,8 @@ local function GetClosestTarget()
     return closest, shortest
 end
 
--- ========================================================
---  Metatable / Mouse Hooking (改向實際彈道)
--- ========================================================
-if not _G.G_SilentAimHooked and not disableHook then
-    _G.G_SilentAimHooked = true
+if not _G.SilentAimHooked and not disableHook then
+    _G.SilentAimHooked = true
 
     task.spawn(function()
         local MouseModuleInstance = ReplicatedStorage:WaitForChild("Mouse", 5)
@@ -830,12 +823,12 @@ if not _G.G_SilentAimHooked and not disableHook then
 
                     mmt.__index = function(self, key)
                         if key == "Hit" then
-                            if _G.G_SilentAimEnabled and currentSilentAimTargetPos and IsCurrentSkillEnabled() then
+                            if _G.SilentAimEnabled and currentSilentAimTargetPos and IsCurrentSkillEnabled() then
                                 return CFrame.new(currentSilentAimTargetPos)
                             end
                             return realStore.Hit
                         elseif key == "Target" then
-                            if _G.G_SilentAimEnabled and currentSilentAimTarget and IsCurrentSkillEnabled() then
+                            if _G.SilentAimEnabled and currentSilentAimTarget and IsCurrentSkillEnabled() then
                                 return currentSilentAimTarget
                             end
                             return realStore.Target
@@ -864,7 +857,7 @@ if not _G.G_SilentAimHooked and not disableHook then
         local mouse = LocalPlayer:GetMouse()
 
         gmt.__index = newcclosure(function(self, key)
-            if not checkcaller() and _G.G_SilentAimEnabled and currentSilentAimTargetPos and self == mouse and IsCurrentSkillEnabled() then
+            if not checkcaller() and _G.SilentAimEnabled and currentSilentAimTargetPos and self == mouse and IsCurrentSkillEnabled() then
                 local targetPos = currentSilentAimTargetPos
                 local camPos = Camera.CFrame.Position
 
@@ -886,9 +879,6 @@ if not _G.G_SilentAimHooked and not disableHook then
     end
 end
 
--- ========================================================
---  繪圖與主邏輯循環 (RenderStepped)
--- ========================================================
 local function HideAllLaserDrawings()
     for _, glow in ipairs(LaserGlowLayers) do glow.Visible = false end
     SnapLineCore.Visible = false
@@ -898,28 +888,28 @@ local function HideAllLaserDrawings()
     for _, bracket in ipairs(TargetCornerBrackets) do bracket.Visible = false end
 end
 
-if _G.G_SilentAimLoop then _G.G_SilentAimLoop:Disconnect() end
+if _G.SilentAimLoop then _G.SilentAimLoop:Disconnect() end
 
-_G.G_SilentAimLoop = RunService.RenderStepped:Connect(function()
+_G.SilentAimLoop = RunService.RenderStepped:Connect(function()
     local origin = GetSilentAimOrigin()
     local clockTime = os.clock()
 
-    if _G.G_SilentAimShowFOV then
+    if _G.SilentAimShowFOV then
         FovCircle.Visible = true
-        FovCircle.Radius = _G.G_SilentAimFOV or 150
+        FovCircle.Radius = _G.SilentAimFOV
         FovCircle.Position = origin
-        FovCircle.Thickness = _G.G_SilentAimFOVThickness or 1.8
+        FovCircle.Thickness = _G.SilentAimFOVThickness
         FovCircle.Color = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
-        FovCircle.Transparency = _G.G_SilentAimFOVTransparency or 0.85
+        FovCircle.Transparency = _G.SilentAimFOVTransparency
     else
         FovCircle.Visible = false
     end
 
     currentSilentAimTarget, currentTargetDistance = GetClosestTarget()
     currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
-    _G.G_SilentAimTargetPos = currentSilentAimTargetPos
+    _G.SilentAimTargetPos = currentSilentAimTargetPos
 
-    if _G.G_SilentAimShowLine and currentSilentAimTargetPos then
+    if _G.SilentAimShowLine and currentSilentAimTargetPos then
         local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
         if onScreen then
             local targetScreenPos = Vector2.new(pos.X, pos.Y)
@@ -3637,12 +3627,12 @@ Tabs["Aimbot&M1"]:Section({ Title = "Aimbot" })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "開啟自瞄 (技能 & M1)", 
-    Value = _G.G_SilentAimEnabled, 
+    Value = _G.SilentAimEnabled, 
     Locked = disableHook, 
     LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil, 
     Callback = function(v) 
         if disableHook then return end 
-        _G.G_SilentAimEnabled = v 
+        _G.SilentAimEnabled = v 
     end 
 })
 
@@ -3652,63 +3642,63 @@ Tabs["Aimbot&M1"]:Dropdown({
     Value = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" },
     Multi = true, 
     Callback = function(v) 
-        _G.G_SilentAimSkills = v 
+        _G.SilentAimSkills = v 
     end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "瞄準玩家", 
-    Value = _G.G_SilentAimTargetPlayers, 
-    Callback = function(v) _G.G_SilentAimTargetPlayers = v end 
+    Value = _G.SilentAimTargetPlayers, 
+    Callback = function(v) _G.SilentAimTargetPlayers = v end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "隊伍檢測(不瞄隊友)", 
-    Value = _G.G_SilentAimTeamCheck, 
-    Callback = function(v) _G.G_SilentAimTeamCheck = v end 
+    Value = _G.SilentAimTeamCheck, 
+    Callback = function(v) _G.SilentAimTeamCheck = v end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "瞄準 NPC ", 
-    Value = _G.G_SilentAimTargetMobs, 
-    Callback = function(v) _G.G_SilentAimTargetMobs = v end 
+    Value = _G.SilentAimTargetMobs, 
+    Callback = function(v) _G.SilentAimTargetMobs = v end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "顯示射線 (指向最近目標)", 
-    Value = _G.G_SilentAimShowLine, 
-    Callback = function(v) _G.G_SilentAimShowLine = v end 
+    Value = _G.SilentAimShowLine, 
+    Callback = function(v) _G.SilentAimShowLine = v end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "顯示 FOV ", 
-    Value = _G.G_SilentAimShowFOV, 
-    Callback = function(v) _G.G_SilentAimShowFOV = v end 
+    Value = _G.SilentAimShowFOV, 
+    Callback = function(v) _G.SilentAimShowFOV = v end 
 })
 
 Tabs["Aimbot&M1"]:Dropdown({ 
     Title = "FOV 圓圈位置", 
     Values = { "跟随鼠標", "屏幕中心" }, 
-    Value = _G.G_SilentAimFOVMode, 
-    Callback = function(v) _G.G_SilentAimFOVMode = v end 
+    Value = _G.SilentAimFOVMode, 
+    Callback = function(v) _G.SilentAimFOVMode = v end 
 })
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 範圍大小", 
-    Value = { Min = 10, Max = 1000, Default = _G.G_SilentAimFOV }, 
-    Callback = function(v) _G.G_SilentAimFOV = v end 
+    Value = { Min = 10, Max = 1000, Default = _G.SilentAimFOV }, 
+    Callback = function(v) _G.SilentAimFOV = v end 
 })
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 線條粗細", 
-    Value = { Min = 1, Max = 10, Default = _G.G_SilentAimFOVThickness }, 
-    Callback = function(v) _G.G_SilentAimFOVThickness = v end 
+    Value = { Min = 1, Max = 10, Default = _G.SilentAimFOVThickness }, 
+    Callback = function(v) _G.SilentAimFOVThickness = v end 
 })
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 透明度", 
-    Value = { Min = 0, Max = 1, Default = _G.G_SilentAimFOVTransparency, Increment = 0.1 }, 
-    Callback = function(v) _G.G_SilentAimFOVTransparency = v end 
+    Value = { Min = 0, Max = 1, Default = _G.SilentAimFOVTransparency, Increment = 0.1 }, 
+    Callback = function(v) _G.SilentAimFOVTransparency = v end 
 })
 
 Tabs["Aimbot&M1"]:Section({ Title = "Gun Aura" })
