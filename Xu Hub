@@ -5464,6 +5464,36 @@ Tabs["Other"]:Button({
     end
 })
 
+Tabs["Other"]:Button({
+    Title = "FLY GUI V3(手機版)",
+    Callback = function()
+        local isMobile = UserInputService.TouchEnabled
+
+        local scriptUrl = isMobile 
+            and "https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Fly%20GUI%20V3(Mobile)"
+            or "https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Fly%20GUI%20V3"
+
+        WindUI:Notify({
+            Title = "FLY GUI",
+            Content = "正在載入 FLY GUI V3 (" .. (isMobile and "手機/模擬器版" or "電腦版") .. ")...",
+            Duration = 3,
+        })
+        
+        local success, err = pcall(function()
+            loadstring(game:HttpGet(scriptUrl))()
+        end)
+
+        if not success then
+            WindUI:Notify({
+                Title = "載入失敗",
+                Content = "無法存取腳本網址 請檢查網路連線或網址狀態",
+                Duration = 5,
+            })
+            warn("Script Load Error: " .. tostring(err))
+        end
+    end
+})
+
 end
         }
     }
