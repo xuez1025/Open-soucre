@@ -386,9 +386,16 @@ _G.AutoFleeHP = 30
 local fleeConnection = nil
 
 --Teleport
-_G.TP_CurrentToken = 0       -- 傳送唯一的 Token ID，用來徹底殺死舊的傳送迴圈
-_G.TP_ActiveTween = nil      -- 當前運行的 Tween 物件
-_G.TP_CurrentWorld = nil     -- 當前海域狀態
+_G.TP_CurrentToken = 0
+_G.TP_CurrentWorld = nil
+_G.TP_IsTeleporting = false
+_G.TP_FlySpeed = 300
+
+local TP_FlightConn = nil
+local TP_Attachment = nil
+local TP_LinearVelocity = nil
+local TP_AntiGravity = nil
+local lastEntranceTicks = {}
 
 -- World check&Teleport
 local Worlds = {
@@ -397,17 +404,8 @@ local Worlds = {
     World3 = {7449423635, 100117331123089}
 }
 
-local function isCurrentWorld(worldList)
-    for _, id in ipairs(worldList) do
-        if game.PlaceId == id then
-            return true
-        end
-    end
-    return false
-end
-
 for worldName, ids in pairs(Worlds) do
-    if table.find(ids, PlaceId) then
+    if table.find(ids, game.PlaceId) then
         _G.TP_CurrentWorld = worldName
         break
     end
@@ -3028,180 +3026,269 @@ end
 if _G.AutoFlee then StartAutoFlee() end
 
 --Teleport
+local function GetCurrentWorldEntrances()
+    local pool = {}
+    local placeId = game.PlaceId
+
+    if placeId == 2753915549 or placeId == 85211729168715 then
+        pool = {
+            { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
+            { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
+            { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
+            { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
+        }
+    elseif placeId == 4442272183 or placeId == 79091703265657 then
+        pool = {
+            { Arg = Vector3.new(2284.90, 50.53, 905.47), Dest = Vector3.new(2285, 15, 905) },
+            { Arg = Vector3.new(-286.98, 331.13, 597.89), Dest = Vector3.new(-287, 306, 598) },
+            { Arg = Vector3.new(923.21, 161.97, 32852.83), Dest = Vector3.new(923, 125, 32853) },
+            { Arg = Vector3.new(-6508.55, 124.03, -132.83), Dest = Vector3.new(-6509, 83, -133) }
+        }
+    elseif placeId == 7449423635 or placeId == 100117331123089 then
+        pool = {
+            { Arg = Vector3.new(-5027.03, 318.50, -3206.70), Dest = Vector3.new(5651, 1015, -350) },
+            { Arg = Vector3.new(-5060.41, 318.50, -3193.22), Dest = Vector3.new(-12464, 376, -7566) },
+            { Arg = Vector3.new(-12464, 376, -7566), Dest = Vector3.new(-5060, 317, -3193) },
+            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) }
+        }
+    end
+    return pool
+end
+
 local TeleportData = {
     World1 = {
-        ["海軍戰艦"] = { Target = CFrame.new(-3161, 209, 2067), Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["新手村"]   = { Target = CFrame.new(1106, 16, 1431),  Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["叢林"]     = { Target = CFrame.new(-1422, 48, 21),   Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["海盜村"]   = { Target = CFrame.new(-1151, 131, 4166),Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["中城"]     = { Target = CFrame.new(-786, 74, 1607),  Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["可樂"]     = { Target = CFrame.new(-1880, 25, -3320),Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["水下"]     = { Target = CFrame.new(4039, 2, -1820),  Intermediate = CFrame.new(4039, 2, -1820)    },
-        ["噴泉"]     = { Target = CFrame.new(5668, 580, 4301), Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["上空島"]   = { Target = CFrame.new(-7950, 5814, -1968),Intermediate = CFrame.new(-4624, 853, -1700) },
-        ["空島"]     = { Target = CFrame.new(-4913, 738, -2578),Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["沙漠"]     = { Target = CFrame.new(1055, 52, 4490),  Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["火山"]     = { Target = CFrame.new(-5412, 11, 8454), Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["監獄"]     = { Target = CFrame.new(5327, 89, 717),   Intermediate = CFrame.new(61169, 2, 1948)    },
-        ["海洋堡壘"] = { Target = CFrame.new(-5150, 375, 4445),Intermediate = CFrame.new(-7906, 5546, -379) },
-        ["雪地"]     = { Target = CFrame.new(1486, 87, -1281), Intermediate = CFrame.new(61169, 2, 1948)    },
-        ["暴徒領地"] = { Target = CFrame.new(-2836, 7, 5325),  Intermediate = CFrame.new(-7906, 5546, -379) },
+        ["海軍戰艦"] = CFrame.new(-3161, 209, 2067),
+        ["新手村"]   = CFrame.new(1106, 16, 1431),
+        ["叢林"]     = CFrame.new(-1422, 48, 21),
+        ["海盜村"]   = CFrame.new(-1151, 131, 4166),
+        ["中城"]     = CFrame.new(-786, 74, 1607),
+        ["可樂"]     = CFrame.new(-1880, 25, -3320),
+        ["水下"]     = CFrame.new(4039, 2, -1820),
+        ["噴泉"]     = CFrame.new(5668, 580, 4301),
+        ["上空島"]   = CFrame.new(-7950, 5814, -1968),
+        ["空島"]     = CFrame.new(-4913, 738, -2578),
+        ["沙漠"]     = CFrame.new(1055, 52, 4490),
+        ["火山"]     = CFrame.new(-5412, 11, 8454),
+        ["監獄"]     = CFrame.new(5327, 89, 717),
+        ["海洋堡壘"] = CFrame.new(-5150, 375, 4445),
+        ["雪地"]     = CFrame.new(1486, 87, -1281),
+        ["暴徒領地"] = CFrame.new(-2836, 7, 5325),
     },
     World2 = {
-        ["碼頭(2)"]   = { Target = CFrame.new(-11, 38, 2724),     Intermediate = CFrame.new(2283, 19, 911)    },
-        ["鬼船"]      = { Target = CFrame.new(919, 126, 33133),   Intermediate = CFrame.new(-6504, 83, -123)   },
-        ["墓地"]      = { Target = CFrame.new(-5620, 492, -778),  Intermediate = CFrame.new(922, 125, 32843)   },
-        ["咖啡廳"]    = { Target = CFrame.new(-380, 95, 252),     Intermediate = CFrame.new(2283, 19, 911)    },
-        ["黑暗競技場"]= { Target = CFrame.new(3776, 15, -3499),   Intermediate = CFrame.new(-286, 306, 593)    },
-        ["骷髏島"]    = { Target = CFrame.new(-2682, 708, -10966),Intermediate = CFrame.new(922, 125, 32843)   },
-        ["狗屋"]      = { Target = CFrame.new(-2059, 126, -83),   Intermediate = CFrame.new(2283, 19, 911)    },
-        ["岩漿"]      = { Target = CFrame.new(-5176, 175, -5426), Intermediate = CFrame.new(922, 125, 32843)   },
-        ["Raid"]      = { Target = CFrame.new(-6493, 305, -4728), Intermediate = CFrame.new(922, 125, 32843)   },
-        ["雪地"]      = { Target = CFrame.new(775, 410, -5265),   Intermediate = CFrame.new(-286, 306, 593)    },
-        ["可樂"]      = { Target = CFrame.new(-1842, 46, 1362),   Intermediate = CFrame.new(2283, 19, 911)    },
-        ["實驗室"]    = { Target = CFrame.new(-5380, 219, -5936), Intermediate = CFrame.new(922, 125, 32843)   },
-        ["豪宅"]      = { Target = CFrame.new(-391, 322, 854),    Intermediate = CFrame.new(2283, 19, 911)    },
-        ["碼頭(4)"]   = { Target = CFrame.new(-6001, 29, -5024),  Intermediate = CFrame.new(922, 125, 32843)   },
-        ["遠程"]      = { Target = CFrame.new(4756, 8, 2845),     Intermediate = CFrame.new(2283, 19, 911)    },
-        ["碼頭(1)"]   = { Target = CFrame.new(-917, 8, 1807),     Intermediate = CFrame.new(2283, 19, 911)    },
-        ["冬季城堡"]  = { Target = CFrame.new(6007, 294, -6637),  Intermediate = CFrame.new(2283, 19, 911)    },
-        ["碼頭(3)"]   = { Target = CFrame.new(-1920, 6, -2554),   Intermediate = CFrame.new(2283, 19, 911)    },
-        ["工廠"]      = { Target = CFrame.new(430, 211, -430),    Intermediate = CFrame.new(2283, 19, 911)    },
-        ["未知"]      = { Target = CFrame.new(-5157, 3, 2377),    Intermediate = CFrame.new(922, 125, 32843)   },
+        ["碼頭(2)"]   = CFrame.new(-11, 38, 2724),
+        ["鬼船"]      = CFrame.new(919, 126, 33133),
+        ["墓地"]      = CFrame.new(-5620, 492, -778),
+        ["咖啡廳"]    = CFrame.new(-380, 95, 252),
+        ["黑暗競技場"]= CFrame.new(3776, 15, -3499),
+        ["骷髏島"]    = CFrame.new(-2682, 708, -10966),
+        ["狗屋"]      = CFrame.new(-2059, 126, -83),
+        ["岩漿"]      = CFrame.new(-5176, 175, -5426),
+        ["Raid"]      = CFrame.new(-6493, 305, -4728),
+        ["雪地"]      = CFrame.new(775, 410, -5265),
+        ["可樂"]      = CFrame.new(-1842, 46, 1362),
+        ["實驗室"]    = CFrame.new(-5380, 219, -5936),
+        ["豪宅"]      = CFrame.new(-391, 322, 854),
+        ["碼頭(4)"]   = CFrame.new(-6001, 29, -5024),
+        ["遠程"]      = CFrame.new(4756, 8, 2845),
+        ["碼頭(1)"]   = CFrame.new(-917, 8, 1807),
+        ["冬季城堡"]  = CFrame.new(6007, 294, -6637),
+        ["碼頭(3)"]   = CFrame.new(-1920, 6, -2554),
+        ["工廠"]      = CFrame.new(430, 211, -430),
+        ["未知"]      = CFrame.new(-5157, 3, 2377),
     },
     World3 = {
-        ["港口"]         = { Target = CFrame.new(-572, 232, 5770),     Intermediate = CFrame.new(-5027, 317, -3207)  },
-        ["烏龜屋"]       = { Target = CFrame.new(-12550, 337, -7506),  Intermediate = CFrame.new(-5060, 317, -3193)  },
-        ["海上城堡"]     = { Target = CFrame.new(-4929, 317, -3041),   Intermediate = CFrame.new(-12464, 376, -7566) },
-        ["大媽島"]       = { Target = CFrame.new(-726, 381, -10977),   Intermediate = CFrame.new(-12464, 376, -7566) },
-        ["海德拉"]       = { Target = CFrame.new(5761, 1089, 467),     Intermediate = CFrame.new(-5027, 317, -3207)  },
-        ["司法島"]       = { Target = CFrame.new(-15988, 470, 938),    Intermediate = CFrame.new(-5097, 317, -3177)  },
-        ["烏龜中心"]     = { Target = CFrame.new(-11993, 332, -9089),  Intermediate = CFrame.new(5369, 25, -506)     },
-        ["大樹"]         = { Target = CFrame.new(2551, 128, -6950),    Intermediate = CFrame.new(-5027, 317, -3207)  },
-        ["烏龜山"]       = { Target = CFrame.new(-12807, 897, -10793), Intermediate = CFrame.new(5369, 25, -506)     },
-        ["鬧鬼城堡"]     = { Target = CFrame.new(-9515, 164, 5787),    Intermediate = CFrame.new(-5097, 317, -3177)  },
-        ["花生島"]       = { Target = CFrame.new(-2040, 5, -9814),     Intermediate = CFrame.new(-12464, 376, -7566) },
-        ["烏龜入口"]     = { Target = CFrame.new(-10076, 332, -8321),  Intermediate = CFrame.new(-5060, 317, -3193)  },
-        ["海德拉競技場"] = { Target = CFrame.new(5014, 59, -1543),     Intermediate = CFrame.new(-11993, 332, -8837) },
-        ["可可島"]       = { Target = CFrame.new(182, 127, -12769),    Intermediate = CFrame.new(-12464, 376, -7566) },
-        ["蛋糕島"]       = { Target = CFrame.new(-2102, 70, -12134),   Intermediate = CFrame.new(-12464, 376, -7566) },
+        ["港口"]         = CFrame.new(-572, 232, 5770),
+        ["烏龜屋"]       = CFrame.new(-12550, 337, -7506),
+        ["海上城堡"]     = CFrame.new(-4929, 317, -3041),
+        ["大媽島"]       = CFrame.new(-726, 381, -10977),
+        ["海德拉"]       = CFrame.new(5761, 1089, 467),
+        ["司法島"]       = CFrame.new(-15988, 470, 938),
+        ["烏龜中心"]     = CFrame.new(-11993, 332, -9089),
+        ["大樹"]         = CFrame.new(2551, 128, -6950),
+        ["烏龜山"]       = CFrame.new(-12807, 897, -10793),
+        ["鬧鬼城堡"]     = CFrame.new(-9515, 164, 5787),
+        ["花生島"]       = CFrame.new(-2040, 5, -9814),
+        ["烏龜入口"]     = CFrame.new(-10076, 332, -8321),
+        ["海德拉競技場"] = CFrame.new(5014, 59, -1543),
+        ["可可島"]       = CFrame.new(182, 127, -12769),
+        ["蛋糕島"]       = CFrame.new(-2102, 70, -12134),
     }
 }
 
-_G.TP_CurrentToken = 0
+local function ClearFlightComponents()
+    if TP_LinearVelocity then TP_LinearVelocity:Destroy(); TP_LinearVelocity = nil end
+    if TP_AntiGravity    then TP_AntiGravity:Destroy();    TP_AntiGravity    = nil end
+    if TP_Attachment     then TP_Attachment:Destroy();     TP_Attachment     = nil end
+end
+
+local function SetupFlightComponents(hrp)
+    ClearFlightComponents()
+
+    local att        = Instance.new("Attachment")
+    att.Name         = "XuHub_TP_Attachment"
+    att.Parent       = hrp
+    TP_Attachment    = att
+
+    local lv                  = Instance.new("LinearVelocity")
+    lv.Name                   = "XuHub_TP_Velocity"
+    lv.MaxForce               = math.huge
+    lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+    lv.VectorVelocity         = Vector3.zero
+    lv.Attachment0            = att
+    lv.Parent                 = hrp
+    TP_LinearVelocity         = lv
+
+    local totalMass = 0
+    local char = hrp.Parent
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and not part.Massless then
+                totalMass = totalMass + part:GetMass()
+            end
+        end
+    end
+
+    local vf                  = Instance.new("VectorForce")
+    vf.Name                   = "XuHub_TP_AntiGravity"
+    vf.ApplyAtCenterOfMass   = true
+    vf.Attachment0            = att
+    vf.Force                  = Vector3.new(0, totalMass * workspace.Gravity, 0)
+    vf.Parent                 = hrp
+    TP_AntiGravity            = vf
+end
 
 local function ForceStopAllMovement()
     _G.TP_CurrentToken = _G.TP_CurrentToken + 1
-    
-    if _G.TP_ActiveTween then
-        _G.TP_ActiveTween:Cancel()
-        _G.TP_ActiveTween = nil
+    _G.TP_IsTeleporting = false
+
+    if TP_FlightConn then
+        TP_FlightConn:Disconnect()
+        TP_FlightConn = nil
     end
-    
-    _G.SetNoclipState(false)
+
+    ClearFlightComponents()
+
+    if type(_G.SetNoclipState) == "function" then
+        _G.SetNoclipState(false)
+    end
 
     local char = LocalPlayer.Character
     if char then
         local HRP = char:FindFirstChild("HumanoidRootPart")
         local hum = char:FindFirstChildOfClass("Humanoid")
-        
+
         if HRP then
             HRP.AssemblyLinearVelocity = Vector3.zero
             HRP.AssemblyAngularVelocity = Vector3.zero
-            local bodyVelocity = HRP:FindFirstChild("TP_AntiFall")
-            if bodyVelocity then bodyVelocity:Destroy() end
         end
-        
+
         if hum then
             hum.PlatformStand = false
-            hum:ChangeState(Enum.HumanoidStateType.Running)
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         end
     end
 end
 
-local function ExecuteTween(targetCFrame, currentToken)
-    local char = LocalPlayer.Character
-    local HRP = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not HRP or not hum then return false end
-
-    local bodyVelocity = HRP:FindFirstChild("TP_AntiFall")
-    if not bodyVelocity then
-        bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Name = "TP_AntiFall"
-        bodyVelocity.Parent = HRP
-    end
-    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bodyVelocity.Velocity = Vector3.zero
-
-    hum.PlatformStand = true
-    hum:ChangeState(Enum.HumanoidStateType.Physics)
-    
-    _G.SetNoclipState(true)
-
-    local distance = (targetCFrame.Position - HRP.Position).Magnitude
-    local speed = 300
-    if distance < 150 then speed = 600
-    elseif distance < 250 then speed = 450
-    elseif distance < 500 then speed = 400
-    elseif distance < 750 then speed = 300
-    end
-
-    if _G.TP_ActiveTween then _G.TP_ActiveTween:Cancel() end
-
-    local tweenInfo = TweenInfo.new(distance / speed, Enum.EasingStyle.Linear)
-    _G.TP_ActiveTween = TweenService:Create(HRP, tweenInfo, {CFrame = targetCFrame})
-    _G.TP_ActiveTween:Play()
-    
-    _G.TP_ActiveTween.Completed:Wait()
-
-    if _G.TP_CurrentToken ~= currentToken then
-        return false 
-    end
-    return true
-end
-
-local function TeleportTo(DataBlock)
+local function SmartTeleportTo(targetCFrame)
     ForceStopAllMovement()
-    task.wait(0.02) 
-    
-    local myToken = _G.TP_CurrentToken 
-    
+    task.wait(0.02)
+
+    local myToken = _G.TP_CurrentToken
+    _G.TP_IsTeleporting = true
+
     task.spawn(function()
         local char = LocalPlayer.Character
-        local HRP = char and char:FindFirstChild("HumanoidRootPart")
-        if not HRP then return end
+        local myHRP = char and char:FindFirstChild("HumanoidRootPart")
+        local myHum = char and char:FindFirstChildOfClass("Humanoid")
+        if not myHRP or not myHum then return end
 
-        local TargetPos = DataBlock.Target
-        local IntermediatePos = DataBlock.Intermediate
-        local CurrentDistance = (TargetPos.Position - HRP.Position).Magnitude
+        local targetPos = targetCFrame.Position
+        local currentDist = (targetPos - myHRP.Position).Magnitude
+        local speed = _G.TP_FlySpeed or 300
 
-        if CurrentDistance > 300 and IntermediatePos then
-            _G.SetNoclipState(true)
-            HRP.CFrame = IntermediatePos
-            
-            local startTime = os.clock()
-            while (os.clock() - startTime) < 1 do
-                if _G.TP_CurrentToken ~= myToken then return end 
-                task.wait(0.05)
+        local directFlightTime = currentDist / speed
+        local bestEntrance = nil
+        local bestTotalTime = directFlightTime
+        local teleportPenalty = 1.5
+        local pool = GetCurrentWorldEntrances()
+
+        for _, e in ipairs(pool) do
+            local destDistToTarget = (e.Dest - targetPos).Magnitude
+            local totalTimeViaPortal = (destDistToTarget / speed) + teleportPenalty
+
+            if totalTimeViaPortal < bestTotalTime and (currentDist - destDistToTarget) > 150 then
+                bestTotalTime = totalTimeViaPortal
+                bestEntrance = e
             end
         end
 
-        while _G.TP_CurrentToken == myToken and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
-            local currentHRP = LocalPlayer.Character.HumanoidRootPart
-            local Dist = (TargetPos.Position - currentHRP.Position).Magnitude
-            
-            if Dist < 4 then break end 
+        if bestEntrance then
+            local lastTime = lastEntranceTicks[bestEntrance.Arg] or 0
+            if os.clock() - lastTime > 4 then
+                lastEntranceTicks[bestEntrance.Arg] = os.clock()
+                
+                if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
+                
+                pcall(function()
+                    local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+                    commF:InvokeServer("requestEntrance", bestEntrance.Arg)
+                end)
 
-            local success = ExecuteTween(TargetPos, myToken)
-            if not success then return end 
-
-            task.wait(0.05)
+                local startTime = os.clock()
+                while (os.clock() - startTime) < 1.2 do
+                    if _G.TP_CurrentToken ~= myToken then return end
+                    task.wait(0.05)
+                end
+            end
         end
 
-        if _G.TP_CurrentToken == myToken then
-            ForceStopAllMovement()
-        end
+        myHum.PlatformStand = true
+        myHum:ChangeState(Enum.HumanoidStateType.Physics)
+        SetupFlightComponents(myHRP)
+
+        TP_FlightConn = RunService.RenderStepped:Connect(function()
+            if _G.TP_CurrentToken ~= myToken or not _G.TP_IsTeleporting then
+                ForceStopAllMovement()
+                return
+            end
+
+            local curChar = LocalPlayer.Character
+            local curHRP = curChar and curChar:FindFirstChild("HumanoidRootPart")
+            if not curHRP then return end
+
+            if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
+            for _, part in ipairs(curChar:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+
+            local dir = targetPos - curHRP.Position
+            local dist = dir.Magnitude
+
+            if dist <= 4 then
+                ForceStopAllMovement()
+                if WindUI then
+                    WindUI:Notify({ Title = "傳送", Content = "已成功到達該島嶼", Duration = 3 })
+                end
+                return
+            end
+
+            local currentFlySpeed = speed
+            if dist <= 500 and dist > 0 then
+                local maxSpeed = 500
+                currentFlySpeed = speed + (500 - dist) * ((maxSpeed - speed) / 500)
+            end
+
+            if TP_LinearVelocity then
+                TP_LinearVelocity.VectorVelocity = dir.Unit * currentFlySpeed
+            end
+
+            local lookAt = Vector3.new(targetPos.X, curHRP.Position.Y, targetPos.Z)
+            if (lookAt - curHRP.Position).Magnitude > 0.1 then
+                curHRP.CFrame = CFrame.new(curHRP.Position, lookAt)
+            end
+        end)
     end)
 end
 
@@ -4659,49 +4746,42 @@ Tabs["Teleport"]:Button({
     Desc = "立即停止所有傳送與飛行",
     Callback = function()
         ForceStopAllMovement()
-        WindUI:Notify({ Title = "Xu通知", Content = "已成功停止傳送", Duration = 3 })
+        if WindUI then
+            WindUI:Notify({ Title = "Xu通知", Content = "已成功停止傳送", Duration = 3 })
+        end
     end
 })
 
--- 一海下拉選單
 Tabs["Teleport"]:Dropdown({
     Title  = "第一海域 (World 1)",
     Multi  = false,
     Values = {"新手村", "叢林", "海盜村", "中城", "可樂", "水下", "噴泉", "上空島", "空島", "沙漠", "火山", "監獄", "海洋堡壘", "雪地", "暴徒領地", "海軍戰艦"},
     Callback = function(option)
-        if _G.TP_CurrentWorld ~= "World1" then 
-            return 
-        end
-        local data = TeleportData.World1[option]
-        if data then TeleportTo(data) end
+        if _G.TP_CurrentWorld ~= "World1" then return end
+        local targetCFrame = TeleportData.World1[option]
+        if targetCFrame then SmartTeleportTo(targetCFrame) end
     end
 })
 
--- 二海下拉選單
 Tabs["Teleport"]:Dropdown({
     Title  = "第二海域 (World 2)",
     Multi  = false,
     Values = {"咖啡廳", "豪宅", "工廠", "碼頭(1)", "碼頭(2)", "碼頭(3)", "碼頭(4)", "黑暗競技場", "雪地", "冬季城堡", "墓地", "鬼船", "骷髏島", "岩漿", "實驗室", "Raid", "遠程", "狗屋", "可樂", "未知"},
     Callback = function(option)
-        if _G.TP_CurrentWorld ~= "World2" then 
-            return 
-        end
-        local data = TeleportData.World2[option]
-        if data then TeleportTo(data) end
+        if _G.TP_CurrentWorld ~= "World2" then return end
+        local targetCFrame = TeleportData.World2[option]
+        if targetCFrame then SmartTeleportTo(targetCFrame) end
     end
 })
 
--- 三海下拉選單
 Tabs["Teleport"]:Dropdown({
     Title  = "第三海域 (World 3)",
     Multi  = false,
     Values = {"港口", "烏龜入口", "烏龜屋", "烏龜中心", "烏龜山", "海上城堡", "大樹", "海德拉", "海德拉競技場", "司法島", "鬧鬼城堡", "大媽島", "花生島", "蛋糕島", "可可島"},
     Callback = function(option)
-        if _G.TP_CurrentWorld ~= "World3" then 
-            return 
-        end
-        local data = TeleportData.World3[option]
-        if data then TeleportTo(data) end
+        if _G.TP_CurrentWorld ~= "World3" then return end
+        local targetCFrame = TeleportData.World3[option]
+        if targetCFrame then SmartTeleportTo(targetCFrame) end
     end
 })
 
