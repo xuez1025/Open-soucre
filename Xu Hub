@@ -20,7 +20,6 @@ local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
 local commF = remotes:WaitForChild("CommF_")
 
 local function teleportViaRemote(coords)
-    -- 部分位置使用 vector.create，部分使用 Vector3.new，這裡統一處理
     local targetVector = typeof(coords) == "Vector3" and coords or vector.create(coords.X, coords.Y, coords.Z)
     commF:InvokeServer("requestEntrance", targetVector)
 end
@@ -49,7 +48,6 @@ end
 
 local isMissingFunctions = (hookmetamethod == nil) or (getrawmetatable == nil) or (setreadonly == nil)
 
--- 如果是不支援的執行器或缺少必要 Hook 函數，則禁用自瞄功能
 local disableHook = isUnsupportedName or isMissingFunctions
 
 if disableHook then
@@ -478,8 +476,8 @@ _G.G_HopPlayerRange = "1-12"
 _G.G_HopBountyRange = "大於3m"
 _G.G_HopMinPlayers = 1
 _G.G_HopMaxPlayers = 12
-_G.G_HopMinBounty = 3000001
-_G.G_HopMaxBounty = 999999999
+_G.G_HopMinBounty = 3000000
+_G.G_HopMaxBounty = math.huge
 
 ----------------------------------------
 --功能核心邏輯
@@ -506,7 +504,6 @@ local function globalStopTween()
     _G.isMovementActive = false
     _G.isTeleporting = false
     
-    -- 當 Tween 停止時，關閉全域 Noclip
     _G.SetNoclipState(false)
     
     if _G.ActiveTween then
@@ -557,7 +554,6 @@ local function globalTweenTo(targetCFrame, callback)
 
     local distance = (targetCFrame.Position - HRP.Position).Magnitude
 
-    -- 分段配速
     local speed = 300
     if distance < 150 then
         speed = 600
@@ -1109,7 +1105,6 @@ task.spawn(function()
         return math.floor(v9 / v4 * 16777215), v7
     end
     
-    -- 搜尋並鎖定最近的目標 (已整合隊伍與同盟防護)
     local function GetClosestTarget()
         local char = LocalPlayer.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1134,7 +1129,6 @@ task.spawn(function()
         if _G.AttackPlayers then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
-                    -- 隊伍/盟友檢測核心：如果開啟隊伍檢測且該玩家不是敵人，則跳過
                     if not _G.G_SilentAimTeamCheck or IsSilentAimEnemy(player) then
                         local pHum = player.Character:FindFirstChildOfClass("Humanoid")
                         local pRoot = player.Character:FindFirstChild("HumanoidRootPart")
@@ -1149,7 +1143,6 @@ task.spawn(function()
         return closest
     end
     
-    -- 自動攻擊循環：每 0.085 秒執行一次
     while task.wait(0.085) do
         if not _G.DragonGunM1 then continue end
         pcall(function()
@@ -1271,7 +1264,6 @@ local function M1_GatherAllTargets(OthersEnemies)
             local enemyRoot = Enemy:FindFirstChild("HumanoidRootPart")
             if not enemyRoot then continue end
             
-            -- 使用全域變數 _G.AttackDistance
             if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
                 local foundPart = GetRandomValidPart(Enemy)
                 if foundPart then
@@ -1289,7 +1281,6 @@ local function M1_GatherAllTargets(OthersEnemies)
         local enemyRoot = OtherChar:FindFirstChild("HumanoidRootPart")
         if not enemyRoot then continue end
         
-        -- 使用全域變數 _G.AttackDistance
         if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
             local foundPart = GetRandomValidPart(OtherChar)
             if foundPart then
@@ -1346,7 +1337,6 @@ local function GetMode2Targets()
         local tHum = model:FindFirstChild("Humanoid")
         if tRoot and tHum and tHum.Health > 0 then
             local dist = (tRoot.Position - myPos).Magnitude
-            -- 使用全域變數 _G.AttackDistance
             if dist <= _G.AttackDistance then
                 table.insert(targets, { 
                     Model = model, 
@@ -1611,7 +1601,6 @@ local function StartFTPFlight()
     end
 
     _G.FTP_FlightConn = RunService.RenderStepped:Connect(function()
-        -- ⭐️ 逃跑優先檢查 ⭐️
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if _G.AutoFlee and hum and hum.Health > 0 then
@@ -1620,7 +1609,7 @@ local function StartFTPFlight()
                 if _G.FTP_LinearVelocity then
                     _G.FTP_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
                 end
-                return -- 暫停鎖人1飛行，讓自動逃跑拉高角色
+                return
             end
         end
 
@@ -1859,7 +1848,6 @@ local function StartFTPFlight2()
     _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
 
-        -- ⭐️ 逃跑優先檢查 ⭐️
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if _G.AutoFlee and hum and hum.Health > 0 then
@@ -1868,7 +1856,7 @@ local function StartFTPFlight2()
                 if _G.FTP2_LinearVelocity then
                     _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
                 end
-                return -- 暫停鎖人2傳送與飛行，讓自動逃跑拉高角色
+                return
             end
         end
         
@@ -2057,7 +2045,6 @@ local function updateJumpPower()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
     
-    -- 判斷 Humanoid 是使用 JumpPower 還是 JumpHeight
     if hum.UseJumpPower then
         if _G.JumpPowerEnabled then
             hum.JumpPower = _G.JumpPowerValue
@@ -2076,7 +2063,6 @@ end
 LocalPlayer.CharacterAdded:Connect(function(char)
     local hum = char:WaitForChild("Humanoid", 5)
     if hum then
-        -- 監聽數值變化防止被遊戲內部重設
         hum:GetPropertyChangedSignal("JumpPower"):Connect(updateJumpPower)
         hum:GetPropertyChangedSignal("JumpHeight"):Connect(updateJumpPower)
         updateJumpPower()
@@ -2171,7 +2157,6 @@ UserInputService.JumpRequest:Connect(function()
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if humanoid then
-                -- 核心邏輯：向 character 傳遞跳躍狀態，強制繞過陸地檢測
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             end
         end
@@ -2194,7 +2179,6 @@ mouse.Button1Down:Connect(function()
         local char2 = LocalPlayer.Character
         local hrp   = char2 and char2:FindFirstChild("HumanoidRootPart")
         if hrp then 
-            -- 將角色坐標更新至滑鼠點擊點，並往上移動 5 格避免卡牆或卡地表 
             hrp.CFrame = CFrame.new(mouse.Hit.p + Vector3.new(0, 5, 0)) 
         end
     end
@@ -2343,13 +2327,11 @@ end
 local function StopAutoFpsLock()
     autoFpsLockRunning = false
 
-    -- 解除所有連線
     for _, conn in ipairs(autoFpsLockSignals) do
         pcall(function() conn:Disconnect() end)
     end
     table.clear(autoFpsLockSignals)
 
-    -- 清除屬性標記
     pcall(function()
         local skills = LocalPlayer:FindFirstChild("PlayerGui")
             and LocalPlayer.PlayerGui:FindFirstChild("Main")
@@ -2596,7 +2578,6 @@ RunService.RenderStepped:Connect(function()
                             end
                         end
                         
-                        -- [新增] 見聞色 ESP 邏輯
                         if _G.ESP_ShowKen then
                             local kenActive = p:GetAttribute("KenActive")
                             local kenLeft   = p:GetAttribute("KenDodgesLeft")
@@ -2694,7 +2675,6 @@ _G.SetNoclipState = function(state)
                     end
                 end
             else
-                -- 如果中途全局變數變為 false，主動自我斷開
                 if _G.Noclip_Connection then
                     _G.Noclip_Connection:Disconnect()
                     _G.Noclip_Connection = nil
@@ -2702,13 +2682,11 @@ _G.SetNoclipState = function(state)
             end
         end)
     else
-        -- 關閉穿牆：斷開連線並清空變數
         if _G.Noclip_Connection then 
             _G.Noclip_Connection:Disconnect()
             _G.Noclip_Connection = nil 
         end
         
-        -- 立即恢復碰撞體避免卡住掉落
         local char = LocalPlayer.Character
         if char then
             for _, part in ipairs(char:GetDescendants()) do
@@ -2727,10 +2705,8 @@ task.spawn(function()
             local waterPlane = game:GetService("Workspace").Map:FindFirstChild("WaterBase-Plane")
             if waterPlane then
                 if _G.WaterWalkEnabled then
-                    -- 開啟時：拉高 Y 軸（從 80 提高到 112）
                     waterPlane.Size = Vector3.new(1000, 112, 1000)
                 else
-                    -- 關閉時：還原原本的 Y 軸高度（80）
                     waterPlane.Size = Vector3.new(1000, 80, 1000)
                 end
             end
@@ -2762,7 +2738,6 @@ local function applyHitboxToPlayer(plr)
     local r = getRoot(plr.Character)
     if r and r:IsA("BasePart") then
         r.CanCollide = false
-        -- 如果開啟就變成設定的大小，如果關閉就還原回預設大小 (2, 2, 1)
         if _G.Hitbox_Enabled then
             r.Size = Vector3.new(_G.Hitbox_Size, _G.Hitbox_Size, _G.Hitbox_Size)
             r.Transparency = _G.Hitbox_Transparency
@@ -2803,21 +2778,15 @@ local function SetZoom(value)
     value = tonumber(value)
     if not value then return end
     
-    -- 將數值四捨五入到最接近的 STEP
     value = math.floor((value / _G.ZoomStep) + 0.5) * _G.ZoomStep
-    -- 限制在範圍內
     value = math.clamp(value, _G.MinZoom, _G.MaxZoom)
     
     _G.CurrentZoom = value
     
-    -- 確保 LocalPlayer 存在
     if LocalPlayer then
-        -- 1. 將最小縮放距離固定在最貼近玩家的位置（例如原本的 100 或是遊戲預設的 0.5）
-        -- 這樣你才能隨時用滾輪拉到最近
+
         LocalPlayer.CameraMinZoomDistance = 0.5 
         
-        -- 2. 將最大縮放距離綁定到 Slider 的數值
-        -- 這樣你就可以透過滾輪，在 0.5 到「Slider 設定的值」之間自由縮放
         LocalPlayer.CameraMaxZoomDistance = value
     end
 end
@@ -2826,7 +2795,6 @@ end
 task.spawn(function()
     while true do
         if not _G.AutoBuso then 
-            -- 如果關閉了，可以選擇在這邊加入清除狀態的邏輯（對照 ESP 的關閉處理）
             task.wait(1)
         else
             local character = LocalPlayer.Character
@@ -3130,7 +3098,6 @@ local function ForceStopAllMovement()
         _G.TP_ActiveTween = nil
     end
     
-    -- 停止傳送時關閉全域 Noclip
     _G.SetNoclipState(false)
 
     local char = LocalPlayer.Character
@@ -3170,7 +3137,6 @@ local function ExecuteTween(targetCFrame, currentToken)
     hum.PlatformStand = true
     hum:ChangeState(Enum.HumanoidStateType.Physics)
     
-    -- 移動開始呼叫全域控制啟用 Noclip
     _G.SetNoclipState(true)
 
     local distance = (targetCFrame.Position - HRP.Position).Magnitude
@@ -3211,7 +3177,6 @@ local function TeleportTo(DataBlock)
         local CurrentDistance = (TargetPos.Position - HRP.Position).Magnitude
 
         if CurrentDistance > 300 and IntermediatePos then
-            -- 改用全域 Noclip 控制
             _G.SetNoclipState(true)
             HRP.CFrame = IntermediatePos
             
@@ -3255,7 +3220,6 @@ blackFrame.Parent = screenGui
 
 --Remove Fog
 _G.RemoveFog = function()
-    -- 確保 Lighting 變數存在（如果前面沒定義，這裡加上 game.Lighting）
     local lightingService = game:GetService("Lighting")
     
     local layers = lightingService:FindFirstChild("LightingLayers")
@@ -3284,11 +3248,9 @@ end
 --Xray
 local function updateXray(state)
     for _, v in pairs(game.Workspace:GetDescendants()) do
-        -- 檢查是否為 BasePart，且該部件與其父級均不屬於任何玩家/NPC角色
         if v:IsA("BasePart") then
             if not v.Parent:FindFirstChildWhichIsA("Humanoid") then
                 if not v.Parent.Parent:FindFirstChildWhichIsA("Humanoid") then
-                    -- 明確使用 if-else 邏輯取代 state and 0.5 or 0
                     if state == true then
                         v.LocalTransparencyModifier = 0.5
                     else
@@ -3302,22 +3264,17 @@ end
 
 -- Anti AFK
 local function EnableAntiAFK()
-    -- 如果已經啟動了，就不要重複執行
     if _G.AntiAFK_ENABLED then return end
     _G.AntiAFK_ENABLED = true
     
-    -- 優先使用你提供的高級模擬右鍵點擊邏輯
     _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
         VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
         task.wait(1)
         VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
     end)
-    
-    -- 備用：如果你原先想繞過其他腳本的監聽 (getconnections)，可以保留這段
-    -- 但通常單純防掛網，上面那段 Connect 就完全足夠了
+
     if getconnections then
         for _, connection in pairs(getconnections(LocalPlayer.Idled)) do
-            -- 這裡的目的是切斷遊戲內建或其他腳本的 Idled 監聽，避免衝突
             if connection.Disable then connection:Disable()
             elseif connection.Disconnect then connection:Disconnect() end
         end
@@ -3470,6 +3427,13 @@ local BountyRangeValues = {
     "大於50m",
 }
 
+-- 單位乘數表 (支援 K, M, B)
+local MULTIPLIERS = {
+    k = 1e3,
+    m = 1e6,
+    b = 1e9,
+}
+
 local function ContainsValue(list, value)
     for _, item in ipairs(list) do
         if item == value then
@@ -3491,10 +3455,33 @@ if not ContainsValue(RegionValues, _G.G_ServerRegion) then
     _G.G_ServerRegion = "Singapore"
 end
 
+-- 高效千分位格式化 (例: 3000000 -> 3,000,000)
 local function FormatNumber(n)
-    local s = tostring(math.floor(tonumber(n) or 0))
-    local left, num, right = s:match("^([^%d]*%d)(%d*)(.-)$")
-    return left .. (num:reverse():gsub("(%d%d%d)", "%1,"):reverse()) .. right
+    local num = math.floor(tonumber(n) or 0)
+    local str = tostring(num)
+    local k
+    while true do
+        str, k = string.gsub(str, "^(-?%d+)(%d%d%d)", "%1,%2")
+        if k == 0 then break end
+    end
+    return str
+end
+
+-- 解析文字中的數字與單位 (例: "3.5m" -> 3500000)
+local function ParseBountyToken(token)
+    if not token then return nil end
+
+    local numStr, unit = token:match("([%d%.]+)%s*([KkBbMm]?)")
+    if not numStr then return nil end
+
+    local val = tonumber(numStr)
+    if not val then return nil end
+
+    if unit ~= "" then
+        val = val * (MULTIPLIERS[unit:lower()] or 1)
+    end
+
+    return math.floor(val)
 end
 
 local function ApplyPlayerRange(label)
@@ -3511,42 +3498,18 @@ local function ApplyPlayerRange(label)
     _G.G_HopMaxPlayers = 12
 end
 
-local function ParseBountyToken(token)
-    if not token then
-        return nil
-    end
-
-    local num, unit = token:match("([%d%.]+)([Mm]?)")
-    if not num then
-        return nil
-    end
-
-    local value = tonumber(num)
-    if not value then
-        return nil
-    end
-
-    if unit and unit:lower() == "m" then
-        value = value * 1000000
-    end
-
-    return value
-end
-
 local function ApplyBountyRange(label)
     _G.G_HopBountyRange = label
 
-    local minOnly = label:match("大於([%d%.]+[Mm]?)")
+    local minOnly = label:match("大於([%d%.]+[KkBbMm]?)")
     if minOnly then
-        local minBounty = ParseBountyToken(minOnly) or 0
-        -- 「大於」按嚴格大於處理：大於3m => 最低 3000001
-        _G.G_HopMinBounty = minBounty + 1
-        _G.G_HopMaxBounty = 999999999
+        _G.G_HopMinBounty = ParseBountyToken(minOnly) or 0
+        _G.G_HopMaxBounty = math.huge
         return
     end
 
     _G.G_HopMinBounty = 0
-    _G.G_HopMaxBounty = 999999999
+    _G.G_HopMaxBounty = math.huge
 end
 
 ApplyPlayerRange(_G.G_HopPlayerRange)
@@ -3596,11 +3559,12 @@ local function IsServerAllowed(info)
 end
 
 local function BuildFilterText()
+    local maxBountyText = (_G.G_HopMaxBounty == math.huge) and "無上限" or FormatNumber(_G.G_HopMaxBounty)
     return "地區: " .. tostring(_G.G_ServerRegion)
         .. "\n人數: " .. tostring(_G.G_HopPlayerRange)
         .. " (" .. _G.G_HopMinPlayers .. "-" .. _G.G_HopMaxPlayers .. ")"
         .. "\n賞金: " .. tostring(_G.G_HopBountyRange)
-        .. " (" .. FormatNumber(_G.G_HopMinBounty) .. " - " .. FormatNumber(_G.G_HopMaxBounty) .. ")"
+        .. " (" .. FormatNumber(_G.G_HopMinBounty) .. " - " .. maxBountyText .. ")"
 end
 
 local function BuildServerInfoText(info, job)
@@ -5184,12 +5148,12 @@ Tabs["Server"]:Button({
 
 Tabs["Server"]:Section({ Title = "New Server Hop" })
 
-Tabs["Server"]:Paragraph({
+local FilterParagraph = Tabs["Server"]:Paragraph({
     Title = "當前篩選",
     Desc = BuildFilterText(),
 })
 
-Tabs["Server"]:Paragraph({
+local StatusParagraph = Tabs["Server"]:Paragraph({
     Title = "跳服狀態",
     Desc = "等待開始",
 })
@@ -5284,7 +5248,6 @@ local function StartServerHop()
 
     TextBox.Text = _G.G_ServerRegion
 
-    local Filters = Filters or PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
     local Full = Filters and Filters:FindFirstChild("Full")
     local FullCheck = Full and Full:FindFirstChild("Check")
     if FullCheck then
