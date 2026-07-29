@@ -245,6 +245,7 @@ _G.FTP2_TeleportPauseUntil = 0
 _G.CamlockEnabled = false
 
 --觀察
+_G.SpectateEnabled = false
 _G.Spectate_Viewing = nil
 _G.Spectate_ViewDied = nil
 _G.Spectate_ViewChanged = nil
@@ -485,6 +486,8 @@ local ConfigKeys = {
 	"FTP_Enabled","FTP2_Enabled",
 	--camlock
     "CamlockEnabled",
+	--觀察
+	"SpectateEnabled",
 	--監聽
 	"ListenToToggle", "LoopFriendship", "Move_SLIDE_MAGNITUDE",
     "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled", "JumpPowerEnabled", "JumpPowerValue",
@@ -2188,7 +2191,7 @@ _G.SpectatePlayer = function()
     
     _G.Spectate_ViewChanged = workspace.CurrentCamera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
         if _G.Spectate_Viewing and _G.Spectate_Viewing.Character and workspace.CurrentCamera.CameraSubject ~= _G.Spectate_Viewing.Character then
-            workspace.CurrentCamera.CameraSubject = _G.Spectate_Viewing.Character
+            workspace.CurrentCamera.CameraSubject = _G.TargetPlayer.Character
         end
     end)
 end
@@ -4289,14 +4292,15 @@ Tabs["Players"]:Toggle({
 Tabs["Players"]:Toggle({ 
     Title = "觀察玩家", 
     Desc = "切換到目標玩家視角", 
-    Value = false,
-    Callback = function(state)
-        if state then
+    Value = _G.SpectateEnabled,
+    Callback = function(v)
+        _G.SpectateEnabled = v
+        if _G.SpectateEnabled then
             if _G.TargetPlayer then
                 _G.SpectatePlayer()
                 WindUI:Notify({ Title = "提示", Content = "正在觀察 " .. _G.TargetPlayer.Name, Duration = 3 })
             else
-                WindUI:Notify({ Title = "錯誤", Content = "請先選擇玩家！", Duration = 3 })
+                WindUI:Notify({ Title = "視角鎖定", Content = "提示：請先在上方下拉選單選擇玩家！", Duration = 3 })
             end
         else
             _G.StopSpectate()
