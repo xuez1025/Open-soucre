@@ -362,7 +362,7 @@ _G.ZoomStep = 1
 _G.AutoBusoEnabled = true
 _G.AutoKenEnabled = false
 _G.AutoEnablePVP = false
-_G.AutoV3Enabled = false
+_G.AutoV3_Enabled = false
 _G.AutoV4_Enabled = false
 
 --自動順步
@@ -539,9 +539,11 @@ local ConfigKeys = {
 	--自動開啟PVP
 	"AutoEnablePVP",
 	--自動v3
-    "AutoV3Enabled",
+    "AutoV3_Enabled",
+	--自動v4
+	"AutoV4_Enabled",
 	--
-	"AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
+	"AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
@@ -3289,32 +3291,35 @@ end
 task.spawn(function()
     while task.wait(0.5) do
         if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
-        if _G.AutoV3Enabled then
+        if _G.AutoV3_Enabled then
             toggleV3()
             task.wait(1)
         end
     end
 end)
 
---Auto V4
-local autoV4Connection = nil
-
+-- Auto V4
 local function GetAwakeningRemote()
-    local backpack = game.Players.LocalPlayer:FindFirstChild("Backpack")
+    local player = game.Players.LocalPlayer
+    if not player then return nil end
+    local backpack = player:FindFirstChild("Backpack")
     local awakening = backpack and backpack:FindFirstChild("Awakening")
     return awakening and awakening:FindFirstChild("RemoteFunction")
 end
 
-local function ToggleV4Loop(enable)
-    if autoV4Connection then autoV4Connection:Disconnect(); autoV4Connection = nil end
-    if enable then
-        pcall(function() local r = GetAwakeningRemote() if r then r:InvokeServer(true) end end)
-        autoV4Connection = RunService.Heartbeat:Connect(function()
-            local r = GetAwakeningRemote()
-            if r then pcall(function() r:InvokeServer(true) end) end
-        end)
+task.spawn(function()
+    while task.wait(0.1) do
+        if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
+        if _G.AutoV4_Enabled then
+            local remote = GetAwakeningRemote()
+            if remote then
+                pcall(function()
+                    remote:InvokeServer(true)
+                end)
+            end
+        end
     end
-end
+end)
 
 --自動順步
 local function SoruTo(targetPosition)
@@ -4997,9 +5002,9 @@ Tabs["自動"]:Toggle({
 Tabs["自動"]:Toggle({
     Title = "Auto V3",
     Desc = "自動開啟V3",
-    Value = _G.AutoV3Enabled,
+    Value = _G.AutoV3_Enabled,
     Callback = function(v)
-        _G.AutoV3Enabled = v
+        _G.AutoV3_Enabled = v
     end
 })
 
@@ -5007,9 +5012,8 @@ Tabs["自動"]:Toggle({
     Title = "Auto V4",
     Desc = "自動開啟V4",
     Value = _G.AutoV4_Enabled,
-    Callback = function(state)
-        _G.AutoV4_Enabled = state
-        ToggleV4Loop(state)
+    Callback = function(v)
+        _G.AutoV4_Enabled = v
     end
 })
 
