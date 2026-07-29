@@ -337,6 +337,10 @@ _G.Noclip_Connection = nil
 --Walk on water
 _G.WaterWalkEnabled = false
 
+--移除岩漿傷害
+_G.RemoveLavaEnabled = false
+local lavaRemoved = false
+
 --hitbox
 _G.Hitbox_Enabled = false
 _G.Hitbox_Size = 1
@@ -515,6 +519,9 @@ local ConfigKeys = {
 	"Noclip_Enabled",
 	--水上行走
 	"WaterWalkEnabled",
+	--移除岩漿傷害
+	"RemoveLavaEnabled",
+	--
 	"Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
     "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
@@ -3042,7 +3049,7 @@ task.spawn(function()
     end
 end)
 
---Remove Lava
+-- Remove Lava
 local function removeLava()
     for _, v in pairs(game.Workspace:GetDescendants()) do
         if v.Name == "LavaParts" and v.Parent and v.Parent.Name == "CircleIsland"
@@ -3057,6 +3064,18 @@ local function removeLava()
         end
     end
 end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if _G.RemoveLavaEnabled and not lavaRemoved then
+            lavaRemoved = true
+            removeLava()
+            WindUI:Notify({ Title = "已移除岩漿傷害", Content = "已成功移除岩漿物件", Duration = 5 })
+        elseif not _G.RemoveLavaEnabled then
+            lavaRemoved = false -- 關閉時重置狀態，下次再開啟可重新檢測一次
+        end
+    end
+end)
 
 --Hitbox
 local function getRoot(char) return char:FindFirstChild("HumanoidRootPart") end
@@ -4761,10 +4780,12 @@ Tabs["遊戲內設定"]:Toggle({
     end
 })
 
-Tabs["遊戲內設定"]:Button({ Title = "移除岩漿",
-    Callback = function()
-	WindUI:Notify({ Title = "已移除岩漿傷害", Content = "移除岩漿傷害物件", Duration = 5 })
-	removeLava() end
+Tabs["遊戲內設定"]:Toggle({
+    Title = "移除岩漿",
+    Value = _G.RemoveLavaEnabled,
+    Callback = function(v)
+        _G.RemoveLavaEnabled = v
+    end
 })
 
 Tabs["遊戲內設定"]:Button({
