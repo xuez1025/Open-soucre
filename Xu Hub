@@ -410,12 +410,6 @@ _G.UnlockFPS = false
 _G.WhiteScreen = false
 _G.BlackScreen = false
 
-_G.OriginalBrightness = nil
-_G.OriginalClockTime = nil
-_G.OriginalFogEnd = nil
-_G.OriginalGlobalShadows = nil
-_G.OriginalOutdoorAmbient = nil
-
 --Lagfix
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
@@ -550,7 +544,7 @@ local ConfigKeys = {
     "UnlockFPS",
 	--白屏&黑屏
 	"WhiteScreen", "BlackScreen",
-	--
+	--低配模式
 	"LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
@@ -641,6 +635,10 @@ end)
 task.spawn(function()
     task.wait()
     
+    if _G.LowVisualMode then
+        _G.SetLowVisualState(true)
+    end
+
     if _G.Noclip_Enabled then
         _G.SetNoclipState(true)
     end
@@ -3757,6 +3755,55 @@ blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
 blackFrame.Visible = _G.BlackScreen
 blackFrame.Parent = screenGui
 
+--低配模式
+_G.SetLowVisualState = function(state)
+    _G.LowVisualMode = state
+    
+    if _G.LowVisualMode then
+        WindUI:Notify({ 
+            Title = "優化系統", 
+            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
+            Duration = 3 
+        })
+        
+        local Lighting = game:GetService("Lighting")
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        
+        for _, obj in pairs(game:GetDescendants()) do
+            if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.Reflectance = 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj:Destroy()
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            elseif obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("DepthOfFieldEffect") or obj:IsA("SunRaysEffect") then
+                obj.Enabled = false
+            end
+        end
+        
+        if not _G.LowVisualConnection then
+            _G.LowVisualConnection = game.Workspace.DescendantAdded:Connect(function(obj)
+                if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj:Destroy()
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
+        end
+    else
+        if _G.LowVisualConnection then
+            _G.LowVisualConnection:Disconnect()
+            _G.LowVisualConnection = nil
+        end
+    end
+end
+
 --Remove Fog
 _G.RemoveFog = function()
     local lightingService = game:GetService("Lighting")
@@ -5395,48 +5442,12 @@ Tabs["畫質"]:Toggle({
     end
 })
 
-Tabs["畫質"]:Button({
+Tabs["畫質"]:Toggle({
     Title = "低配模式",
     Desc = "大幅優化效能",
-    Callback = function()
-        if _G.LowVisualMode then return end
-        
-        _G.LowVisualMode = true
-        
-        WindUI:Notify({ 
-            Title = "優化系統", 
-            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
-            Duration = 3 
-        })
-        
-        local Lighting = game:GetService("Lighting")
-        Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
-        Lighting.Brightness = 1
-        
-        for _, obj in pairs(game:GetDescendants()) do
-            if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
-                obj.Material = Enum.Material.SmoothPlastic
-                obj.Reflectance = 0
-            elseif obj:IsA("Decal") or obj:IsA("Texture") then
-                obj:Destroy()
-            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                obj.Enabled = false
-            elseif obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("DepthOfFieldEffect") or obj:IsA("SunRaysEffect") then
-                obj.Enabled = false
-            end
-        end
-        
-        _G.LowVisualConnection = game.Workspace.DescendantAdded:Connect(function(obj)
-            if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
-                obj.Material = Enum.Material.SmoothPlastic
-                obj.Reflectance = 0
-            elseif obj:IsA("Decal") or obj:IsA("Texture") then
-                obj:Destroy()
-            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                obj.Enabled = false
-            end
-        end)
+    Value = _G.LowVisualMode,
+    Callback = function(v)
+        _G.SetLowVisualState(v)
     end
 })
 
