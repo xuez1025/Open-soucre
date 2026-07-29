@@ -499,7 +499,7 @@ local ConfigKeys = {
 	"DodgeNoCooldown",
 	--無限跳躍
 	"InfiniteJump",
-	--spin
+	--旋轉
 	"AntiCCSpin", "SpinSpeed",
 	--點擊傳送
 	"ClickTP",
@@ -511,7 +511,11 @@ local ConfigKeys = {
 	"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
     --選擇陣營
 	"SelectTeam",
-	"Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
+	--穿牆
+	"Noclip_Enabled",
+	--水上行走
+	"WaterWalkEnabled",
+	"Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
     "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
@@ -3022,7 +3026,7 @@ _G.SetNoclipState = function(v)
     end
 end
 
---Walk on water
+-- Walk on water
 task.spawn(function()
     while task.wait() do
         pcall(function()
@@ -4752,8 +4756,8 @@ Tabs["遊戲內設定"]:Toggle({
 Tabs["遊戲內設定"]:Toggle({
     Title = "水上行走",
     Value = _G.WaterWalkEnabled,
-    Callback = function(state)
-        _G.WaterWalkEnabled = state
+    Callback = function(v)
+        _G.WaterWalkEnabled = v
     end
 })
 
