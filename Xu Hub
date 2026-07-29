@@ -419,6 +419,7 @@ _G.RemoveFogEnabled = false
 
 --fullbright
 _G.LoopFullBright = false
+_G.BrightLoopConnection = nil
 
 --day&night
 _G.NightToggleState = false
@@ -551,6 +552,7 @@ local ConfigKeys = {
 	"LowVisualMode",
 	--移除迷霧
 	"RemoveFogEnabled",
+    --全亮
 	"LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
@@ -641,7 +643,10 @@ end)
 task.spawn(function()
     task.wait()
     
-    -- 移除迷霧初始化
+    if _G.LoopFullBright then
+        _G.SetFullBrightState(true)
+    end
+
     if _G.RemoveFogEnabled then
         _G.ApplyRemoveFog()
     end
@@ -3829,15 +3834,29 @@ _G.ApplyRemoveFog = function()
 end
 
 --fullbright
-local brightLoop = nil
-local Lighting = game:GetService("Lighting")
+_G.SetFullBrightState = function(state)
+    _G.LoopFullBright = state
 
-local function doFullBright()
-    Lighting.Brightness = 2
-    Lighting.ClockTime = 14
-    Lighting.FogEnd = 100000
-    Lighting.GlobalShadows = false
-    Lighting.OutdoorAmbient = Color3.fromRGB(128,128,128)
+    if _G.BrightLoopConnection then 
+        _G.BrightLoopConnection:Disconnect() 
+        _G.BrightLoopConnection = nil 
+    end
+    
+    if not _G.LoopFullBright then return end
+
+    local Lighting = game:GetService("Lighting")
+    local RunService = game:GetService("RunService")
+
+    local function doFullBright()
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+    end
+
+    doFullBright()
+    _G.BrightLoopConnection = RunService.RenderStepped:Connect(doFullBright)
 end
 
 --Xray
@@ -5476,17 +5495,8 @@ Tabs["畫質"]:Toggle({
     Title = "全亮", 
     Desc = "持續保持全亮", 
     Value = _G.LoopFullBright,
-    Callback = function(state)
-        _G.LoopFullBright = state
-        
-        if brightLoop then 
-            brightLoop:Disconnect() 
-            brightLoop = nil 
-        end
-        
-        if not _G.LoopFullBright then return end
-        doFullBright()
-        brightLoop = RunService.RenderStepped:Connect(doFullBright)
+    Callback = function(v)
+        _G.SetFullBrightState(v)
     end
 })
 
