@@ -546,9 +546,9 @@ local ConfigKeys = {
 	"AutoSoru",
 	--自動逃跑
 	"AutoFlee", "AutoFleeHP",
-	--
-	"TP_FlySpeed",
-    "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
+	--FPS
+    "UnlockFPS",
+	"WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
@@ -5344,12 +5344,17 @@ Tabs["畫質"]:Section({ Title = "畫質" })
 
 Tabs["畫質"]:Toggle({
     Title = "突破FPS上限",
-    Value = _G.UnlockFPS, 
+    Desc = "解鎖遊戲幀率限制",
+    Value = _G.UnlockFPS,
     Callback = function(state)
         _G.UnlockFPS = state
 
         if _G.UnlockFPS and setfpscap then
             setfpscap(999)
+        else
+            if setfpscap then
+                setfpscap(0)
+            end
         end
     end
 })
