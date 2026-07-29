@@ -362,7 +362,7 @@ _G.ZoomStep = 1
 _G.AutoBusoEnabled = true
 _G.AutoKenEnabled = false
 _G.AutoEnablePVP = false
-_G.AutoV3_Enabled = false
+_G.AutoV3Enabled = false
 _G.AutoV4_Enabled = false
 
 --自動順步
@@ -538,7 +538,10 @@ local ConfigKeys = {
 	"AutoKenEnabled",
 	--自動開啟PVP
 	"AutoEnablePVP",
-    "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
+	--自動v3
+    "AutoV3Enabled",
+	--
+	"AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
@@ -3275,26 +3278,23 @@ task.spawn(function()
     end
 end)
 
---Auto V3
-local autoV3Task = nil
+-- Auto V3
+local function toggleV3()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.T, false, game)
+    task.wait(1)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
+end
 
-local function StartAutoV3()
-    if autoV3Task then return end
-    autoV3Task = task.spawn(function()
-        while _G.AutoV3_Enabled do
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.T, false, game)
-            task.wait(1)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
+task.spawn(function()
+    while task.wait(0.5) do
+        if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
+        if _G.AutoV3Enabled then
+            toggleV3()
             task.wait(1)
         end
-        autoV3Task = nil
-    end)
-end
-
-local function StopAutoV3()
-    _G.AutoV3_Enabled = false
-    autoV3Task = nil
-end
+    end
+end)
 
 --Auto V4
 local autoV4Connection = nil
@@ -4997,14 +4997,9 @@ Tabs["自動"]:Toggle({
 Tabs["自動"]:Toggle({
     Title = "Auto V3",
     Desc = "自動開啟V3",
-    Value = _G.AutoV3_Enabled,
-    Callback = function(state)
-        _G.AutoV3_Enabled = state
-        if state then
-            StartAutoV3()
-        else
-            StopAutoV3()
-        end
+    Value = _G.AutoV3Enabled,
+    Callback = function(v)
+        _G.AutoV3Enabled = v
     end
 })
 
