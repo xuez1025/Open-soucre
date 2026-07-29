@@ -327,6 +327,9 @@ _G.ESP_FontSize      = 14
 
 local Tracers = {}
 
+--選擇陣營
+_G.SelectTeam = "海賊 (Pirates)"
+
 --Noclip
 _G.Noclip_Enabled = false
 _G.Noclip_Connection = nil
@@ -506,7 +509,8 @@ local ConfigKeys = {
 	"AutoFpsLock",
 	--ESP Players
 	"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
-    --
+    --選擇陣營
+	"SelectTeam",
 	"Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
     "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
@@ -600,6 +604,10 @@ end)
 task.spawn(function()
     task.wait()
     
+    if _G.Noclip_Enabled then
+        _G.SetNoclipState(true)
+    end
+
     if _G.Move_MovingEnabled then 
         _G.ToggleMoveState(true) 
     end
@@ -2978,16 +2986,15 @@ Players.PlayerAdded:Connect(function(p)
 end)
 
 --Noclip
-_G.SetNoclipState = function(state)
-    _G.Noclip_Enabled = state
+_G.SetNoclipState = function(v)
+    _G.Noclip_Enabled = v
     
-    if state then
+    if _G.Noclip_Enabled then
         if _G.Noclip_Connection then return end
         
-        _G.Noclip_Connection = RunService.Stepped:Connect(function()
-            local char = LocalPlayer.Character
-            if char and _G.Noclip_Enabled then
-                for _, part in ipairs(char:GetDescendants()) do
+        _G.Noclip_Connection = game:GetService("RunService").Stepped:Connect(function()
+            if game.Players.LocalPlayer.Character and _G.Noclip_Enabled then
+                for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
                     if part:IsA("BasePart") and part.CanCollide then 
                         part.CanCollide = false 
                     end
@@ -3005,9 +3012,8 @@ _G.SetNoclipState = function(state)
             _G.Noclip_Connection = nil 
         end
         
-        local char = LocalPlayer.Character
-        if char then
-            for _, part in ipairs(char:GetDescendants()) do
+        if game.Players.LocalPlayer.Character then
+            for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
                 if part:IsA("BasePart") then 
                     part.CanCollide = true 
                 end
@@ -4717,15 +4723,20 @@ Tabs["ESP"]:Slider({
 Tabs["遊戲內設定"]:Section({ Title = "Select Team" })
 
 Tabs["遊戲內設定"]:Dropdown({
-    Title = "選擇陣營", Description = "點擊切換海賊或海軍",
+    Title = "選擇陣營", 
+    Description = "點擊切換海賊或海軍",
     Values = {"海賊 (Pirates)", "海軍 (Marines)"},
-	--Value = "海賊 (Pirates)",--不要刪除
-    Callback = function(selected)
-        local map = { ["海賊 (Pirates)"] = { "海賊", "Pirates" }, ["海軍 (Marines)"] = { "海軍", "Marines" } }
-        local v   = map[selected]
-        if v then
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", v[2])
-            WindUI:Notify({ Title = "隊伍切換", Content = "正在嘗試加入 " .. v[1] .. "...", Duration = 3 })
+    --Value = "海賊 (Pirates)",--不要刪除
+    Callback = function(v)
+        _G.SelectTeam = v
+        local map = { 
+            ["海賊 (Pirates)"] = { "海賊", "Pirates" }, 
+            ["海軍 (Marines)"] = { "海軍", "Marines" } 
+        }
+        local teamData = map[_G.SelectTeam]
+        if teamData then
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", teamData[2])
+            WindUI:Notify({ Title = "隊伍切換", Content = "正在嘗試加入 " .. teamData[1] .. "...", Duration = 3 })
         end
     end
 })
@@ -4733,8 +4744,8 @@ Tabs["遊戲內設定"]:Dropdown({
 Tabs["遊戲內設定"]:Toggle({
     Title = "穿牆",
     Value = _G.Noclip_Enabled,
-    Callback = function(state)
-        _G.SetNoclipState(state)
+    Callback = function(v)
+        _G.SetNoclipState(v)
     end
 })
 
@@ -5405,6 +5416,23 @@ Tabs["畫質"]:Toggle({
     end
 })
 
+Tabs["設定"]:Section({ Title = "重置腳本" })
+
+Tabs["設定"]:Button({
+    Title = "將所有配置恢復初始",
+    Desc = "刪除已保存的配置 並還原至初始設定",
+    Callback = function()
+        ApplyConfig(InitialConfig)
+        ConfigDirty = true
+        SaveConfig(true)
+        WindUI:Notify({
+            Title = "配置已重置",
+            Content = "所有配置已恢復為初始值，重新執行腳本後完全生效。",
+            Duration = 3
+        })
+    end
+})
+
 Tabs["設定"]:Section({ Title = "設定" })
 
 Tabs["設定"]:Toggle({ 
@@ -5486,23 +5514,6 @@ Tabs["設定"]:Dropdown({
     Callback = function(state)
         _G.Theme = state             
         WindUI:SetTheme(state)         
-    end
-})
-
-Tabs["設定"]:Section({ Title = "重置腳本" })
-
-Tabs["設定"]:Button({
-    Title = "將所有配置恢復初始",
-    Desc = "刪除已保存的配置 並還原至初始設定",
-    Callback = function()
-        ApplyConfig(InitialConfig)
-        ConfigDirty = true
-        SaveConfig(true)
-        WindUI:Notify({
-            Title = "配置已重置",
-            Content = "所有配置已恢復為初始值，重新執行腳本後完全生效。",
-            Duration = 3
-        })
     end
 })
 
