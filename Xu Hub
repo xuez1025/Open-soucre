@@ -483,7 +483,10 @@ local ConfigKeys = {
 	"FruitsM1Enable","FruitsM1DelayValue",
 	--鎖人v1&v2
 	"FTP_Enabled","FTP2_Enabled",
-    "CamlockEnabled", "ListenToToggle", "LoopFriendship", "Move_SLIDE_MAGNITUDE",
+	--camlock
+    "CamlockEnabled",
+	--監聽
+	"ListenToToggle", "LoopFriendship", "Move_SLIDE_MAGNITUDE",
     "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled", "JumpPowerEnabled", "JumpPowerValue",
     "DashLengthEnabled", "DashLength", "DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
     "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
@@ -2134,14 +2137,20 @@ end
 
 --camera lock
 RunService.RenderStepped:Connect(function()
-    if not _G.CamlockEnabled or not _G.TargetPlayer or not _G.TargetPlayer.Character then return end
-    
+    if not _G.CamlockEnabled then return end
+    if not _G.TargetPlayer then return end
+    if not _G.TargetPlayer.Character then return end
+    if not LocalPlayer then return end
+    if not LocalPlayer.Character then return end
+
     local camera = Workspace.CurrentCamera
     local targetHRP = _G.TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local localHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    
-    if targetHRP and localHRP then
-        camera.CFrame = CFrame.new(camera.CFrame.Position, targetHRP.Position)
+    local localHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    if targetHRP then
+        if localHRP then
+            camera.CFrame = CFrame.new(camera.CFrame.Position, targetHRP.Position)
+        end
     end
 end)
 
@@ -4267,15 +4276,12 @@ Tabs["Players"]:Toggle({
     Title = "畫面鎖定",
     Desc = "畫面強制鎖定目標玩家",
     Value = _G.CamlockEnabled,
-    Callback = function(state)
-        _G.CamlockEnabled = state
-        if state then
-            if _G.TargetPlayer then
-            else
+    Callback = function(v)
+        _G.CamlockEnabled = v
+        if v then
+            if not _G.TargetPlayer then
                 WindUI:Notify({ Title = "視角鎖定", Content = "提示：請先在上方下拉選單選擇玩家！", Duration = 3 })
             end
-        else
-            WindUI:Notify({ Title = "視角鎖定", Content = "已關閉視角鎖定", Duration = 3 })
         end
     end
 })
