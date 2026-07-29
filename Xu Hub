@@ -489,7 +489,10 @@ local ConfigKeys = {
 	--觀察
 	"SpectateEnabled",
 	--監聽
-	"ListenToToggle", "LoopFriendship", "Move_SLIDE_MAGNITUDE",
+	"ListenToToggle",
+	--循環加刪好友
+	"LoopFriendship",
+	"Move_SLIDE_MAGNITUDE",
     "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled", "JumpPowerEnabled", "JumpPowerValue",
     "DashLengthEnabled", "DashLength", "DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
     "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
@@ -2197,20 +2200,6 @@ _G.SpectatePlayer = function()
 end
 
 --監聽玩家
-local function StartListenTo(TargetPlayer)
-    if not TargetPlayer then return end
-    
-    local tc = TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if tc then
-        game:GetService("SoundService"):SetListener(Enum.ListenerType.ObjectPosition, tc)
-        
-        _G.ListenToConnection = TargetPlayer.CharacterAdded:Connect(function()
-            repeat task.wait() until TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
-            game:GetService("SoundService"):SetListener(Enum.ListenerType.ObjectPosition, TargetPlayer.Character:FindFirstChild("HumanoidRootPart"))
-        end)
-    end
-end
-
 local function StopListenTo()
     game:GetService("SoundService"):SetListener(Enum.ListenerType.Camera)
     
@@ -2219,6 +2208,45 @@ local function StopListenTo()
         _G.ListenToConnection = nil 
     end
 end
+
+local function StartListenTo(TargetPlayer)
+    if not TargetPlayer then return end
+    
+    StopListenTo()
+    
+    local tc = nil
+    if TargetPlayer.Character then
+        tc = TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    end
+
+    if tc then
+        game:GetService("SoundService"):SetListener(Enum.ListenerType.ObjectPosition, tc)
+        
+        _G.ListenToConnection = TargetPlayer.CharacterAdded:Connect(function(char)
+            local hrp = char:WaitForChild("HumanoidRootPart", 5)
+            if hrp then
+                game:GetService("SoundService"):SetListener(Enum.ListenerType.ObjectPosition, hrp)
+            end
+        end)
+    end
+end
+
+--循環加刪好友
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.LoopFriendship then
+            if _G.TargetPlayer and _G.TargetPlayer:IsDescendantOf(game.Players) and _G.TargetPlayer ~= game.Players.LocalPlayer then
+                pcall(function()
+                    game.Players.LocalPlayer:RequestFriendship(_G.TargetPlayer)
+                    task.wait(0.5)
+                    game.Players.LocalPlayer:RevokeFriendship(_G.TargetPlayer)
+                end)
+            else
+                task.wait(0.5)
+            end
+        end
+    end
+end)
 
 --Move
 local function StartMove()
@@ -4227,7 +4255,7 @@ Tabs["Players"]:Button({
             lc.CFrame = tc.CFrame
             notify("傳送", "已成功傳送到 " .. _G.TargetPlayer.Name, 2)
         else
-            notify("傳送", "傳送失敗，找不到玩家實體", 3)
+            notify("傳送", "傳送失敗，找不到該玩家", 3)
         end
     end
 })
@@ -4239,7 +4267,7 @@ Tabs["Players"]:Toggle({
     Callback = function(v)
         if v then
             if not _G.TargetPlayer then
-                if WindUI then WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", duration = 3 }) end
+                if WindUI then WindUI:Notify({ Title = "鎖人v1", Content = "請先選擇目標玩家！", duration = 3 }) end
                 return
             end
             if _G.FTP2_Enabled then StopFTPFlight2() end
@@ -4258,7 +4286,7 @@ Tabs["Players"]:Toggle({
         if v then
             if not _G.TargetPlayer then
                 if WindUI then 
-                    WindUI:Notify({ Title = "錯誤", Content = "請先選擇目標玩家！", duration = 3 }) 
+                    WindUI:Notify({ Title = "鎖人v2", Content = "請先選擇目標玩家！", duration = 3 }) 
                 end
                 return
             end
@@ -4300,7 +4328,7 @@ Tabs["Players"]:Toggle({
                 _G.SpectatePlayer()
                 WindUI:Notify({ Title = "提示", Content = "正在觀察 " .. _G.TargetPlayer.Name, Duration = 3 })
             else
-                WindUI:Notify({ Title = "視角鎖定", Content = "提示：請先在上方下拉選單選擇玩家！", Duration = 3 })
+                WindUI:Notify({ Title = "觀察玩家", Content = "提示：請先在上方下拉選單選擇玩家！", Duration = 3 })
             end
         else
             _G.StopSpectate()
@@ -4312,12 +4340,19 @@ Tabs["Players"]:Toggle({
     Title = "監聽玩家", 
     Desc = "監聽目標玩家周圍聲音", 
     Value = _G.ListenToToggle,
-    Callback = function(state)
-        _G.ListenToToggle = state
+    Callback = function(v)
+        _G.ListenToToggle = v
         
         if _G.ListenToToggle then
             if not _G.TargetPlayer then 
-                notify("ListenTo", "請先選擇玩家", 3)
+                if Window and Window.Notify then
+                    Window:Notify({
+                        Title = "監聽玩家",
+                        Content = "提示：請先在上方下拉選單選擇玩家！",
+                        Duration = 3
+                    })
+                end
+                _G.ListenToToggle = false
                 return 
             end
             
@@ -4332,28 +4367,8 @@ Tabs["Players"]:Toggle({
     Title = "循環加/刪好友", 
     Desc = "持續對目標玩家發送/刪除好友申請", 
     Value = _G.LoopFriendship,
-    Callback = function(state)
-        _G.LoopFriendship = state
-        
-        if state then
-            task.spawn(function()
-                while _G.LoopFriendship do
-                    if _G.TargetPlayer and _G.TargetPlayer:IsDescendantOf(Players) and _G.TargetPlayer ~= LocalPlayer then
-                        pcall(function()
-                            LocalPlayer:RequestFriendship(_G.TargetPlayer)
-                            
-                            task.wait(0.5)
-                            
-                            LocalPlayer:RevokeFriendship(_G.TargetPlayer)
-                        end)
-                    else
-                        task.wait(0.5) 
-                    end
-                    
-                    task.wait(0.1) 
-                end
-            end)
-        end
+    Callback = function(v)
+        _G.LoopFriendship = v
     end
 })
 
