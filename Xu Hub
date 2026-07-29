@@ -222,7 +222,7 @@ _G.AttackDistance = 500
 _G.FruitsM1Enable = false
 _G.FruitsM1DelayValue = 0.05
 
---選擇
+--選擇玩家
 _G.TargetPlayer = nil
 
 --TP to player
@@ -1599,13 +1599,7 @@ local function GetPlayerList()
     return list
 end
 
-game.Players.PlayerAdded:Connect(function() 
-    playerDropdown:Refresh(GetPlayerList()) 
-end)
-
-game.Players.PlayerRemoving:Connect(function() 
-    playerDropdown:Refresh(GetPlayerList()) 
-end)
+local playerDropdown
 
 --鎖人1
 local function GetPredictedPosition(plr)
@@ -4038,13 +4032,14 @@ Tabs["Aimbot&M1"]:Slider({
 
 Tabs["Players"]:Section({ Title = "Players" })
 
-Tabs["Players"]:Dropdown({ 
+playerDropdown = Tabs["Players"]:Dropdown({ 
     Title = "選擇玩家", 
     Values = GetPlayerList(), 
     Value = nil,
-    Callback = function(option)
+    Callback = function(v)
+        _G.TargetPlayer = nil
         for _, plr in ipairs(game.Players:GetPlayers()) do
-            if plr.Name == option then 
+            if plr.Name == v then 
                 _G.TargetPlayer = plr
                 break 
             end
@@ -4052,16 +4047,30 @@ Tabs["Players"]:Dropdown({
     end
 })
 
+game.Players.PlayerAdded:Connect(function(v) 
+    if playerDropdown then
+        playerDropdown:Refresh(GetPlayerList()) 
+    end
+end)
+
+game.Players.PlayerRemoving:Connect(function(v) 
+    if playerDropdown then
+        playerDropdown:Refresh(GetPlayerList()) 
+    end
+end)
+
 Tabs["Players"]:Button({
     Title = "刷新玩家列表",
-    Description = "手動刷新目前的玩家名單",
-    Callback = function()
-        playerDropdown:Refresh(GetPlayerList())
+    Desc = "手動刷新目前的玩家名單",
+    Callback = function(v)
+        if playerDropdown then
+            playerDropdown:Refresh(GetPlayerList())
+        end
 
-        Library:Notify({
+        WindUI:Notify({
             Title = "列表通知",
             Content = "玩家列表已成功刷新",
-            Duration = 3 -- 顯示 3 秒
+            Duration = 3
         })
     end
 })
