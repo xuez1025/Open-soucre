@@ -534,8 +534,10 @@ local ConfigKeys = {
     "Zoom_Enabled", "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep",
 	--自動武裝色
 	"AutoBusoEnabled",
-	--
-	"AutoKenEnabled", "AutoEnablePVP",
+	--自動見聞色
+	"AutoKenEnabled",
+	--自動開啟PVP
+	"AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
@@ -3228,20 +3230,28 @@ end)
 --Auto Ken
 local function toggleKenVision()
     if UserInputService:GetFocusedTextBox() then return end
-    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.E, false, game)
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
     task.wait(0.05)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
 task.spawn(function()
     while task.wait(0.1) do
-        if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
-        local kenLeft   = game.Players.LocalPlayer:GetAttribute("KenDodgesLeft")
-        local kenActive = game.Players.LocalPlayer:GetAttribute("KenActive")
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        
+        local kenLeft = LocalPlayer:GetAttribute("KenDodgesLeft")
+        local kenActive = LocalPlayer:GetAttribute("KenActive")
+        
         if kenLeft ~= nil then
-            if _G.AutoKenEnabled and not kenActive then toggleKenVision(); task.wait(0.5) end
+            if _G.AutoKenEnabled and not kenActive then
+                toggleKenVision()
+                task.wait(0.5)
+            end
         else
-            if _G.AutoKenEnabled then toggleKenVision(); task.wait(1.0) end
+            if _G.AutoKenEnabled then
+                toggleKenVision()
+                task.wait(1.0)
+            end
         end
     end
 end)
@@ -4971,8 +4981,8 @@ Tabs["自動"]:Toggle({
     Title = "Auto Ken",
     Desc = "自動開啟見聞色",
     Value = _G.AutoKenEnabled,
-    Callback = function(state)
-        _G.AutoKenEnabled = state
+    Callback = function(v)
+        _G.AutoKenEnabled = v
     end
 })
 
