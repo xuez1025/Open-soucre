@@ -410,9 +410,12 @@ _G.UnlockFPS = false
 _G.WhiteScreen = false
 _G.BlackScreen = false
 
---Lagfix
+--低配
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
+
+--移除迷霧
+_G.RemoveFogEnabled = false
 
 --fullbright
 _G.LoopFullBright = false
@@ -545,7 +548,10 @@ local ConfigKeys = {
 	--白屏&黑屏
 	"WhiteScreen", "BlackScreen",
 	--低配模式
-	"LowVisualMode", "LoopFullBright", "NightToggleState",
+	"LowVisualMode",
+	--移除迷霧
+	"RemoveFogEnabled",
+	"LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
@@ -635,6 +641,11 @@ end)
 task.spawn(function()
     task.wait()
     
+    -- 移除迷霧初始化
+    if _G.RemoveFogEnabled then
+        _G.ApplyRemoveFog()
+    end
+
     if _G.LowVisualMode then
         _G.SetLowVisualState(true)
     end
@@ -3805,7 +3816,7 @@ _G.SetLowVisualState = function(state)
 end
 
 --Remove Fog
-_G.RemoveFog = function()
+_G.ApplyRemoveFog = function()
     local lightingService = game:GetService("Lighting")
     
     local layers = lightingService:FindFirstChild("LightingLayers")
@@ -3815,7 +3826,6 @@ _G.RemoveFog = function()
     if sky then sky:Destroy() end
     
     lightingService.FogEnd = 9e9
-    print("霧氣已成功移除！") -- 方便除錯的提示
 end
 
 --fullbright
@@ -5451,10 +5461,14 @@ Tabs["畫質"]:Toggle({
     end
 })
 
-Tabs["畫質"]:Button({ 
-    Title = "移除迷霧", 
-    Callback = function() 
-        _G.RemoveFog()
+Tabs["畫質"]:Toggle({
+    Title = "移除迷霧",
+    Value = _G.RemoveFogEnabled,
+    Callback = function(v)
+        _G.RemoveFogEnabled = v
+        if v then
+            _G.ApplyRemoveFog()
+        end
     end
 })
 
