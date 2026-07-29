@@ -359,7 +359,7 @@ _G.CurrentZoom = 128
 _G.ZoomStep = 1
 
 --Auto
-_G.AutoBuso = true
+_G.AutoBusoEnabled = true
 _G.AutoKenEnabled = false
 _G.AutoEnablePVP = false
 _G.AutoV3_Enabled = false
@@ -532,8 +532,10 @@ local ConfigKeys = {
 	"Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
 	--視角縮放
     "Zoom_Enabled", "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep",
+	--自動武裝色
+	"AutoBusoEnabled",
 	--
-	"AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
+	"AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
@@ -3211,17 +3213,14 @@ end)
 
 --Auto Buso
 task.spawn(function()
-    while true do
-        if not _G.AutoBuso then 
-            task.wait(1)
-        else
-            local character = LocalPlayer.Character
-            if character and not character:FindFirstChild("HasBuso") then
+    while task.wait(1) do
+        if _G.AutoBusoEnabled then
+            local player = game.Players.LocalPlayer
+            if player and player.Character and not player.Character:FindFirstChild("HasBuso") then
                 pcall(function()
                     game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
                 end)
             end
-            task.wait(1)
         end
     end
 end)
@@ -4962,13 +4961,9 @@ Tabs["自動"]:Section({ Title = "自動" })
 Tabs["自動"]:Toggle({
     Title = "Auto Buso",
     Desc = "自動開啟武裝色",
-    Value = _G.AutoBuso,
-    Callback = function(state)
-        _G.AutoBuso = state
-        -- 這裡完全對照 ESP 的 Callback 架構，未來若有需要關閉時清除的標籤或特效，可直接寫在下方
-        if not _G.AutoBuso then
-            -- 清除或重設特定武裝色狀態（視需求保留）
-        end
+    Value = _G.AutoBusoEnabled,
+    Callback = function(v)
+        _G.AutoBusoEnabled = v
     end
 })
 
