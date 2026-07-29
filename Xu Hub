@@ -467,8 +467,8 @@ _G.G_HopMaxBounty = math.huge
 ----------------------------------------
 --配置自動保存
 ----------------------------------------
-local ConfigFolder = "Xu-Hub"
-local ConfigFile = ConfigFolder .. "/config.json"
+local ConfigFolder = "XuHub_Config"
+local ConfigFile = ConfigFolder .. "/settings.json"
 local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
