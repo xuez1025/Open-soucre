@@ -307,9 +307,7 @@ _G.RemoveAnimTrackConn = nil
 
 --自動卡幀
 _G.AutoFpsLock = false
-
-local autoFpsLockRunning = false
-local autoFpsLockSignals = {}
+_G.AutoFpsLockSignals = {}
 
 --ESP Players
 _G.ESP_Master        = false
@@ -504,7 +502,10 @@ local ConfigKeys = {
 	"ClickTP",
 	--移除動作
 	"RemoveAnim",
-	"AutoFpsLock", "ESP_Master", "ESP_ShowName",
+	--自動卡幀
+	"AutoFpsLock",
+	--
+	"ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
     "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
     "Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
@@ -2565,15 +2566,53 @@ local skillConfigs = {
     }
 }
 
+local function StopAutoFpsLock()
+    for _, conn in ipairs(_G.AutoFpsLockSignals) do
+        pcall(function() conn:Disconnect() end)
+    end
+    table.clear(_G.AutoFpsLockSignals)
+
+    pcall(function()
+        if LocalPlayer then
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local main = playerGui:FindFirstChild("Main")
+                if main then
+                    local skills = main:FindFirstChild("Skills")
+                    if skills then
+                        for _, config in ipairs(skillConfigs) do
+                            for _, styleName in ipairs(config.styles) do
+                                local styleFolder = skills:FindFirstChild(styleName)
+                                if styleFolder then
+                                    local skillBtn = styleFolder:FindFirstChild(config.key)
+                                    if skillBtn then
+                                        local cooldown = skillBtn:FindFirstChild("Cooldown")
+                                        if cooldown then
+                                            cooldown:SetAttribute("AutoFpsBound", nil)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    if setfpscap then setfpscap(0) end
+end
+
 local function StartAutoFpsLock()
-    if autoFpsLockRunning then return end
-    autoFpsLockRunning = true
+    StopAutoFpsLock()
+    
     local isLocked = false
     local delayTask = nil
     
     task.spawn(function()
-        while autoFpsLockRunning and task.wait(0.5) do
+        while _G.AutoFpsLock and task.wait(0.5) do
             pcall(function()
+                if not LocalPlayer then return end
                 local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
                 if not playerGui then return end
                 local main = playerGui:FindFirstChild("Main")
@@ -2600,7 +2639,7 @@ local function StartAutoFpsLock()
                                     end
                                     
                                     local conn = cooldown:GetPropertyChangedSignal("Size"):Connect(function()
-                                        if not autoFpsLockRunning then return end
+                                        if not _G.AutoFpsLock then return end
                                         
                                         if cooldown.Size == fullCdSize then
                                             if delayTask then delayTask = nil end
@@ -2615,14 +2654,14 @@ local function StartAutoFpsLock()
                                                     task.wait(0.01)
                                                     delayTask = nil
                                                     if setfpscap then
-                                                        setfpscap(0) -- 恢復無限制/預設 FPS
+                                                        setfpscap(0)
                                                     end
                                                     isLocked = false
                                                 end)
                                             end
                                         end
                                     end)
-                                    table.insert(autoFpsLockSignals, conn)
+                                    table.insert(_G.AutoFpsLockSignals, conn)
                                 end
                             end
                         end
@@ -2632,45 +2671,13 @@ local function StartAutoFpsLock()
         end
         isLocked = false
         if setfpscap then setfpscap(0) end
-        autoFpsLockRunning = false
     end)
 end
 
-local function StopAutoFpsLock()
-    autoFpsLockRunning = false
-
-    for _, conn in ipairs(autoFpsLockSignals) do
-        pcall(function() conn:Disconnect() end)
-    end
-    table.clear(autoFpsLockSignals)
-
-    pcall(function()
-        local skills = LocalPlayer:FindFirstChild("PlayerGui")
-            and LocalPlayer.PlayerGui:FindFirstChild("Main")
-            and LocalPlayer.PlayerGui.Main:FindFirstChild("Skills")
-            
-        if skills then
-            for _, config in ipairs(skillConfigs) do
-                for _, styleName in ipairs(config.styles) do
-                    local styleFolder = skills:FindFirstChild(styleName)
-                    if styleFolder then
-                        local skillBtn = styleFolder:FindFirstChild(config.key)
-                        if skillBtn then
-                            local cooldown = skillBtn:FindFirstChild("Cooldown")
-                            if cooldown then
-                                cooldown:SetAttribute("AutoFpsBound", nil)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    
-    if setfpscap then setfpscap(0) end
+-- 腳本載入時判斷
+if _G.AutoFpsLock then 
+    StartAutoFpsLock() 
 end
-
-if _G.AutoFpsLock then StartAutoFpsLock() end
 
 --ESP Players
 local function CheckPVP(plr)
@@ -4582,14 +4589,16 @@ Tabs["自身屬性"]:Toggle({
 Tabs["自身屬性"]:Toggle({
     Title = "自動卡幀(支持血拳Z/死步Z/龍爪Z/電爪X)",
     Value = _G.AutoFpsLock,
-    Callback = function(state)
-        _G.AutoFpsLock = state
-        if state then
+    Callback = function(v)
+        _G.AutoFpsLock = v
+        if v then
             StartAutoFpsLock()
         else
             StopAutoFpsLock()
         end
-        SaveConfiguration()
+        if SaveConfiguration then
+            SaveConfiguration()
+        end
     end
 })
 
