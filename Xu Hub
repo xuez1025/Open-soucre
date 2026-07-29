@@ -527,8 +527,9 @@ local ConfigKeys = {
 	"RemoveLavaEnabled",
 	--移除鬼船傷害
 	"RemoveGhostShipLavaEnabled",
-	--
+	--碰撞箱
 	"Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
+	--
     "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
@@ -3132,33 +3133,39 @@ task.spawn(function()
 end)
 
 --Hitbox
-local function getRoot(char) return char:FindFirstChild("HumanoidRootPart") end
+local function getRoot(char)
+    return char:FindFirstChild("HumanoidRootPart")
+end
 
 local function applyHitboxToPlayer(plr)
-    if plr == LocalPlayer or not plr.Character then return end
+    if plr == LocalPlayer then return end
+    if not plr.Character then return end
+    
     local r = getRoot(plr.Character)
-    if r and r:IsA("BasePart") then
-        r.CanCollide = false
-        if _G.Hitbox_Enabled then
-            r.Size = Vector3.new(_G.Hitbox_Size, _G.Hitbox_Size, _G.Hitbox_Size)
-            r.Transparency = _G.Hitbox_Transparency
-        else
-            r.Size = Vector3.new(2, 2, 1)
-            r.Transparency = 0 -- 還原透明度
+    if r then
+        if r:IsA("BasePart") then
+            r.CanCollide = false
+            if _G.Hitbox_Enabled then
+                r.Size = Vector3.new(_G.Hitbox_Size, _G.Hitbox_Size, _G.Hitbox_Size)
+                r.Transparency = _G.Hitbox_Transparency
+            else
+                r.Size = Vector3.new(2, 2, 1)
+                r.Transparency = 0
+            end
         end
     end
 end
 
 local function applyHitboxAll()
-    for _, plr in pairs(Players:GetPlayers()) do 
-        applyHitboxToPlayer(plr) 
+    for _, plr in pairs(Players:GetPlayers()) do
+        applyHitboxToPlayer(plr)
     end
 end
 
 RunService.Heartbeat:Connect(function()
     if not _G.Hitbox_Enabled then return end
 
-    for _,plr in ipairs(Players:GetPlayers()) do
+    for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             applyHitboxToPlayer(plr)
         end
@@ -3168,8 +3175,8 @@ end)
 _G.Hitbox_Connections.PlayerAdded = Players.PlayerAdded:Connect(function(plr)
     plr.CharacterAdded:Connect(function()
         task.wait(1)
-        if _G.Hitbox_Enabled then 
-            applyHitboxToPlayer(plr) 
+        if _G.Hitbox_Enabled then
+            applyHitboxToPlayer(plr)
         end
     end)
 end)
@@ -4853,21 +4860,21 @@ Tabs["遊戲內設定"]:Toggle({
 Tabs["遊戲內設定"]:Toggle({
     Title = "開啟碰撞箱",
     Value = _G.Hitbox_Enabled,
-    Callback = function(state)
-        _G.Hitbox_Enabled = state
+    Callback = function(v)
+        _G.Hitbox_Enabled = v
         applyHitboxAll()
     end
 })
 
-Tabs["遊戲內設定"]:Slider({ 
-    Title = "碰撞箱大小", 
+Tabs["遊戲內設定"]:Slider({
+    Title = "碰撞箱大小",
     Desc = "調整碰撞箱大小",
     Value = { Min = 1, Max = 500, Default = _G.Hitbox_Size },
-    Callback = function(value) 
-        _G.Hitbox_Size = value
-        if _G.Hitbox_Enabled then 
+    Callback = function(v)
+        _G.Hitbox_Size = v
+        if _G.Hitbox_Enabled then
             applyHitboxAll()
-        end 
+        end
     end
 })
 
