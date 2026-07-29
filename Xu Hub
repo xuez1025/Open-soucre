@@ -3263,7 +3263,7 @@ local function GetCommF()
 end
 
 task.spawn(function()
-    while true do
+    while task.wait(1) do
         if _G.AutoEnablePVP then
             local remote = GetCommF()
             if remote then 
@@ -3272,7 +3272,6 @@ task.spawn(function()
                 end)
             end
         end
-        task.wait(1)
     end
 end)
 
@@ -4987,11 +4986,11 @@ Tabs["自動"]:Toggle({
 })
 
 Tabs["自動"]:Toggle({
-    Title = "Auto Enabled PVP",
+    Title = "Auto Enable PVP",
     Desc = "自動開啟PVP",
     Value = _G.AutoEnablePVP,
-    Callback = function(state)
-        _G.AutoEnablePVP = state
+    Callback = function(v)
+        _G.AutoEnablePVP = v
     end
 })
 
