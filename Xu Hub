@@ -1565,7 +1565,9 @@ local function GetFruitRemote()
         if loc then
             for _, tool in ipairs(loc:GetChildren()) do
                 local remote = tool:IsA("Tool") and tool:FindFirstChild("LeftClickRemote", true)
-                if remote then return remote, tool.Name end
+                if remote then 
+                    return remote, tool.Name 
+                end
             end
         end
     end
@@ -1578,7 +1580,9 @@ task.spawn(function()
             local char   = LocalPlayer.Character
             local hrp    = char and char:FindFirstChild("HumanoidRootPart")
             local remote = GetFruitRemote()
-            if hrp and remote then remote:FireServer(-hrp.CFrame.UpVector, 2, true) end
+            if hrp and remote then 
+                remote:FireServer(-hrp.CFrame.UpVector, 2, true) 
+            end
         end
         task.wait(_G.FruitsM1DelayValue)
     end
@@ -3985,7 +3989,7 @@ Tabs["Aimbot&M1"]:Toggle({
 
 Tabs["Aimbot&M1"]:Slider({
     Title = "攻擊距離",
-    Desc = "設定攻擊距離",
+    Desc = "設定攻擊距離(已失效)",
     Value = {
         Min = 10,
         Max = 3000,
@@ -4001,7 +4005,7 @@ Tabs["Aimbot&M1"]:Section({ Title = "Fruit M1" })
 Tabs["Aimbot&M1"]:Button({
     Title = "檢查目前果實",
     Desc = "顯示是否可以 M1 的果實",
-    Callback = function()
+    Callback = function(v)
         local _, name = GetFruitRemote()
         WindUI:Notify({
             Title = "目前偵測果實",
@@ -4012,25 +4016,29 @@ Tabs["Aimbot&M1"]:Button({
 })
 
 Tabs["Aimbot&M1"]:Toggle({
-    Title = "自動果實 M1 ",
+    Title = "自動果實 M1",
     Value = _G.FruitsM1Enable,
-    Callback = function(state)
-        _G.FruitsM1Enable = state
+    Callback = function(v)
+        _G.FruitsM1Enable = v
     end
 })
 
 Tabs["Aimbot&M1"]:Slider({
     Title = "果實 M1 延遲",
     Step = 0.01, 
-    Value = { Min = 0.01, Max = 0.5, Default = _G.FruitsM1DelayValue },
-    Callback = function(value)
-        _G.FruitsM1DelayValue = value
+    Value = {
+		Min = 0.01,
+		Max = 0.5,
+		Default = _G.FruitsM1DelayValue
+	},
+    Callback = function(v)
+        _G.FruitsM1DelayValue = v
     end
 })
 
 Tabs["Players"]:Section({ Title = "Players" })
 
-local playerDropdown = Tabs["Players"]:Dropdown({ 
+Tabs["Players"]:Dropdown({ 
     Title = "選擇玩家", 
     Values = GetPlayerList(), 
     Value = nil,
