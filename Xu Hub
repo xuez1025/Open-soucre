@@ -542,7 +542,7 @@ local ConfigKeys = {
     "AutoV3_Enabled",
 	--自動v4
 	"AutoV4_Enabled",
-	--
+	--自動順步
 	"AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
