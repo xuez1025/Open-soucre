@@ -206,15 +206,7 @@ _G.SilentAimTargetMobs      = false
 _G.SilentAimTeamCheck       = false
 _G.SilentAimDrawings        = {}
 
-_G.SilentAimSkills = {
-    ["M1 (普攻)"] = true,
-    ["Z"] = true,
-    ["X"] = true,
-    ["C"] = true,
-    ["V"] = true,
-    ["F"] = true,
-    ["R"] = true
-}
+_G.SilentAimSkills = { "Z", "X", "C", "V", "F", "R", "M1 (普攻)" }
 
 --DragonGun
 _G.DragonGunM1 = false
@@ -476,6 +468,115 @@ _G.G_HopMinPlayers = 1
 _G.G_HopMaxPlayers = 12
 _G.G_HopMinBounty = 3000000
 _G.G_HopMaxBounty = math.huge
+
+----------------------------------------
+--配置自動保存
+----------------------------------------
+local ConfigFolder = "Xu-Hub"
+local ConfigFile = ConfigFolder .. "/config.json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+local ConfigKeys = {
+    "SilentAimEnabled", "SilentAimShowFOV", "SilentAimFOV", "SilentAimFOVThickness",
+    "SilentAimFOVTransparency", "SilentAimFOVMode", "SilentAimShowLine", "SilentAimTargetPlayers",
+    "SilentAimTargetMobs", "SilentAimTeamCheck", "SilentAimSkills", "DragonGunM1", "AttackMobs",
+    "AttackPlayers", "FastAttack", "FastAttackMode", "AttackDistance", "FruitsM1Enable",
+    "FruitsM1DelayValue", "PlayerTP_Enabled", "FTP_Enabled", "FTP_Speed", "FTP2_Enabled",
+    "FTP2_Speed", "CamlockEnabled", "ListenToToggle", "LoopFriendship", "Move_SLIDE_MAGNITUDE",
+    "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled", "JumpPowerEnabled", "JumpPowerValue",
+    "DashLengthEnabled", "DashLength", "DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
+    "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
+    "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
+    "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
+    "Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
+    "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
+    "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
+    "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
+    "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
+    "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
+    "G_HopBountyRange"
+}
+
+local function CopyConfigValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = CopyConfigValue(item)
+    end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then
+            data[key] = CopyConfigValue(_G[key])
+        end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then
+            _G[key] = CopyConfigValue(data[key])
+        end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then
+        ApplyConfig(data)
+        return true
+    end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
 
 ----------------------------------------
 --功能核心邏輯
@@ -1234,7 +1335,7 @@ local function M1_CheckAndGetCoreComponents()
     local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
     local Modules = ReplicatedStorage:FindFirstChild("Modules")
     local NetInstance = Modules and Modules:FindFirstChild("Net")
-    local RegAttack = NetInstance and (NetInstance:FindFirstChild("RE/RegisterAttack")  or NetInstance:FindFirstChild("RegisterAttack"))
+    local RegAttack = NetInstance and (NetInstance:FindFirstChild("RE/RegisterAttack") or NetInstance:FindFirstChild("RegisterAttack"))
     local RegHit = NetInstance and (NetInstance:FindFirstChild("RE/RegisterHit") or NetInstance:FindFirstChild("RegisterHit"))
     local Enemies = workspace:FindFirstChild("Enemies") or workspace:FindFirstChild("NPCs")
     
@@ -3748,7 +3849,7 @@ Tabs["Aimbot&M1"]:Toggle({
 Tabs["Aimbot&M1"]:Dropdown({ 
     Title = "自瞄招式", 
     Values = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" }, 
-    Value = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" },
+    Value = _G.SilentAimSkills,
     Multi = true, 
     Callback = function(v) 
         _G.SilentAimSkills = v 
@@ -3758,56 +3859,74 @@ Tabs["Aimbot&M1"]:Dropdown({
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "瞄準玩家", 
     Value = _G.SilentAimTargetPlayers, 
-    Callback = function(v) _G.SilentAimTargetPlayers = v end 
+    Callback = function(v) 
+        _G.SilentAimTargetPlayers = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "隊伍檢測(不瞄隊友)", 
     Value = _G.SilentAimTeamCheck, 
-    Callback = function(v) _G.SilentAimTeamCheck = v end 
+    Callback = function(v) 
+        _G.SilentAimTeamCheck = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "瞄準 NPC ", 
     Value = _G.SilentAimTargetMobs, 
-    Callback = function(v) _G.SilentAimTargetMobs = v end 
+    Callback = function(v) 
+        _G.SilentAimTargetMobs = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "顯示射線 (指向最近目標)", 
     Value = _G.SilentAimShowLine, 
-    Callback = function(v) _G.SilentAimShowLine = v end 
+    Callback = function(v) 
+        _G.SilentAimShowLine = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Toggle({ 
     Title = "顯示 FOV ", 
     Value = _G.SilentAimShowFOV, 
-    Callback = function(v) _G.SilentAimShowFOV = v end 
+    Callback = function(v) 
+        _G.SilentAimShowFOV = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Dropdown({ 
     Title = "FOV 圓圈位置", 
     Values = { "跟随鼠標", "屏幕中心" }, 
     Value = _G.SilentAimFOVMode, 
-    Callback = function(v) _G.SilentAimFOVMode = v end 
+    Callback = function(v) 
+        _G.SilentAimFOVMode = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 範圍大小", 
     Value = { Min = 10, Max = 1000, Default = _G.SilentAimFOV }, 
-    Callback = function(v) _G.SilentAimFOV = v end 
+    Callback = function(v) 
+        _G.SilentAimFOV = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 線條粗細", 
     Value = { Min = 1, Max = 10, Default = _G.SilentAimFOVThickness }, 
-    Callback = function(v) _G.SilentAimFOVThickness = v end 
+    Callback = function(v) 
+        _G.SilentAimFOVThickness = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Slider({ 
     Title = "FOV 透明度", 
     Value = { Min = 0, Max = 1, Default = _G.SilentAimFOVTransparency, Increment = 0.1 }, 
-    Callback = function(v) _G.SilentAimFOVTransparency = v end 
+    Callback = function(v) 
+        _G.SilentAimFOVTransparency = v 
+    end 
 })
 
 Tabs["Aimbot&M1"]:Section({ Title = "Gun Aura" })
@@ -3843,12 +3962,10 @@ Tabs["Aimbot&M1"]:Section({ Title = "M1" })
 
 Tabs["Aimbot&M1"]:Dropdown({
     Title = "選擇攻擊模式",
-    Multi = false,
     Values = { "模式1", "模式2(部分帳號失效可使用)" },
     Value = _G.FastAttackMode,
-    Default = "模式1",
-    Callback = function(option)
-        _G.FastAttackMode = option
+    Callback = function(v)
+        _G.FastAttackMode = v
     end
 })
 
@@ -3856,8 +3973,8 @@ Tabs["Aimbot&M1"]:Toggle({
     Title = "自動攻擊",
     Desc = "開啟後自動攻擊",
     Value = _G.FastAttack,
-    Callback = function(state)
-        _G.FastAttack = state
+    Callback = function(v)
+        _G.FastAttack = v
         if _G.FastAttack then
             stopManual()
         else
@@ -3874,8 +3991,8 @@ Tabs["Aimbot&M1"]:Slider({
         Max = 3000,
         Default = _G.AttackDistance
     },
-    Callback = function(value)
-        _G.AttackDistance = value
+    Callback = function(v)
+        _G.AttackDistance = v
     end
 })
 
@@ -4157,9 +4274,9 @@ Tabs["自身屬性"]:Slider({
 Tabs["自身屬性"]:Toggle({
     Title = "衝刺無冷卻",
     Value = _G.DodgeNoCooldown,
-    Callback = function(v)
-        _G.DodgeNoCooldown = v
-        if v then 
+    Callback = function(state)
+        _G.DodgeNoCooldown = state
+        if state then 
             DodgeNoCooldown() 
         end
         SaveConfiguration()
@@ -4215,8 +4332,8 @@ Tabs["自身屬性"]:Toggle({
 Tabs["自身屬性"]:Slider({
     Title = "旋轉速度",
     Value = {Min = 5, Max = 500, Default = _G.SpinSpeed},
-    Callback = function(v)
-        _G.SpinSpeed = v
+    Callback = function(state)
+        _G.SpinSpeed = state
     end
 })
 
@@ -4240,13 +4357,13 @@ Tabs["自身屬性"]:Toggle({
 Tabs["自身屬性"]:Slider({
     Title="調整離地面高度數值", 
     Value={Min=0, Max=300, Default=0},
-    Callback=function(v)
+    Callback=function(state)
         if not _G.HipHeightEnabled then return end
         
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then 
             getNormalHipHeight(hum)
-            hum.HipHeight = v 
+            hum.HipHeight = state 
         end
     end
 })
@@ -4262,9 +4379,9 @@ Tabs["自身屬性"]:Toggle({
 Tabs["自身屬性"]:Toggle({
     Title = "移除玩家動作",
     Value = _G.RemoveAnim,
-    Callback = function(v)
-        _G.RemoveAnim = v
-        if v then 
+    Callback = function(state)
+        _G.RemoveAnim = state
+        if state then 
             StartRemoveAnim() 
         else 
             StopRemoveAnim() 
@@ -4276,9 +4393,9 @@ Tabs["自身屬性"]:Toggle({
 Tabs["自身屬性"]:Toggle({
     Title = "自動卡幀(支持血拳Z/死步Z/龍爪Z/電爪X)",
     Value = _G.AutoFpsLock,
-    Callback = function(v)
-        _G.AutoFpsLock = v
-        if v then
+    Callback = function(state)
+        _G.AutoFpsLock = state
+        if state then
             StartAutoFpsLock()
         else
             StopAutoFpsLock()
@@ -4577,11 +4694,11 @@ Tabs["自動"]:Toggle({
     Value = _G.AutoSoru,
     Locked = isLocked,
     LockedTitle = isLocked and "非特定授權玩家（無法使用）" or nil,
-    Callback = function(v)
+    Callback = function(state)
         if isLocked then return end
         
-        _G.AutoSoru = v
-        if v then
+        _G.AutoSoru = state
+        if state then
             StartAutoSoru()
         else
             StopAutoSoru()
@@ -4596,9 +4713,9 @@ Tabs["自動"]:Toggle({
 Tabs["自動"]:Toggle({
     Title = "自動逃跑",
     Value = _G.AutoFlee,
-    Callback = function(v)
-        _G.AutoFlee = v
-        if v then StartAutoFlee() else StopAutoFlee() end
+    Callback = function(state)
+        _G.AutoFlee = state
+        if state then StartAutoFlee() else StopAutoFlee() end
         if SaveConfiguration then SaveConfiguration() end
     end
 })
@@ -4610,8 +4727,8 @@ Tabs["自動"]:Slider({
         Max = 100,
         Default = _G.AutoFleeHP
     },
-    Callback = function(v)
-        _G.AutoFleeHP = v
+    Callback = function(state)
+        _G.AutoFleeHP = state
         if SaveConfiguration then SaveConfiguration() end
     end
 })
@@ -4890,8 +5007,8 @@ Tabs["畫質"]:Section({ Title = "畫質" })
 Tabs["畫質"]:Toggle({
     Title = "突破FPS上限",
     Value = _G.UnlockFPS, 
-    Callback = function(v)
-        _G.UnlockFPS = v
+    Callback = function(state)
+        _G.UnlockFPS = state
 
         if _G.UnlockFPS and setfpscap then
             setfpscap(999)
@@ -5059,6 +5176,21 @@ Tabs["畫質"]:Toggle({
 
 Tabs["設定"]:Section({ Title = "設定" })
 
+Tabs["設定"]:Button({
+    Title = "將所有配置恢復初始",
+    Desc = "清除已保存配置並恢復腳本初始設定",
+    Callback = function()
+        ApplyConfig(InitialConfig)
+        ConfigDirty = true
+        SaveConfig(true)
+        WindUI:Notify({
+            Title = "配置已重置",
+            Content = "所有配置已恢復為初始值，重新執行腳本後完全生效。",
+            Duration = 3
+        })
+    end
+})
+
 Tabs["設定"]:Toggle({ 
     Title = "Anti AFK", 
     Desc = "防止閒置被踢出", 
@@ -5101,8 +5233,8 @@ Tabs["設定"]:Keybind({
     Title = "快捷鍵", 
     Desc = "可更改", 
     Value = _G.CurrentKey,
-    Callback = function(v)
-        _G.CurrentKey = typeof(v) == "EnumItem" and v.Name or tostring(v)
+    Callback = function(state)
+        _G.CurrentKey = typeof(state) == "EnumItem" and state.Name or tostring(state)
         
         if not _G.KeyDisabled then
             local success, keyCode = pcall(function() return Enum.KeyCode[_G.CurrentKey] end)
@@ -5135,9 +5267,9 @@ Tabs["設定"]:Dropdown({
     Title = "選擇主題",
     Values = themeList,            
     Value = _G.Theme,            
-    Callback = function(v)
-        _G.Theme = v             
-        WindUI:SetTheme(v)         
+    Callback = function(state)
+        _G.Theme = state             
+        WindUI:SetTheme(state)         
     end
 })
 
@@ -5258,8 +5390,8 @@ Tabs["Server"]:Dropdown({
     Title = "選擇地區",
     Values = RegionValues,
     Value = _G.G_ServerRegion,
-    Callback = function(v)
-        _G.G_ServerRegion = v
+    Callback = function(state)
+        _G.G_ServerRegion = state
         RefreshFilterParagraph()
     end,
 })
@@ -5268,8 +5400,8 @@ Tabs["Server"]:Dropdown({
     Title = "選擇人數",
     Values = PlayerRangeValues,
     Value = _G.G_HopPlayerRange,
-    Callback = function(v)
-        ApplyPlayerRange(v)
+    Callback = function(state)
+        ApplyPlayerRange(state)
         RefreshFilterParagraph()
     end,
 })
@@ -5278,8 +5410,8 @@ Tabs["Server"]:Dropdown({
     Title = "選擇賞金",
     Values = BountyRangeValues,
     Value = _G.G_HopBountyRange,
-    Callback = function(v)
-        ApplyBountyRange(v)
+    Callback = function(state)
+        ApplyBountyRange(state)
         RefreshFilterParagraph()
     end,
 })
