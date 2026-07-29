@@ -543,7 +543,11 @@ local ConfigKeys = {
 	--自動v4
 	"AutoV4_Enabled",
 	--自動順步
-	"AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
+	"AutoSoru",
+	--自動逃跑
+	"AutoFlee", "AutoFleeHP",
+	--
+	"TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
@@ -3437,7 +3441,7 @@ local function StartAutoFlee()
         while _G.AutoFlee do
             task.wait(0.01)
             pcall(function()
-                local char = LocalPlayer.Character
+                local char = game.Players.LocalPlayer.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if not hum or not hrp or hum.Health <= 0 then return end
@@ -5044,13 +5048,18 @@ Tabs["自動"]:Toggle({
     Value = _G.AutoFlee,
     Callback = function(v)
         _G.AutoFlee = v
-        if v then StartAutoFlee() else StopAutoFlee() end
+        if v then 
+            StartAutoFlee() 
+        else 
+            StopAutoFlee() 
+        end
         if SaveConfiguration then SaveConfiguration() end
     end
 })
 
 Tabs["自動"]:Slider({
-    Title = "逃跑血量值",
+    Title = "逃跑血量值 (%)",
+    Desc = "血量低於設定值自動逃跑",
     Value = {
         Min = 1,
         Max = 100,
