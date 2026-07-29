@@ -14,6 +14,7 @@ local UserInputService = game:GetService("UserInputService")
 local GameDefaultZoom = LocalPlayer.CameraMaxZoomDistance
 local Workspace = game:GetService("Workspace")
 local mouse = LocalPlayer:GetMouse()
+local LocalPlayer = game:GetService("Players").LocalPlayer
 
 --Teleport Part
 local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
@@ -258,10 +259,10 @@ _G.ListenToConnection = nil
 _G.LoopFriendship = false
 
 --Move
-_G.Move_SLIDE_MAGNITUDE  = 200    -- 角色移動速度 (預設 200)
-_G.Move_ACCELERATION     = 12     -- 加速度
-_G.Move_DECELERATION     = 18     -- 減速度
-_G.Move_MovingEnabled    = false  -- 移動速度開關狀態
+_G.Move_SLIDE_MAGNITUDE  = 200
+_G.Move_ACCELERATION     = 12
+_G.Move_DECELERATION     = 18
+_G.Move_MovingEnabled    = false
 _G.Move_CurrentVelocity  = Vector3.zero
 _G.Move_SlideLocked      = false
 _G.Move_ActiveSeat       = nil
@@ -492,8 +493,10 @@ local ConfigKeys = {
 	"ListenToToggle",
 	--循環加刪好友
 	"LoopFriendship",
-	"Move_SLIDE_MAGNITUDE",
-    "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled", "JumpPowerEnabled", "JumpPowerValue",
+	--移動
+	"Move_SLIDE_MAGNITUDE", "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled",
+	--跳躍
+	"JumpPowerEnabled", "JumpPowerValue",
     "DashLengthEnabled", "DashLength", "DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
     "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
@@ -2249,21 +2252,27 @@ task.spawn(function()
 end)
 
 --Move
-local function StartMove()
+_G.StartMove = function()
     if _G.Move_Conn then return end
     if _G.Move_SlideLocked then return end
     
-    _G.Move_Conn = RunService.RenderStepped:Connect(function(dt)
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    _G.Move_Conn = game:GetService("RunService").RenderStepped:Connect(function(dt)
+        local player = game:GetService("Players").LocalPlayer
+        if not player then return end
         
-        if not root or not humanoid then return end
+        local char = player.Character
+        if not char then return end
+        
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
         if _G.Move_ActiveSeat then return end
         if _G.Move_SlideLocked then return end
         
         local dir = humanoid.MoveDirection
-        
         local targetVelocity = dir * _G.Move_SLIDE_MAGNITUDE
         
         local lerpSpeed = _G.Move_DECELERATION
@@ -2276,15 +2285,16 @@ local function StartMove()
     end)
 end
 
-local function StopMove()
+_G.StopMove = function()
     if _G.Move_Conn then
         _G.Move_Conn:Disconnect()
         _G.Move_Conn = nil
     end
 end
 
-function _G.ToggleMoveState(state)
+_G.ToggleMoveState = function(state)
     _G.Move_MovingEnabled = state
+    
     if _G.Move_SlideLocked then
         if state then
             return
@@ -2292,9 +2302,9 @@ function _G.ToggleMoveState(state)
     end
     
     if state then
-        StartMove()
+        _G.StartMove()
     else
-        StopMove()
+        _G.StopMove()
         _G.Move_CurrentVelocity = Vector3.zero
     end
 end
@@ -2314,7 +2324,7 @@ local function updateJumpPower()
         end
     else
         if _G.JumpPowerEnabled then
-            hum.JumpPower = _G.JumpPowerValue
+            hum.JumpHeight = _G.JumpPowerValue
         else
             hum.JumpHeight = 7.2
         end
@@ -2329,6 +2339,15 @@ LocalPlayer.CharacterAdded:Connect(function(char)
         updateJumpPower()
     end
 end)
+
+if LocalPlayer.Character then
+    local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum:GetPropertyChangedSignal("JumpPower"):Connect(updateJumpPower)
+        hum:GetPropertyChangedSignal("JumpHeight"):Connect(updateJumpPower)
+        updateJumpPower()
+    end
+end
 
 --衝刺修改
 local DashConnection = nil
@@ -3585,7 +3604,6 @@ end
 --fullbright
 local brightLoop = nil
 local Lighting = game:GetService("Lighting")
-local RunService = game:GetService("RunService")
 
 local function doFullBright()
     Lighting.Brightness = 2
@@ -4183,7 +4201,6 @@ Tabs["Aimbot&M1"]:Toggle({
 
 Tabs["Aimbot&M1"]:Slider({
     Title = "果實 M1 延遲",
-    Step = 0.01, 
     Value = {
 		Min = 0.01,
 		Max = 0.5,
@@ -4376,9 +4393,9 @@ Tabs["自身屬性"]:Section({ Title = "屬性" })
 
 Tabs["自身屬性"]:Toggle({
     Title = "移動加速",
-    Default = _G.Move_MovingEnabled,
-    Callback = function(state)
-        _G.ToggleMoveState(state)
+    Value = _G.Move_MovingEnabled,
+    Callback = function(v)
+        _G.ToggleMoveState(v)
     end
 })
 
@@ -4387,18 +4404,18 @@ Tabs["自身屬性"]:Slider({
     Value = {
         Min = 50,
         Max = 1000,
-        Default = _G.Move_SLIDE_MAGNITUDE,
+        Default = _G.Move_SLIDE_MAGNITUDE
     },
-    Callback = function(value)
-        _G.Move_SLIDE_MAGNITUDE = value
+    Callback = function(v)
+        _G.Move_SLIDE_MAGNITUDE = v
     end
 })
 
 Tabs["自身屬性"]:Toggle({
     Title = "跳躍力量",
     Value = _G.JumpPowerEnabled,
-    Callback = function(state)
-        _G.JumpPowerEnabled = state
+    Callback = function(v)
+        _G.JumpPowerEnabled = v
         updateJumpPower()
     end
 })
@@ -4410,8 +4427,8 @@ Tabs["自身屬性"]:Slider({
         Max = 500,
         Default = _G.JumpPowerValue,
     },
-    Callback = function(value)
-        _G.JumpPowerValue = value
+    Callback = function(v)
+        _G.JumpPowerValue = v
         if _G.JumpPowerEnabled then
             updateJumpPower()
         end
