@@ -4485,11 +4485,8 @@ Tabs["自身屬性"]:Toggle({
     Title    = "無限跳躍",
     Desc     = "開啟後可在空中無限跳躍",
     Value    = _G.InfiniteJump,
-    Callback = function(state)
-        _G.InfiniteJump = state
-        
-        if WindUI then
-        end
+    Callback = function(v)
+        _G.InfiniteJump = v
     end
 })
 
