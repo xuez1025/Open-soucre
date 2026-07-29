@@ -499,8 +499,10 @@ local ConfigKeys = {
 	"JumpPowerEnabled", "JumpPowerValue",
 	--衝刺
     "DashLengthEnabled", "DashLength",
+	--衝刺無冷卻
+	"DodgeNoCooldown",
 	--
-	"DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
+	"InfiniteJump", "AntiCCSpin", "SpinSpeed",
     "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
     "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
@@ -4469,13 +4471,13 @@ Tabs["自身屬性"]:Slider({
 
 Tabs["自身屬性"]:Toggle({
     Title = "衝刺無冷卻",
+    Desc = "移除閃避與衝刺冷卻時間",
     Value = _G.DodgeNoCooldown,
-    Callback = function(state)
-        _G.DodgeNoCooldown = state
-        if state then 
+    Callback = function(v)
+        _G.DodgeNoCooldown = v
+        if v then 
             DodgeNoCooldown() 
         end
-        SaveConfiguration()
     end
 })
 
