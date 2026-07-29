@@ -319,8 +319,8 @@ _G.ESP_TeamColor     = false
 _G.ESP_ShowLevel     = false
 _G.ESP_ShowBounty    = false
 _G.ESP_ShowPVPStatus = false
-_G.ESP_ShowFruit     = false -- [新增] 水果 ESP 開關
-_G.ESP_ShowKen       = false -- [新增] 見聞色 ESP 開關
+_G.ESP_ShowFruit     = false
+_G.ESP_ShowKen       = false
 _G.ESP_TracerColor   = Color3.fromRGB(255, 255, 255)
 _G.ESP_HighlightColor= Color3.fromRGB(30, 30, 30)
 _G.ESP_FontSize      = 14
@@ -504,11 +504,10 @@ local ConfigKeys = {
 	"RemoveAnim",
 	--自動卡幀
 	"AutoFpsLock",
-	--
-	"ESP_Master", "ESP_ShowName",
-    "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
-    "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
-    "Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
+	--ESP Players
+	"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
+    --
+	"Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
     "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
@@ -2735,7 +2734,7 @@ local function createESP(p)
         local bill = Instance.new("BillboardGui")
         bill.Name = "ESP_Billboard"
         bill.AlwaysOnTop = true
-        bill.Size = UDim2.new(0, 200, 0, 160) -- 加高高度以適應多行文字顯示
+        bill.Size = UDim2.new(0, 200, 0, 160)
         bill.StudsOffset = Vector3.new(0, 4.5, 0)
         bill.Adornee = head
         bill.Parent = head
@@ -4605,67 +4604,101 @@ Tabs["自身屬性"]:Toggle({
 Tabs["ESP"]:Section({ Title = "ESP Players" })
 
 Tabs["ESP"]:Toggle({
-    Type = "Checkbox",
-    Title = "ESP 主開關", Desc = "顯示玩家輪廓", Value = _G.ESP_Master,
-    Callback = function(state)
-        _G.ESP_Master = state
+    Title = "ESP 主開關",
+	Type = "Checkbox",
+    Desc = "顯示玩家輪廓",
+    Value = _G.ESP_Master,
+    Callback = function(v)
+        _G.ESP_Master = v
         for _, p in ipairs(Players:GetPlayers()) do
-            if state then createESP(p) else removeESP(p) end
+            if v then createESP(p) else removeESP(p) end
         end
     end
 })
 
 Tabs["ESP"]:Toggle({
-    Title = "顯示名稱", Value = _G.ESP_ShowName,
-    Callback = function(state) _G.ESP_ShowName = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示等級", Value = _G.ESP_ShowLevel,
-    Callback = function(state) _G.ESP_ShowLevel = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示賞金", Value = _G.ESP_ShowBounty,
-    Callback = function(state) _G.ESP_ShowBounty = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示水果", Value = _G.ESP_ShowFruit,
-    Callback = function(state) _G.ESP_ShowFruit = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示見聞色", Value = _G.ESP_ShowKen, -- [新增] UI 選單 Toggle
-    Callback = function(state) _G.ESP_ShowKen = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示 PVP 狀態", Value = _G.ESP_ShowPVPStatus,
-    Callback = function(state) _G.ESP_ShowPVPStatus = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示血量和血條", Value = _G.ESP_ShowHealth,
-    Callback = function(state) _G.ESP_ShowHealth = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示距離", Value = _G.ESP_ShowDistance,
-    Callback = function(state) _G.ESP_ShowDistance = state end
-})
-
-Tabs["ESP"]:Toggle({
-    Title = "顯示射線", Value = _G.ESP_ShowTracers,
-    Callback = function(state)
-        _G.ESP_ShowTracers = state
-        if not state then for _, p in ipairs(Players:GetPlayers()) do removeTracer(p) end end
+    Title = "顯示名稱",
+    Value = _G.ESP_ShowName,
+    Callback = function(v)
+        _G.ESP_ShowName = v
     end
 })
 
 Tabs["ESP"]:Toggle({
-    Title = " ESP 隊伍顏色", Value = _G.ESP_TeamColor,
-    Callback = function(state) _G.ESP_TeamColor = state end
+    Title = "顯示等級",
+    Value = _G.ESP_ShowLevel,
+    Callback = function(v)
+        _G.ESP_ShowLevel = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示賞金",
+    Value = _G.ESP_ShowBounty,
+    Callback = function(v)
+        _G.ESP_ShowBounty = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示水果",
+    Value = _G.ESP_ShowFruit,
+    Callback = function(v)
+        _G.ESP_ShowFruit = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示見聞色",
+    Value = _G.ESP_ShowKen,
+    Callback = function(v)
+        _G.ESP_ShowKen = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示 PVP 狀態",
+    Value = _G.ESP_ShowPVPStatus,
+    Callback = function(v)
+        _G.ESP_ShowPVPStatus = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示血量和血條",
+    Value = _G.ESP_ShowHealth,
+    Callback = function(v)
+        _G.ESP_ShowHealth = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示距離",
+    Value = _G.ESP_ShowDistance,
+    Callback = function(v)
+        _G.ESP_ShowDistance = v
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = "顯示射線",
+    Value = _G.ESP_ShowTracers,
+    Callback = function(v)
+        _G.ESP_ShowTracers = v
+        if not v then
+            for _, p in ipairs(Players:GetPlayers()) do
+                removeTracer(p)
+            end
+        end
+    end
+})
+
+Tabs["ESP"]:Toggle({
+    Title = " ESP 隊伍顏色",
+    Value = _G.ESP_TeamColor,
+    Callback = function(v)
+        _G.ESP_TeamColor = v
+    end
 })
 
 Tabs["ESP"]:Slider({
@@ -4676,8 +4709,8 @@ Tabs["ESP"]:Slider({
         Max = 32,
         Default = _G.ESP_FontSize
     },
-    Callback = function(value)
-        _G.ESP_FontSize = value
+    Callback = function(v)
+        _G.ESP_FontSize = v
     end
 })
 
