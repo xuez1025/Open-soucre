@@ -302,9 +302,8 @@ _G.ClickTP = false
 
 --移除動作
 _G.RemoveAnim = false
-
-local removeAnimCharConn = nil
-local removeAnimTrackConn = nil
+_G.RemoveAnimCharConn = nil
+_G.RemoveAnimTrackConn = nil
 
 --自動卡幀
 _G.AutoFpsLock = false
@@ -501,9 +500,11 @@ local ConfigKeys = {
 	"InfiniteJump",
 	--spin
 	"AntiCCSpin", "SpinSpeed",
-	--
+	--點擊傳送
 	"ClickTP",
-	"RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
+	--移除動作
+	"RemoveAnim",
+	"AutoFpsLock", "ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
     "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
     "Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
@@ -2498,6 +2499,7 @@ end)
 
 --移除動作
 local function DisableAnimForChar(char)
+    if not char then return end
     local hum = char:WaitForChild("Humanoid", 5)
     if not hum then return end
     local animator = hum:WaitForChild("Animator", 5)
@@ -2507,8 +2509,12 @@ local function DisableAnimForChar(char)
         t:Stop() 
     end
     
-    if removeAnimTrackConn then removeAnimTrackConn:Disconnect() end
-    removeAnimTrackConn = animator.AnimationPlayed:Connect(function(t)
+    if _G.RemoveAnimTrackConn then 
+        _G.RemoveAnimTrackConn:Disconnect() 
+        _G.RemoveAnimTrackConn = nil
+    end
+    
+    _G.RemoveAnimTrackConn = animator.AnimationPlayed:Connect(function(t)
         if _G.RemoveAnim then
             t:Stop()
         end
@@ -2516,12 +2522,12 @@ local function DisableAnimForChar(char)
 end
 
 local function StartRemoveAnim()
-    if LocalPlayer.Character then
+    if LocalPlayer and LocalPlayer.Character then
         DisableAnimForChar(LocalPlayer.Character)
     end
     
-    if not removeAnimCharConn then
-        removeAnimCharConn = LocalPlayer.CharacterAdded:Connect(function(char)
+    if not _G.RemoveAnimCharConn then
+        _G.RemoveAnimCharConn = LocalPlayer.CharacterAdded:Connect(function(char)
             task.wait(0.5) 
             if _G.RemoveAnim then
                 DisableAnimForChar(char)
@@ -2531,20 +2537,14 @@ local function StartRemoveAnim()
 end
 
 local function StopRemoveAnim()
-    if removeAnimTrackConn then 
-        removeAnimTrackConn:Disconnect() 
-        removeAnimTrackConn = nil
+    if _G.RemoveAnimTrackConn then 
+        _G.RemoveAnimTrackConn:Disconnect() 
+        _G.RemoveAnimTrackConn = nil
     end
-    if removeAnimCharConn then
-        removeAnimCharConn:Disconnect()
-        removeAnimCharConn = nil
+    if _G.RemoveAnimCharConn then
+        _G.RemoveAnimCharConn:Disconnect() 
+        _G.RemoveAnimCharConn = nil
     end
-    
-    pcall(function()
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") and char.Humanoid:FindFirstChild("Animator") then
-        end
-    end)
 end
 
 if _G.RemoveAnim then 
@@ -4567,15 +4567,15 @@ Tabs["自身屬性"]:Toggle({
 
 Tabs["自身屬性"]:Toggle({
     Title = "移除玩家動作",
+    Desc = "停止並自動關閉玩家角色所有動作動畫",
     Value = _G.RemoveAnim,
-    Callback = function(state)
-        _G.RemoveAnim = state
-        if state then 
+    Callback = function(v)
+        _G.RemoveAnim = v
+        if v then 
             StartRemoveAnim() 
         else 
             StopRemoveAnim() 
         end
-        SaveConfiguration()
     end
 })
 
