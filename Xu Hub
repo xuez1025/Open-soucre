@@ -259,7 +259,7 @@ _G.ListenToConnection = nil
 _G.LoopFriendship = false
 
 --Move
-_G.Move_SLIDE_MAGNITUDE  = 200
+_G.Move_SLIDE_MAGNITUDE  = 100
 _G.Move_ACCELERATION     = 12
 _G.Move_DECELERATION     = 18
 _G.Move_MovingEnabled    = false
@@ -5371,21 +5371,6 @@ Tabs["畫質"]:Toggle({
 
 Tabs["設定"]:Section({ Title = "設定" })
 
-Tabs["設定"]:Button({
-    Title = "將所有配置恢復初始",
-    Desc = "清除已保存配置並恢復腳本初始設定",
-    Callback = function()
-        ApplyConfig(InitialConfig)
-        ConfigDirty = true
-        SaveConfig(true)
-        WindUI:Notify({
-            Title = "配置已重置",
-            Content = "所有配置已恢復為初始值，重新執行腳本後完全生效。",
-            Duration = 3
-        })
-    end
-})
-
 Tabs["設定"]:Toggle({ 
     Title = "Anti AFK", 
     Desc = "防止閒置被踢出", 
@@ -5465,6 +5450,23 @@ Tabs["設定"]:Dropdown({
     Callback = function(state)
         _G.Theme = state             
         WindUI:SetTheme(state)         
+    end
+})
+
+Tabs["設定"]:Section({ Title = "重置腳本" })
+
+Tabs["設定"]:Button({
+    Title = "將所有配置恢復初始",
+    Desc = "刪除已保存的配置 並還原至初始設定",
+    Callback = function()
+        ApplyConfig(InitialConfig)
+        ConfigDirty = true
+        SaveConfig(true)
+        WindUI:Notify({
+            Title = "配置已重置",
+            Content = "所有配置已恢復為初始值，重新執行腳本後完全生效。",
+            Duration = 3
+        })
     end
 })
 
