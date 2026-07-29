@@ -297,10 +297,6 @@ local function getRoot(char)
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
---離地高度
-_G.HipHeightEnabled = false
-local defaultHipHeight = nil
-
 --點擊傳送
 _G.ClickTP = false
 
@@ -506,7 +502,8 @@ local ConfigKeys = {
 	--spin
 	"AntiCCSpin", "SpinSpeed",
 	--
-    "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
+	"ClickTP",
+	"RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
     "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
     "Noclip_Enabled", "WaterWalkEnabled", "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
@@ -4561,41 +4558,10 @@ Tabs["自身屬性"]:Slider({
 })
 
 Tabs["自身屬性"]:Toggle({
-    Title="離地面高度", 
-    Value=_G.HipHeightEnabled,
-    Callback=function(state)
-        _G.HipHeightEnabled = state
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        
-        if hum then
-            if not state then 
-                hum.HipHeight = getNormalHipHeight(hum)
-            else
-                getNormalHipHeight(hum)
-            end
-        end
-    end
-})
-
-Tabs["自身屬性"]:Slider({
-    Title="調整離地面高度數值", 
-    Value={Min=0, Max=300, Default=0},
-    Callback=function(state)
-        if not _G.HipHeightEnabled then return end
-        
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then 
-            getNormalHipHeight(hum)
-            hum.HipHeight = state 
-        end
-    end
-})
-
-Tabs["自身屬性"]:Toggle({
-    Title = "點擊傳送", 
+    Title = "點擊傳送",
     Value = _G.ClickTP,
-    Callback = function(state)
-        _G.ClickTP = state
+    Callback = function(v)
+        _G.ClickTP = v
     end
 })
 
