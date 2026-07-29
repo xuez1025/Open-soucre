@@ -548,7 +548,10 @@ local ConfigKeys = {
 	"AutoFlee", "AutoFleeHP",
 	--FPS
     "UnlockFPS",
-	"WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
+	--白屏&黑屏
+	"WhiteScreen", "BlackScreen",
+	--
+	"LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
@@ -644,6 +647,18 @@ task.spawn(function()
 
     if _G.Move_MovingEnabled then 
         _G.ToggleMoveState(true) 
+    end
+
+    if _G.WhiteScreen then
+        pcall(function()
+            game:GetService("RunService"):Set3dRenderingEnabled(not _G.WhiteScreen)
+        end)
+    end
+
+    if _G.BlackScreen then
+        pcall(function()
+            blackFrame.Visible = _G.BlackScreen
+        end)
     end
 
     if _G.AntiCCSpin then
@@ -3733,13 +3748,13 @@ end
 local playerGui = LocalPlayer:WaitForChild("PlayerGui")
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BlackScreenOverlay"
-screenGui.IgnoreGuiInset = true -- 確保覆蓋全螢幕
+screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
 
 local blackFrame = Instance.new("Frame")
 blackFrame.Size = UDim2.new(1, 0, 1, 0)
-blackFrame.BackgroundColor3 = Color3.new(0, 0, 0) -- 設定為黑色
-blackFrame.Visible = false
+blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+blackFrame.Visible = _G.BlackScreen
 blackFrame.Parent = screenGui
 
 --Remove Fog
@@ -5344,7 +5359,6 @@ Tabs["畫質"]:Section({ Title = "畫質" })
 
 Tabs["畫質"]:Toggle({
     Title = "突破FPS上限",
-    Desc = "解鎖遊戲幀率限制",
     Value = _G.UnlockFPS,
     Callback = function(state)
         _G.UnlockFPS = state
@@ -5361,22 +5375,22 @@ Tabs["畫質"]:Toggle({
 
 Tabs["畫質"]:Toggle({
     Title = "白屏",
-    Default = _G.WhiteScreen,
-    Callback = function(state)
-        _G.WhiteScreen = state
+    Value = _G.WhiteScreen,
+    Callback = function(v)
+        _G.WhiteScreen = v
         pcall(function()
-            game:GetService("RunService"):Set3dRenderingEnabled(not state)
+            game:GetService("RunService"):Set3dRenderingEnabled(not _G.WhiteScreen)
         end)
     end
 })
 
 Tabs["畫質"]:Toggle({
     Title = "黑屏",
-    Default = _G.BlackScreen,
-    Callback = function(state)
-        _G.BlackScreen = state
+    Value = _G.BlackScreen,
+    Callback = function(v)
+        _G.BlackScreen = v
         pcall(function()
-            blackFrame.Visible = state
+            blackFrame.Visible = _G.BlackScreen
         end)
     end
 })
