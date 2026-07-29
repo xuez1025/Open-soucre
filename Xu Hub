@@ -590,6 +590,14 @@ task.spawn(function()
     end
 end)
 
+--初始化狀態
+task.spawn(function()
+    task.wait()
+    if _G.Move_MovingEnabled then 
+        _G.ToggleMoveState(true) 
+    end
+end)
+
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
@@ -2252,15 +2260,12 @@ task.spawn(function()
 end)
 
 --Move
-_G.StartMove = function()
+local function StartMove()
     if _G.Move_Conn then return end
     if _G.Move_SlideLocked then return end
     
-    _G.Move_Conn = game:GetService("RunService").RenderStepped:Connect(function(dt)
-        local player = game:GetService("Players").LocalPlayer
-        if not player then return end
-        
-        local char = player.Character
+    _G.Move_Conn = RunService.RenderStepped:Connect(function(dt)
+        local char = LocalPlayer.Character
         if not char then return end
         
         local root = char:FindFirstChild("HumanoidRootPart")
@@ -2273,6 +2278,7 @@ _G.StartMove = function()
         if _G.Move_SlideLocked then return end
         
         local dir = humanoid.MoveDirection
+        
         local targetVelocity = dir * _G.Move_SLIDE_MAGNITUDE
         
         local lerpSpeed = _G.Move_DECELERATION
@@ -2285,16 +2291,15 @@ _G.StartMove = function()
     end)
 end
 
-_G.StopMove = function()
+local function StopMove()
     if _G.Move_Conn then
         _G.Move_Conn:Disconnect()
         _G.Move_Conn = nil
     end
 end
 
-_G.ToggleMoveState = function(state)
+function _G.ToggleMoveState(state)
     _G.Move_MovingEnabled = state
-    
     if _G.Move_SlideLocked then
         if state then
             return
@@ -2302,9 +2307,9 @@ _G.ToggleMoveState = function(state)
     end
     
     if state then
-        _G.StartMove()
+        StartMove()
     else
-        _G.StopMove()
+        StopMove()
         _G.Move_CurrentVelocity = Vector3.zero
     end
 end
@@ -4404,7 +4409,7 @@ Tabs["自身屬性"]:Slider({
     Value = {
         Min = 50,
         Max = 1000,
-        Default = _G.Move_SLIDE_MAGNITUDE
+        Default = _G.Move_SLIDE_MAGNITUDE,
     },
     Callback = function(v)
         _G.Move_SLIDE_MAGNITUDE = v
