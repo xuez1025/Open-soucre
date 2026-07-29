@@ -501,8 +501,11 @@ local ConfigKeys = {
     "DashLengthEnabled", "DashLength",
 	--衝刺無冷卻
 	"DodgeNoCooldown",
+	--無限跳躍
+	"InfiniteJump",
+	--spin
+	"AntiCCSpin", "SpinSpeed",
 	--
-	"InfiniteJump", "AntiCCSpin", "SpinSpeed",
     "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
     "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
@@ -598,8 +601,30 @@ end)
 --初始化狀態
 task.spawn(function()
     task.wait()
+    
     if _G.Move_MovingEnabled then 
         _G.ToggleMoveState(true) 
+    end
+
+    if _G.AntiCCSpin then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then 
+            hum.AutoRotate = false 
+        end
+        
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            _G.CurrentYaw = root.Orientation.Y
+            _G.AntiCCSpinConn = RunService.RenderStepped:Connect(function(dt)
+                local cr = LocalPlayer.Character
+                local crr = cr and cr:FindFirstChild("HumanoidRootPart")
+                if not crr then return end
+                
+                _G.CurrentYaw = _G.CurrentYaw + (_G.SpinSpeed * dt * 10)
+                crr.CFrame = CFrame.new(crr.Position) * CFrame.Angles(0, math.rad(_G.CurrentYaw), 0)
+            end)
+        end
     end
 end)
 
@@ -4211,6 +4236,7 @@ Tabs["Aimbot&M1"]:Toggle({
 
 Tabs["Aimbot&M1"]:Slider({
     Title = "果實 M1 延遲",
+	Step = 0.01,
     Value = {
 		Min = 0.01,
 		Max = 0.5,
@@ -4491,10 +4517,10 @@ Tabs["自身屬性"]:Toggle({
 })
 
 Tabs["自身屬性"]:Toggle({
-    Title = "旋轉", 
-    Default = _G.AntiCCSpin,
-    Callback = function(state)
-        _G.AntiCCSpin = state
+    Title = "旋轉",
+    Value = _G.AntiCCSpin,
+    Callback = function(v)
+        _G.AntiCCSpin = v
 
         if _G.AntiCCSpinConn then
             _G.AntiCCSpinConn:Disconnect()
@@ -4504,10 +4530,10 @@ Tabs["自身屬性"]:Toggle({
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then
-            hum.AutoRotate = not state
+            hum.AutoRotate = not _G.AntiCCSpin
         end
 
-        if not state then return end
+        if not _G.AntiCCSpin then return end
 
         local root = getRoot(char)
         if not root then return end
@@ -4515,6 +4541,8 @@ Tabs["自身屬性"]:Toggle({
         _G.CurrentYaw = root.Orientation.Y
 
         _G.AntiCCSpinConn = RunService.RenderStepped:Connect(function(dt)
+            if not _G.AntiCCSpin then return end
+
             local currentRoot = getRoot(LocalPlayer.Character)
             if not currentRoot then return end
 
@@ -4527,8 +4555,8 @@ Tabs["自身屬性"]:Toggle({
 Tabs["自身屬性"]:Slider({
     Title = "旋轉速度",
     Value = {Min = 5, Max = 500, Default = _G.SpinSpeed},
-    Callback = function(state)
-        _G.SpinSpeed = state
+    Callback = function(v)
+        _G.SpinSpeed = v
     end
 })
 
