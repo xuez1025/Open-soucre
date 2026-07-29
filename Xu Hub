@@ -351,11 +351,12 @@ _G.Hitbox_Size = 1
 _G.Hitbox_Transparency = 0.5
 _G.Hitbox_Connections = {}
 
---Zoom
+-- Zoom
+_G.Zoom_Enabled = false
+_G.MinZoom = 100
 _G.MaxZoom = 10000
-_G.MinZoom = 100 
-_G.CurrentZoom = 128 
-_G.ZoomStep = 1 -- 這裡設定每次滑動調整的最小單位（例如 1 或 5）
+_G.CurrentZoom = 128
+_G.ZoomStep = 1
 
 --Auto
 _G.AutoBuso = true
@@ -529,8 +530,10 @@ local ConfigKeys = {
 	"RemoveGhostShipLavaEnabled",
 	--碰撞箱
 	"Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
+	--視角縮放
+    "Zoom_Enabled", "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep",
 	--
-    "MaxZoom", "MinZoom", "CurrentZoom", "ZoomStep", "AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
+	"AutoBuso", "AutoKenEnabled", "AutoEnablePVP",
     "AutoV3_Enabled", "AutoV4_Enabled", "AutoSoru", "AutoFlee", "AutoFleeHP", "TP_FlySpeed",
     "UnlockFPS", "WhiteScreen", "BlackScreen", "LowVisualMode", "LoopFullBright", "NightToggleState",
     "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
@@ -3182,22 +3185,29 @@ _G.Hitbox_Connections.PlayerAdded = Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- Camera Zoom
-local function SetZoom(value)
-    value = tonumber(value)
-    if not value then return end
+local function applyZoom()
+    if not LocalPlayer then return end
     
-    value = math.floor((value / _G.ZoomStep) + 0.5) * _G.ZoomStep
-    value = math.clamp(value, _G.MinZoom, _G.MaxZoom)
-    
-    _G.CurrentZoom = value
-    
-    if LocalPlayer then
+    if _G.Zoom_Enabled then
+        local value = math.floor((_G.CurrentZoom / _G.ZoomStep) + 0.5) * _G.ZoomStep
+        value = math.clamp(value, _G.MinZoom, _G.MaxZoom)
+        _G.CurrentZoom = value
 
-        LocalPlayer.CameraMinZoomDistance = 0.5 
-        
-        LocalPlayer.CameraMaxZoomDistance = value
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMaxZoomDistance = _G.CurrentZoom
+    else
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMaxZoomDistance = 128
     end
 end
+
+RunService.Heartbeat:Connect(function()
+    if not _G.Zoom_Enabled then return end
+    if LocalPlayer then
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMaxZoomDistance = _G.CurrentZoom
+    end
+end)
 
 --Auto Buso
 task.spawn(function()
@@ -4878,11 +4888,25 @@ Tabs["遊戲內設定"]:Slider({
     end
 })
 
-Tabs["遊戲內設定"]:Slider({ 
-    Title   = "視角縮放", 
-    Desc    = "調整視角最大距離",
-    Value   = { Min = _G.MinZoom, Max = _G.MaxZoom, Default = _G.CurrentZoom },
-    Callback = function(value) SetZoom(value) end
+Tabs["遊戲內設定"]:Toggle({
+    Title = "開啟視角縮放",
+    Value = _G.Zoom_Enabled,
+    Callback = function(v)
+        _G.Zoom_Enabled = v
+        applyZoom()
+    end
+})
+
+Tabs["遊戲內設定"]:Slider({
+    Title = "視角最大距離",
+    Desc = "調整視角最大距離",
+    Value = { Min = _G.MinZoom, Max = _G.MaxZoom, Default = _G.CurrentZoom },
+    Callback = function(v)
+        _G.CurrentZoom = v
+        if _G.Zoom_Enabled then
+            applyZoom()
+        end
+    end
 })
 
 Tabs["遊戲內設定"]:Space()
