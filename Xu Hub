@@ -497,7 +497,10 @@ local ConfigKeys = {
 	"Move_SLIDE_MAGNITUDE", "Move_ACCELERATION", "Move_DECELERATION", "Move_MovingEnabled",
 	--跳躍
 	"JumpPowerEnabled", "JumpPowerValue",
-    "DashLengthEnabled", "DashLength", "DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
+	--衝刺
+    "DashLengthEnabled", "DashLength",
+	--
+	"DodgeNoCooldown", "InfiniteJump", "AntiCCSpin", "SpinSpeed",
     "HipHeightEnabled", "ClickTP", "RemoveAnim", "AutoFpsLock", "ESP_Master", "ESP_ShowName",
     "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel",
     "ESP_ShowBounty", "ESP_ShowPVPStatus", "ESP_ShowFruit", "ESP_ShowKen", "ESP_FontSize",
@@ -2363,7 +2366,7 @@ local function ManageDashLength()
         DashConnection = task.spawn(function()
             while _G.DashLengthEnabled do
                 task.wait(0.1)
-                local character = LocalPlayer.Character
+                local character = LocalPlayer and LocalPlayer.Character
                 if character then
                     local currentValue = character:GetAttribute("DashLength")
                     if currentValue ~= _G.DashLength then
@@ -2375,7 +2378,7 @@ local function ManageDashLength()
         end)
     else
         if DashConnection then
-            local character = LocalPlayer.Character
+            local character = LocalPlayer and LocalPlayer.Character
             if character then
                 character:SetAttribute("DashLength", 1)
                 character:SetAttribute("DashLengthAir", 1)
@@ -4443,10 +4446,9 @@ Tabs["自身屬性"]:Slider({
 Tabs["自身屬性"]:Toggle({
     Title = "修改衝刺",
     Value = _G.DashLengthEnabled,
-    Callback = function(state)
-        _G.DashLengthEnabled = state
+    Callback = function(v)
+        _G.DashLengthEnabled = v
         ManageDashLength()
-        SaveConfiguration()
     end
 })
 
@@ -4457,12 +4459,11 @@ Tabs["自身屬性"]:Slider({
         Max = 1000,
         Default = _G.DashLength
     },
-    Callback = function(value)
-        _G.DashLength = value
+    Callback = function(v)
+        _G.DashLength = v
         if _G.DashLengthEnabled then 
             ManageDashLength() 
         end
-        SaveConfiguration()
     end
 })
 
