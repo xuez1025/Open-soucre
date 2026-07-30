@@ -11,10 +11,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
-local GameDefaultZoom = LocalPlayer.CameraMaxZoomDistance
 local Workspace = game:GetService("Workspace")
 local mouse = LocalPlayer:GetMouse()
-local LocalPlayer = game:GetService("Players").LocalPlayer
 
 --Teleport Part
 local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
@@ -192,7 +190,7 @@ WindUI:Popup({
 ----------------------------------------
 --統一
 _G.ActiveTween = nil
-_G.isMovementActive = false -- 統一用這個代表
+_G.isMovementActive = false
 
 --aimbot
 _G.SilentAimEnabled         = false 
@@ -288,14 +286,6 @@ _G.AntiCCSpin = false
 _G.SpinSpeed = 50
 _G.CurrentYaw = 0
 _G.AntiCCSpinConn = nil
-
-local function round(num) 
-    return math.floor(num + 0.5) 
-end
-
-local function getRoot(char)
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
 
 --點擊傳送
 _G.ClickTP = false
@@ -631,6 +621,7 @@ local function LoadConfig()
     return false
 end
 
+-- 記錄初始預設值（於 LoadConfig 之前），供「重置設定」按鈕使用
 local InitialConfig = CollectConfig()
 LoadConfig()
 ConfigReady = true
@@ -651,7 +642,7 @@ task.spawn(function()
     end
 end)
 
--- 初始化狀態 (整合與修復版)
+-- 初始化狀態
 task.spawn(function()
     task.wait()
     
@@ -759,7 +750,6 @@ end)
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
---統一tween
 local function setPlatformStand(state)
     local char = LocalPlayer.Character
     if not char then return end
@@ -775,6 +765,14 @@ local function resetCharPhysics()
             part.Velocity = Vector3.zero
         end
     end
+end
+
+local function getRoot(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function round(num) 
+    return math.floor(num + 0.5) 
 end
 
 local function globalStopTween()
@@ -1022,7 +1020,7 @@ local currentSilentAimTarget = nil
 local currentSilentAimTargetPos = nil
 local currentTargetDistance = math.huge
 
-local function GetClosestTarget()
+local function GetClosestSilentAimTarget()
     local closest = nil
     local shortest = math.huge
 
@@ -1182,7 +1180,7 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
         FovCircle.Visible = false
     end
 
-    currentSilentAimTarget, currentTargetDistance = GetClosestTarget()
+    currentSilentAimTarget, currentTargetDistance = GetClosestSilentAimTarget()
     currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
     _G.SilentAimTargetPos = currentSilentAimTargetPos
 
@@ -1382,7 +1380,7 @@ task.spawn(function()
         return math.floor(v9 / v4 * 16777215), v7
     end
     
-    local function GetClosestTarget()
+    local function GetClosestDragonTarget()
         local char = LocalPlayer.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
@@ -1426,7 +1424,7 @@ task.spawn(function()
             local char = LocalPlayer.Character
             local tool = char and char:FindFirstChildOfClass("Tool")
             if not tool or tool.ToolTip ~= "Gun" then return end
-            local targetPart = GetClosestTarget()
+            local targetPart = GetClosestDragonTarget()
             if not targetPart then return end
             local valCode, valCount = GetNextValidator()
             if valCode ~= 0 then Validator2:FireServer(valCode, valCount) end
@@ -1456,12 +1454,6 @@ local State = {
     M1_RegisterHit = nil,
     M1_Enemies = nil
 }
-
-local function IsAlive(character)
-    if not character then return false end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    return humanoid and humanoid.Health and humanoid.Health > 0
-end
 
 local function GetRandomValidPart(target)
     if not target then return nil end
@@ -1787,14 +1779,14 @@ local function GetPredictedPosition(plr)
     return nil
 end
 
-local function ClearFlightComponents()
+local function ClearFTPFlightComponents()
     if _G.FTP_LinearVelocity then _G.FTP_LinearVelocity:Destroy(); _G.FTP_LinearVelocity = nil end
     if _G.FTP_AntiGravity    then _G.FTP_AntiGravity:Destroy();    _G.FTP_AntiGravity    = nil end
     if _G.FTP_Attachment     then _G.FTP_Attachment:Destroy();     _G.FTP_Attachment     = nil end
 end
 
-local function SetupFlightComponents(hrp)
-    ClearFlightComponents()
+local function SetupFTPFlightComponents(hrp)
+    ClearFTPFlightComponents()
 
     local att       = Instance.new("Attachment")
     att.Name       = "XuHub_FlightAttachment"
@@ -1837,7 +1829,7 @@ local function FlyToTargetLogic(plr)
     if not (myHRP and tgHRP) then return end
 
     if not _G.FTP_LinearVelocity or _G.FTP_LinearVelocity.Parent ~= myHRP then
-        SetupFlightComponents(myHRP)
+        SetupFTPFlightComponents(myHRP)
     end
 
     local targetPos = GetPredictedPosition(plr)
@@ -1908,7 +1900,7 @@ local function StopFTPFlight()
     end
 
     if _G.FTP_FlightConn then _G.FTP_FlightConn:Disconnect(); _G.FTP_FlightConn = nil end
-    ClearFlightComponents()
+    ClearFTPFlightComponents()
     setPlatformStand(false)
     
     local char = LocalPlayer.Character
@@ -1919,6 +1911,7 @@ local function StopFTPFlight()
 end
 
 --鎖人v2
+-- 共用的傳送點資料（鎖人v2 與 Teleport 共用同一份）
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
@@ -1978,16 +1971,8 @@ local function GetPredictedPosition2(plr)
 
     local vel = (newest.pos - oldest.pos) / dt
     
-    local localPlayer = game.Players.LocalPlayer
-    local myChar = nil
-    if localPlayer then
-        myChar = localPlayer.Character
-    end
-
-    local myHRP = nil
-    if myChar then
-        myHRP = myChar:FindFirstChild("HumanoidRootPart")
-    end
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
     local flightSpeed = 300
     local predTime = 0.135 
@@ -2005,7 +1990,7 @@ local function GetPredictedPosition2(plr)
     return newest.pos + (vel * predTime)
 end
 
-local function ClearFlightComponents2()
+local function ClearFTP2FlightComponents()
     if _G.FTP2_LinearVelocity then 
         _G.FTP2_LinearVelocity:Destroy() 
         _G.FTP2_LinearVelocity = nil 
@@ -2020,8 +2005,8 @@ local function ClearFlightComponents2()
     end
 end
 
-local function SetupFlightComponents2(hrp)
-    ClearFlightComponents2()
+local function SetupFTP2FlightComponents(hrp)
+    ClearFTP2FlightComponents()
 
     local att = Instance.new("Attachment")
     att.Name = "XuHub_FlightAttachment2"
@@ -2041,10 +2026,8 @@ local function SetupFlightComponents2(hrp)
     local char = hrp.Parent
     if char then
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                if not part.Massless then
-                    totalMass = totalMass + part:GetMass()
-                end
+            if part:IsA("BasePart") and not part.Massless then
+                totalMass = totalMass + part:GetMass()
             end
         end
     end
@@ -2059,27 +2042,13 @@ local function SetupFlightComponents2(hrp)
 end
 
 local function FlyToTargetLogic2(plr)
-    if not plr then return end
-    if not plr.Character then return end
+    if not plr or not plr.Character then return end
 
-    local localPlayer = game.Players.LocalPlayer
-    local myChar = nil
-    if localPlayer then
-        myChar = localPlayer.Character
-    end
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
 
-    local myHRP = nil
-    if myChar then
-        myHRP = myChar:FindFirstChild("HumanoidRootPart")
-    end
-
-    local tgHRP = nil
-    if plr.Character then
-        tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
-    end
-
-    if not myHRP then return end
-    if not tgHRP then return end
+    if not myHRP or not tgHRP then return end
 
     if os.clock() < _G.FTP2_TeleportPauseUntil then
         if _G.FTP2_LinearVelocity then 
@@ -2143,23 +2112,15 @@ local function FlyToTargetLogic2(plr)
         end
     end
 
-    local needSetup = false
-    if not _G.FTP2_LinearVelocity then
-        needSetup = true
-    elseif _G.FTP2_LinearVelocity.Parent ~= myHRP then
-        needSetup = true
-    end
-
+    local needSetup = not _G.FTP2_LinearVelocity or _G.FTP2_LinearVelocity.Parent ~= myHRP
     if needSetup then
-        SetupFlightComponents2(myHRP)
+        SetupFTP2FlightComponents(myHRP)
     end
 
-    if currentDist <= 500 then
-        if currentDist > 0 then
-            local targetMaxSpeed = 500
-            local minSpeed = 300
-            currentSpeed = minSpeed + (500 - currentDist) * ((targetMaxSpeed - minSpeed) / 500)
-        end
+    if currentDist <= 500 and currentDist > 0 then
+        local targetMaxSpeed = 500
+        local minSpeed = 300
+        currentSpeed = minSpeed + (500 - currentDist) * ((targetMaxSpeed - minSpeed) / 500)
     end
 
     if currentDist > 0.1 then 
@@ -2177,21 +2138,10 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_LastTeleportTicks) 
     _G.FTP2_TeleportPauseUntil = 0 
 
-    if type(setPlatformStand) == "function" then
-        setPlatformStand(true)
-    end
+    setPlatformStand(true)
     
-    local localPlayer = game.Players.LocalPlayer
-    local char = nil
-    if localPlayer then
-        char = localPlayer.Character
-    end
-
-    local hum = nil
-    if char then
-        hum = char:FindFirstChildOfClass("Humanoid")
-    end
-
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
         hum:ChangeState(Enum.HumanoidStateType.Physics)
     end
@@ -2203,33 +2153,18 @@ local function StartFTPFlight2()
     _G.FTP2_FlightConn = game:GetService("RunService").RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
 
-        local lPlr = game.Players.LocalPlayer
-        local currentChar = nil
-        if lPlr then
-            currentChar = lPlr.Character
-        end
+        local currentChar = LocalPlayer.Character
+        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
 
-        local currentHum = nil
-        if currentChar then
-            currentHum = currentChar:FindFirstChildOfClass("Humanoid")
-        end
+        if _G.AutoFlee and currentHum and currentHum.Health > 0 then
+            local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
+            local fleeHP = _G.AutoFleeHP or 30
 
-        if _G.AutoFlee then
-            if currentHum then
-                if currentHum.Health > 0 then
-                    local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
-                    local fleeHP = _G.AutoFleeHP
-                    if not fleeHP then
-                        fleeHP = 30
-                    end
-
-                    if hpPercent <= fleeHP then
-                        if _G.FTP2_LinearVelocity then
-                            _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
-                        end
-                        return
-                    end
+            if hpPercent <= fleeHP then
+                if _G.FTP2_LinearVelocity then
+                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
                 end
+                return
             end
         end
         
@@ -2242,24 +2177,16 @@ local function StartFTPFlight2()
         end
         
         pcall(function()
-            local myChar = nil
-            if game.Players.LocalPlayer then
-                myChar = game.Players.LocalPlayer.Character
-            end
-
+            local myChar = LocalPlayer.Character
             if myChar then
                 for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if part.CanCollide then
-                            part.CanCollide = false
-                        end
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
                     end
                 end
                 local myHum = myChar:FindFirstChildOfClass("Humanoid")
-                if myHum then
-                    if not myHum.PlatformStand then
-                        myHum.PlatformStand = true
-                    end
+                if myHum and not myHum.PlatformStand then
+                    myHum.PlatformStand = true
                 end
             end
         end)
@@ -2288,23 +2215,11 @@ local function StopFTPFlight2()
         _G.FTP2_FlightConn = nil 
     end
 
-    ClearFlightComponents2()
-
-    if type(setPlatformStand) == "function" then
-        setPlatformStand(false)
-    end
+    ClearFTP2FlightComponents()
+    setPlatformStand(false)
     
-    local localPlayer = game.Players.LocalPlayer
-    local char = nil
-    if localPlayer then
-        char = localPlayer.Character
-    end
-
-    local hum = nil
-    if char then
-        hum = char:FindFirstChildOfClass("Humanoid")
-    end
-
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
         hum:ChangeState(Enum.HumanoidStateType.GettingUp)
     end
@@ -2315,17 +2230,14 @@ RunService.RenderStepped:Connect(function()
     if not _G.CamlockEnabled then return end
     if not _G.TargetPlayer then return end
     if not _G.TargetPlayer.Character then return end
-    if not LocalPlayer then return end
     if not LocalPlayer.Character then return end
 
     local camera = Workspace.CurrentCamera
     local targetHRP = _G.TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
     local localHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
-    if targetHRP then
-        if localHRP then
-            camera.CFrame = CFrame.new(camera.CFrame.Position, targetHRP.Position)
-        end
+    if targetHRP and localHRP then
+        camera.CFrame = CFrame.new(camera.CFrame.Position, targetHRP.Position)
     end
 end)
 
@@ -2383,10 +2295,7 @@ local function StartListenTo(TargetPlayer)
     
     StopListenTo()
     
-    local tc = nil
-    if TargetPlayer.Character then
-        tc = TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    end
+    local tc = TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
 
     if tc then
         game:GetService("SoundService"):SetListener(Enum.ListenerType.ObjectPosition, tc)
@@ -2606,16 +2515,6 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
---離地面高度
-local function getNormalHipHeight(hum)
-    if not defaultHipHeight and hum then
-        if hum.HipHeight ~= 0 and hum.HipHeight < 300 then
-            defaultHipHeight = hum.HipHeight
-        end
-    end
-    return defaultHipHeight or (r15(LocalPlayer) and 2.1 or 0)
-end
-
 --點擊傳送
 mouse.Button1Down:Connect(function()
     if _G.ClickTP then
@@ -2803,7 +2702,6 @@ local function StartAutoFpsLock()
     end)
 end
 
--- 腳本載入時判斷
 if _G.AutoFpsLock then 
     StartAutoFpsLock() 
 end
@@ -3183,7 +3081,7 @@ task.spawn(function()
             removeLava()
             WindUI:Notify({ Title = "已移除岩漿傷害", Content = "已成功移除岩漿物件", Duration = 5 })
         elseif not _G.RemoveLavaEnabled then
-            lavaRemoved = false -- 關閉時重置狀態，下次再開啟可重新檢測一次
+            lavaRemoved = false
         end
     end
 end)
@@ -3237,25 +3135,19 @@ task.spawn(function()
 end)
 
 --Hitbox
-local function getRoot(char)
-    return char:FindFirstChild("HumanoidRootPart")
-end
-
 local function applyHitboxToPlayer(plr)
     if plr == LocalPlayer then return end
     if not plr.Character then return end
     
     local r = getRoot(plr.Character)
-    if r then
-        if r:IsA("BasePart") then
-            r.CanCollide = false
-            if _G.Hitbox_Enabled then
-                r.Size = Vector3.new(_G.Hitbox_Size, _G.Hitbox_Size, _G.Hitbox_Size)
-                r.Transparency = _G.Hitbox_Transparency
-            else
-                r.Size = Vector3.new(2, 2, 1)
-                r.Transparency = 0
-            end
+    if r and r:IsA("BasePart") then
+        r.CanCollide = false
+        if _G.Hitbox_Enabled then
+            r.Size = Vector3.new(_G.Hitbox_Size, _G.Hitbox_Size, _G.Hitbox_Size)
+            r.Transparency = _G.Hitbox_Transparency
+        else
+            r.Size = Vector3.new(2, 2, 1)
+            r.Transparency = 0
         end
     end
 end
@@ -3551,35 +3443,6 @@ end
 if _G.AutoFlee then StartAutoFlee() end
 
 --Teleport
-local function GetCurrentWorldEntrances()
-    local pool = {}
-    local placeId = game.PlaceId
-
-    if placeId == 2753915549 or placeId == 85211729168715 then
-        pool = {
-            { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
-            { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
-            { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
-            { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
-        }
-    elseif placeId == 4442272183 or placeId == 79091703265657 then
-        pool = {
-            { Arg = Vector3.new(2284.90, 50.53, 905.47), Dest = Vector3.new(2285, 15, 905) },
-            { Arg = Vector3.new(-286.98, 331.13, 597.89), Dest = Vector3.new(-287, 306, 598) },
-            { Arg = Vector3.new(923.21, 161.97, 32852.83), Dest = Vector3.new(923, 125, 32853) },
-            { Arg = Vector3.new(-6508.55, 124.03, -132.83), Dest = Vector3.new(-6509, 83, -133) }
-        }
-    elseif placeId == 7449423635 or placeId == 100117331123089 then
-        pool = {
-            { Arg = Vector3.new(-5027.03, 318.50, -3206.70), Dest = Vector3.new(5651, 1015, -350) },
-            { Arg = Vector3.new(-5060.41, 318.50, -3193.22), Dest = Vector3.new(-12464, 376, -7566) },
-            { Arg = Vector3.new(-12464, 376, -7566), Dest = Vector3.new(-5060, 317, -3193) },
-            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) }
-        }
-    end
-    return pool
-end
-
 local TeleportData = {
     World1 = {
         ["海軍戰艦"] = CFrame.new(-3161, 209, 2067),
@@ -3640,14 +3503,14 @@ local TeleportData = {
     }
 }
 
-local function ClearFlightComponents()
+local function ClearTPFlightComponents()
     if TP_LinearVelocity then TP_LinearVelocity:Destroy(); TP_LinearVelocity = nil end
     if TP_AntiGravity    then TP_AntiGravity:Destroy();    TP_AntiGravity    = nil end
     if TP_Attachment     then TP_Attachment:Destroy();     TP_Attachment     = nil end
 end
 
-local function SetupFlightComponents(hrp)
-    ClearFlightComponents()
+local function SetupTPFlightComponents(hrp)
+    ClearTPFlightComponents()
 
     local att        = Instance.new("Attachment")
     att.Name         = "XuHub_TP_Attachment"
@@ -3691,7 +3554,7 @@ local function ForceStopAllMovement()
         TP_FlightConn = nil
     end
 
-    ClearFlightComponents()
+    ClearTPFlightComponents()
 
     if type(_G.SetNoclipState) == "function" then
         _G.SetNoclipState(false)
@@ -3769,7 +3632,7 @@ local function SmartTeleportTo(targetCFrame)
 
         myHum.PlatformStand = true
         myHum:ChangeState(Enum.HumanoidStateType.Physics)
-        SetupFlightComponents(myHRP)
+        SetupTPFlightComponents(myHRP)
 
         TP_FlightConn = RunService.RenderStepped:Connect(function()
             if _G.TP_CurrentToken ~= myToken or not _G.TP_IsTeleporting then
@@ -3990,18 +3853,8 @@ end)
 --JobId
 local serverJobId = game.JobId
 if serverJobId == "" then
-    serverJobId = "Studio-Test-Session" -- Studio 測試環境下的替代文字
+    serverJobId = "Studio-Test-Session"
 end
-
-task.spawn(function()
-    while serverJobId == "Studio-Test-Session" or serverJobId == "" do
-        task.wait(1)
-        if game.JobId ~= "" then
-            JobIdButton:SetDesc(game.JobId) 
-            break
-        end
-    end
-end)
 
 --Server Hop or rejoin
 function ServerCore:TeleportToServer(jobId)
@@ -4471,6 +4324,7 @@ Tabs["Aimbot&M1"]:Section({ Title = "Fruit M1" })
 
 Tabs["Aimbot&M1"]:Button({
     Title = "檢查目前果實",
+    Icon = "search",
     Desc = "顯示是否可以 M1 的果實",
     Callback = function(v)
         local _, name = GetFruitRemote()
@@ -4534,6 +4388,7 @@ end)
 
 Tabs["Players"]:Button({
     Title = "刷新玩家列表",
+    Icon = "refresh-cw",
     Desc = "手動刷新目前的玩家名單",
     Callback = function(v)
         if playerDropdown then
@@ -4549,7 +4404,8 @@ Tabs["Players"]:Button({
 })
 
 Tabs["Players"]:Button({
-    Title = "傳送玩家", 
+    Title = "傳送玩家",
+    Icon = "send",
     Desc = "單次傳送到目標玩家",
     Callback = function()
         if not _G.TargetPlayer then 
@@ -4601,9 +4457,7 @@ Tabs["Players"]:Toggle({
             end
 
             if _G.FTP_Enabled then 
-                if type(StopFTPFlight) == "function" then
-                    StopFTPFlight() 
-                end
+                StopFTPFlight()
             end
             StartFTPFlight2()
         else
@@ -4848,9 +4702,6 @@ Tabs["自身屬性"]:Toggle({
         else
             StopAutoFpsLock()
         end
-        if SaveConfiguration then
-            SaveConfiguration()
-        end
     end
 })
 
@@ -4973,7 +4824,6 @@ Tabs["遊戲內設定"]:Dropdown({
     Title = "選擇陣營", 
     Description = "點擊切換海賊或海軍",
     Values = {"海賊 (Pirates)", "海軍 (Marines)"},
-    --Value = "海賊 (Pirates)",--不要刪除
     Callback = function(v)
         _G.SelectTeam = v
         local map = { 
@@ -5072,6 +4922,7 @@ Tabs["遊戲內設定"]:Section({ Title = "Fragments" })
 
 Tabs["遊戲內設定"]:Button({
     Title = "重置點數",
+    Icon = "rotate-ccw",
     Callback = function()
         local args = { 
             "BlackbeardReward", 
@@ -5084,6 +4935,7 @@ Tabs["遊戲內設定"]:Button({
 
 Tabs["遊戲內設定"]:Button({
     Title = "重置種族",
+    Icon = "rotate-ccw",
     Callback = function()
         local args = { 
             "BlackbeardReward", 
@@ -5096,6 +4948,7 @@ Tabs["遊戲內設定"]:Button({
 
 Tabs["遊戲內設定"]:Button({
     Title = "更換吸血鬼",
+    Icon = "repeat",
     Callback = function()
         local args = {"Ectoplasm", "Change", 4}
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
@@ -5104,6 +4957,7 @@ Tabs["遊戲內設定"]:Button({
 
 Tabs["遊戲內設定"]:Button({
     Title = "更換機器人",
+    Icon = "repeat",
     Callback = function()
         local args = {"CyborgTrainer", "Buy"}
         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
@@ -5172,10 +5026,6 @@ Tabs["自動"]:Toggle({
         else
             StopAutoSoru()
         end
-        
-        if type(SaveConfiguration) == "function" then
-            pcall(SaveConfiguration)
-        end
     end
 })
 
@@ -5189,7 +5039,6 @@ Tabs["自動"]:Toggle({
         else 
             StopAutoFlee() 
         end
-        if SaveConfiguration then SaveConfiguration() end
     end
 })
 
@@ -5203,7 +5052,6 @@ Tabs["自動"]:Slider({
     },
     Callback = function(v)
         _G.AutoFleeHP = v
-        if SaveConfiguration then SaveConfiguration() end
     end
 })
 
@@ -5222,6 +5070,7 @@ Tabs["Teleport"]:Paragraph({
 
 Tabs["Teleport"]:Button({
         Title = "水下城市",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(61163.8515625, 11.680007934570312, 1819.7840576171875))
         end
@@ -5229,6 +5078,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "水下城市(入口)",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(3864.68798828125, 6.73699951171875, -1926.2139892578125))
         end
@@ -5236,6 +5086,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "天空",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(-4607.8232421875, 874.3909912109375, -1667.5570068359375))
         end
@@ -5243,6 +5094,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "上天空",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(-7894.6181640625, 5547.14208984375, -380.2909851074219))
         end
@@ -5256,6 +5108,7 @@ Tabs["Teleport"]:Paragraph({
 
 Tabs["Teleport"]:Button({
         Title = "天鵝房間",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(Vector3.new(2284.9091796875, 15.537796020507812, 905.4730834960938))
         end
@@ -5263,6 +5116,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "豪宅",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(-286.9859619140625, 306.13739013671875, 597.8901977539062))
         end
@@ -5270,6 +5124,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "鬼船內",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(923.2130126953125, 126.97599792480469, 32852.83203125))
         end
@@ -5277,6 +5132,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "鬼船外",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(-6508.55810546875, 89.03500366210938, -132.83999633789062))
         end
@@ -5290,6 +5146,7 @@ Tabs["Teleport"]:Paragraph({
 
 Tabs["Teleport"]:Button({
         Title = "海德拉",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(-5027.0302734375, 318.50201416015625, -3206.70361328125))
         end
@@ -5297,6 +5154,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
         Title = "烏龜屋",
+        Icon = "map-pin",
         Callback = function()
             teleportViaRemote(vector.create(-5060.41162109375, 318.50201416015625, -3193.224853515625))
         end
@@ -5304,6 +5162,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
     	Title = "司法島",
+        Icon = "map-pin",
     	Callback = function()
     	    teleportViaRemote(Vector3.new(-5096.48, 316.43, -3177.91))
     	end
@@ -5311,6 +5170,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({
     Title = "海上城堡",
+    Icon = "map-pin",
     Callback = function()
         teleportViaRemote(Vector3.new(-12463.6, 376.26, -7566.08))
     end
@@ -5333,6 +5193,7 @@ Tabs["Teleport"]:Divider()
 Tabs["Teleport"]:Section({ Title = "傳送島嶼" })
 
 Tabs["Teleport"]:Button({ 
+    Icon = "map-pin-off",
     Title = "停止傳送", 
     Desc = "立即停止所有傳送與飛行",
     Callback = function()
@@ -5380,6 +5241,7 @@ Tabs["Teleport"]:Section({ Title = "傳送海域" })
 
 Tabs["Teleport"]:Button({ 
     Title = "一海",
+    Icon = "waves",
     Callback = function()
         pcall(function()
             if isWorld1 then
@@ -5394,6 +5256,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({ 
     Title = "二海",
+    Icon = "waves",
     Callback = function()
         pcall(function()
             if isWorld2 then
@@ -5408,6 +5271,7 @@ Tabs["Teleport"]:Button({
 
 Tabs["Teleport"]:Button({ 
     Title = "三海",
+    Icon = "waves",
     Callback = function()
         pcall(function()
             if isWorld3 then
@@ -5597,16 +5461,30 @@ Tabs["設定"]:Section({ Title = "重置腳本" })
 
 Tabs["設定"]:Button({
     Title = "將所有配置恢復初始",
-    Desc = "刪除已保存的配置 並還原至初始設定",
+    Icon = "trash-2",
+    Desc = "標記為待重置，下次啟動腳本時套用初始設定",
     Callback = function()
-        ApplyConfig(InitialConfig)
-        ConfigDirty = true
-        SaveConfig(true)
-        WindUI:Notify({
-            Title = "配置已重置",
-            Content = "所有配置已恢復為初始值，重新執行腳本後完全生效。",
-            Duration = 3
-        })
+        local ok = pcall(function()
+            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+                makefolder(ConfigFolder)
+            end
+            if typeof(writefile) == "function" then
+                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
+            end
+        end)
+        if ok then
+            WindUI:Notify({
+                Title = "配置已標記重置",
+                Content = "設定已寫入初始值，下次啟動腳本後將完全生效，當前功能不受影響。",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "重置失敗",
+                Content = "無法寫入設定檔，請確認執行器是否支援檔案寫入。",
+                Duration = 4
+            })
+        end
     end
 })
 
@@ -5662,7 +5540,8 @@ Tabs["設定"]:Toggle({
 })
 
 Tabs["設定"]:Button({
-    Title = "關閉遊戲 (Exit)", 
+    Title = "關閉遊戲 (Exit)",
+    Icon = "power",
     Desc = "強制退出回到Roblox主頁",
     Callback = function() game:Shutdown() end
 })
@@ -5716,7 +5595,7 @@ Tabs["Server"]:Section({ Title = "Server Information" })
 Tabs["Server"]:Paragraph({
     Title = "Server JobId",
     Desc = serverJobId,
-    Image = "rbxassetid://10723374482", -- 你的圖示
+    Image = "rbxassetid://10723374482",
     ImageSize = 24,
     Buttons = {
         {
@@ -5756,6 +5635,7 @@ Tabs["Server"]:Input({
 
 Tabs["Server"]:Button({
     Title = "立即加入",
+    Icon = "log-in",
     Desc = "加入輸入的伺服器",
     Callback = function()
         if TargetJobID ~= "" then
@@ -5771,6 +5651,7 @@ Tabs["Server"]:Section({ Title = "自動加入伺服器" })
 
 Tabs["Server"]:Button({ 
     Title = "加入少人伺服器",
+    Icon = "arrow-right-left",
     Desc = "尋找人數最少的伺服器",
     Callback = function()
         WindUI:Notify({ Title = "加入少人伺服器", Content = "正在搜尋少人伺服器中..", Duration = 1.5 })
@@ -5780,6 +5661,7 @@ Tabs["Server"]:Button({
 
 Tabs["Server"]:Button({ 
     Title = "伺服器跳轉",
+    Icon = "arrow-right-left",
     Desc = "隨機尋找其他伺服器",
     Callback = function()
         WindUI:Notify({ Title = "伺服器跳轉", Content = "正在隨機切換伺服器中..", Duration = 1.5 })
@@ -5789,6 +5671,7 @@ Tabs["Server"]:Button({
 
 Tabs["Server"]:Button({ 
     Title = "重進當前伺服器",
+    Icon = "arrow-right-left",
     Desc = "刷新並重新加入該伺服器",
     Callback = function()
         WindUI:Notify({ Title = "重進當前伺服器", Content = "正在重新連接目前伺服器..", Duration = 1.5 })
@@ -5987,6 +5870,7 @@ end
 
 Tabs["Server"]:Button({
     Title = "開始跳服",
+    Icon = "arrow-right-left",
     Callback = function()
         StartServerHop()
     end,
@@ -5994,6 +5878,7 @@ Tabs["Server"]:Button({
 
 Tabs["Server"]:Button({
     Title = "停止跳服",
+    Icon = "circle-stop",
     Callback = function()
         getgenv().IsServerHopping = false
         getgenv().ShuttingDown = false
@@ -6012,6 +5897,7 @@ Tabs["Other"]:Section({ Title = "其他" })
 
 Tabs["Other"]:Button({
     Title = "FLY GUI V3",
+    Icon = "feather",
     Callback = function()
         WindUI:Notify({
             Title = "FLY GUI",
@@ -6036,6 +5922,7 @@ Tabs["Other"]:Button({
 
 Tabs["Other"]:Button({
     Title = "FLY GUI V3(手機版)",
+    Icon = "feather",
     Callback = function()
         local isMobile = UserInputService.TouchEnabled
 
