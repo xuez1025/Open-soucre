@@ -430,6 +430,10 @@ _G.AntiAFK_Connection = nil
 --anti kick
 _G.AutoRejoinEnabled = false
 
+--自動執行
+_G.AutoExecute = false
+local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
+
 --hide UI
 _G.HiddenGameUIsList = {}
 _G.HideGameUIState = false
@@ -551,6 +555,8 @@ local ConfigKeys = {
     "Use2022Materials",
     --AFK&Kick
     "AntiAFK_ENABLED", "AutoRejoinEnabled",
+	--自動執行
+	"AutoExecute",
     --隱藏UI
     "HideGameUIState",
     --快捷鍵
@@ -5510,6 +5516,32 @@ Tabs["設定"]:Toggle({
     Value = _G.AutoRejoinEnabled,
     Callback = function(v)
         _G.AutoRejoinEnabled = v
+    end
+})
+
+Tabs["設定"]:Toggle({ 
+    Title = "換服後自動執行",
+    Desc = "切換伺服器時自動載入",
+    Value = _G.AutoExecute,
+    Callback = function(v)
+        _G.AutoExecute = v
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        end
     end
 })
 
