@@ -5476,7 +5476,7 @@ Tabs["設定"]:Section({ Title = "重置腳本" })
 Tabs["設定"]:Button({
     Title = "將所有配置恢復初始",
     Icon = "trash-2",
-    Desc = "標記為待重置，下次啟動腳本時套用初始設定",
+    Desc = "將在換服後重置 下次啟動腳本使用初始設定",
     Callback = function()
         local ok = pcall(function()
             if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
@@ -5488,14 +5488,8 @@ Tabs["設定"]:Button({
         end)
         if ok then
             WindUI:Notify({
-                Title = "配置已標記重置",
-                Content = "設定已寫入初始值，下次啟動腳本後將完全生效，當前功能不受影響。",
-                Duration = 4
-            })
-        else
-            WindUI:Notify({
-                Title = "重置失敗",
-                Content = "無法寫入設定檔，請確認執行器是否支援檔案寫入。",
+                Title = "配置已重置",
+                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
                 Duration = 4
             })
         end
