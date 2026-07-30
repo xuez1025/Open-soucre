@@ -422,10 +422,10 @@ _G.LoopFullBright = false
 _G.BrightLoopConnection = nil
 
 --day&night
-_G.NightToggleState = false
+local Lighting = game:GetService("Lighting")
+
 _G.DayToggleState = false
-_G.NightLoopConn = nil
-_G.DayLoopConn = nil
+_G.NightToggleState = false
 
 --Xray
 _G.Xray = false
@@ -553,8 +553,11 @@ local ConfigKeys = {
 	--移除迷霧
 	"RemoveFogEnabled",
     --全亮
-	"LoopFullBright", "NightToggleState",
-    "DayToggleState", "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
+	"LoopFullBright",
+    --Day&Night
+    "NightToggleState", "DayToggleState",
+    
+    "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
 }
@@ -687,13 +690,21 @@ task.spawn(function()
             _G.CurrentYaw = root.Orientation.Y
             _G.AntiCCSpinConn = RunService.RenderStepped:Connect(function(dt)
                 local cr = LocalPlayer.Character
-                local crr = cr and cr:FindFirstChild("HumanoidRootPart")
-                if not crr then return end
+                 realm = cr and cr:FindFirstChild("HumanoidRootPart")
+                if not realm then return end
                 
                 _G.CurrentYaw = _G.CurrentYaw + (_G.SpinSpeed * dt * 10)
-                crr.CFrame = CFrame.new(crr.Position) * CFrame.Angles(0, math.rad(_G.CurrentYaw), 0)
+                realm.CFrame = CFrame.new(realm.Position) * CFrame.Angles(0, math.rad(_G.CurrentYaw), 0)
             end)
         end
+    end
+
+    if _G.DayToggleState then
+        game:GetService("Lighting").ClockTime = 14
+    end
+
+    if _G.NightToggleState then
+        game:GetService("Lighting").ClockTime = 0
     end
 end)
 
@@ -3859,6 +3870,19 @@ _G.SetFullBrightState = function(state)
     _G.BrightLoopConnection = RunService.RenderStepped:Connect(doFullBright)
 end
 
+--Day&Night
+Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+    if _G.DayToggleState then
+        if Lighting.ClockTime ~= 14 then
+            Lighting.ClockTime = 14
+        end
+    elseif _G.NightToggleState then
+        if Lighting.ClockTime ~= 0 then
+            Lighting.ClockTime = 0
+        end
+    end
+end)
+
 --Xray
 local function updateXray(state)
     for _, v in pairs(game.Workspace:GetDescendants()) do
@@ -5504,20 +5528,11 @@ Tabs["畫質"]:Toggle({
     Title = "白天", 
     Desc = "持續保持白天", 
     Value = _G.DayToggleState,
-    Callback = function(state)
-        _G.DayToggleState = state
-        
-        if _G.DayLoopConn then 
-            _G.DayLoopConn:Disconnect()
-            _G.DayLoopConn = nil 
+    Callback = function(v)
+        _G.DayToggleState = v
+        if v then
+            _G.NightToggleState = false
         end
-        
-        if not _G.DayToggleState then return end
-        
-        Lighting.ClockTime = 14
-        _G.DayLoopConn = Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
-            Lighting.ClockTime = 14
-        end)
     end
 })
 
@@ -5525,20 +5540,11 @@ Tabs["畫質"]:Toggle({
     Title = "夜晚", 
     Desc = "持續保持夜晚", 
     Value = _G.NightToggleState,
-    Callback = function(state)
-        _G.NightToggleState = state
-        
-        if _G.NightLoopConn then 
-            _G.NightLoopConn:Disconnect()
-            _G.NightLoopConn = nil 
+    Callback = function(v)
+        _G.NightToggleState = v
+        if v then
+            _G.DayToggleState = false
         end
-        
-        if not _G.NightToggleState then return end
-        
-        Lighting.ClockTime = 0
-        _G.NightLoopConn = Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
-            Lighting.ClockTime = 0
-        end)
     end
 })
 
