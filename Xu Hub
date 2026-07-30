@@ -432,7 +432,6 @@ _G.AutoRejoinEnabled = false
 
 --自動執行
 _G.AutoExecute = false
-local autoExecuteSet = false
 local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
 
 --hide UI
@@ -653,29 +652,7 @@ end)
 task.spawn(function()
     task.wait()
     
-    -- 自動執行初始化
-    if _G.AutoExecute then
-        if queue_on_teleport then
-            queue_on_teleport(ScriptLoadstring)
-            if WindUI then
-                WindUI:Notify({
-                    Title = "通知",
-                    Content = "已開啟自動執行",
-                    Duration = 3
-                })
-            end
-        else
-            if WindUI then
-                WindUI:Notify({
-                    Title = "支援錯誤",
-                    Content = "你目前的注入器不支援",
-                    Duration = 3
-                })
-            end
-        end
-    end
-
-    -- 隱藏遊戲 UI
+    --隱藏遊戲 UI
     if _G.HideGameUIState then
         _G.HiddenGameUIsList = _G.HiddenGameUIsList or {}
         local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
@@ -687,7 +664,7 @@ task.spawn(function()
         end
     end
 
-    -- 自動重連與防掛機
+    --自動重連與防掛機
     if _G.AutoRejoinEnabled then
         _G.AutoRejoinEnabled = true
     end
@@ -696,19 +673,18 @@ task.spawn(function()
         EnableAntiAFK()
     end
 
-    -- 2022 材質初始化
+    --2022 材質初始化
     if _G.Use2022Materials then
         if sethiddenproperty then
             sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", true)
         end
     end
 
-    -- 視覺與渲染設定
+    --視覺與渲染設定
     if _G.Xray then
         _G.UpdateXray(true)
     end
 
-    -- 靜止照明 (FullBright)
     if _G.LoopFullBright then
         _G.SetFullBrightState(true)
     end
@@ -735,7 +711,7 @@ task.spawn(function()
         end)
     end
 
-    -- 角色狀態功能
+    --角色狀態功能
     if _G.Noclip_Enabled then
         _G.SetNoclipState(true)
     end
@@ -744,7 +720,7 @@ task.spawn(function()
         _G.ToggleMoveState(true) 
     end
 
-    -- 反控旋轉
+    --反控旋轉
     if _G.AntiCCSpin then
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -769,7 +745,7 @@ task.spawn(function()
         end
     end
 
-    -- 遊戲時間設定
+    --遊戲時間設定
     if _G.DayToggleState then
         game:GetService("Lighting").ClockTime = 14
     elseif _G.NightToggleState then
@@ -3153,7 +3129,7 @@ task.spawn(function()
             
             WindUI:Notify({
                 Title = "已移除鬼船傷害",
-                Content = "已成功移除鬼船物件",
+                Content = "已成功移除岩漿物件",
                 Duration = 3,
                 Type = "Success"
             })
@@ -3878,35 +3854,6 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     
     local ts = game:GetService("TeleportService")
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
-end)
-
---自動執行
-local function setAutoExecute()
-    if queue_on_teleport then
-        queue_on_teleport(ScriptLoadstring)
-        WindUI:Notify({
-            Title = "通知",
-            Content = "已開啟自動執行",
-            Duration = 3
-        })
-    else
-        WindUI:Notify({
-            Title = "支援錯誤",
-            Content = "你目前的注入器不支援",
-            Duration = 3
-        })
-    end
-end
-
-task.spawn(function()
-    while task.wait(0.5) do
-        if _G.AutoExecute and not autoExecuteSet then
-            autoExecuteSet = true
-            setAutoExecute()
-        elseif not _G.AutoExecute then
-            autoExecuteSet = false
-        end
-    end
 end)
 
 --JobId
@@ -5521,7 +5468,7 @@ Tabs["設定"]:Section({ Title = "重置腳本" })
 Tabs["設定"]:Button({
     Title = "將所有配置恢復初始",
     Icon = "trash-2",
-    Desc = "將在換服後重置 下次啟動腳本使用初始設定",
+    Desc = "標記為待重置，下次啟動腳本時套用初始設定",
     Callback = function()
         local ok = pcall(function()
             if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
@@ -5533,8 +5480,14 @@ Tabs["設定"]:Button({
         end)
         if ok then
             WindUI:Notify({
-                Title = "配置已重置",
-                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Title = "配置已標記重置",
+                Content = "設定已寫入初始值，下次啟動腳本後將完全生效，當前功能不受影響。",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "重置失敗",
+                Content = "無法寫入設定檔，請確認執行器是否支援檔案寫入。",
                 Duration = 4
             })
         end
@@ -5568,10 +5521,25 @@ Tabs["設定"]:Toggle({
 
 Tabs["設定"]:Toggle({ 
     Title = "換服後自動執行",
-    Desc = "切換伺服器時自動載入",
+    Desc = "切換伺服器時自動重新載入 Xu-hub",
     Value = _G.AutoExecute,
-    Callback = function(v)
-        _G.AutoExecute = v
+    Callback = function(state)
+        _G.AutoExecute = state
+        
+        if _G.AutoExecute and queue_on_teleport then
+            queue_on_teleport(ScriptLoadstring)
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已開啟自動執行",
+                Duration = 3
+            })
+        elseif not queue_on_teleport then
+            WindUI:Notify({
+                Title = "支援錯誤",
+                Content = "你目前的注入器不支援",
+                Duration = 3
+            })
+        end
     end
 })
 
