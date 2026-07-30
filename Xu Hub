@@ -652,6 +652,14 @@ end)
 task.spawn(function()
     task.wait()
     
+    -- 換服後自動執行 (新增)
+    if _G.AutoExecute then
+        local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
+        if queue_on_teleport then
+            queue_on_teleport(ScriptLoadstring)
+        end
+    end
+    
     --隱藏遊戲 UI
     if _G.HideGameUIState then
         _G.HiddenGameUIsList = _G.HiddenGameUIsList or {}
