@@ -5521,24 +5521,26 @@ Tabs["設定"]:Toggle({
 
 Tabs["設定"]:Toggle({ 
     Title = "換服後自動執行",
-    Desc = "切換伺服器時自動重新載入 Xu-hub",
+    Desc = "切換伺服器時自動重新載入",
     Value = _G.AutoExecute,
-    Callback = function(state)
-        _G.AutoExecute = state
+    Callback = function(v)
+        _G.AutoExecute = v
         
-        if _G.AutoExecute and queue_on_teleport then
-            queue_on_teleport(ScriptLoadstring)
-            WindUI:Notify({
-                Title = "通知",
-                Content = "已開啟自動執行",
-                Duration = 3
-            })
-        elseif not queue_on_teleport then
-            WindUI:Notify({
-                Title = "支援錯誤",
-                Content = "你目前的注入器不支援",
-                Duration = 3
-            })
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
         end
     end
 })
