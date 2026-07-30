@@ -556,8 +556,12 @@ local ConfigKeys = {
 	"LoopFullBright",
     --Day&Night
     "NightToggleState", "DayToggleState",
+    --Xray
+    "Xray",
+    --2022材質
+    "Use2022Materials",
     --
-    "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
+    "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
 }
@@ -646,6 +650,13 @@ end)
 task.spawn(function()
     task.wait()
     
+    -- 2022材質 初始化
+    if _G.Use2022Materials then
+        if sethiddenproperty then
+            sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", true)
+        end
+    end
+
     if _G.Xray then
         _G.UpdateXray(true)
     end
@@ -5566,8 +5577,8 @@ Tabs["畫質"]:Toggle({
     Title = "2022材質", 
     Desc = "啟用2022材質", 
     Value = _G.Use2022Materials,
-    Callback = function(state)
-        _G.Use2022Materials = state
+    Callback = function(v)
+        _G.Use2022Materials = v
         if sethiddenproperty then
             sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", _G.Use2022Materials)
         else 
