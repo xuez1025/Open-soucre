@@ -434,7 +434,7 @@ _G.Xray = false
 _G.Use2022Materials = false
 
 --anti AFK
-_G.AntiAFK_ENABLED = false
+_G.AntiAFK_ENABLED = true
 _G.AntiAFK_Connection = nil
 
 --anti kick
@@ -560,7 +560,7 @@ local ConfigKeys = {
     "Xray",
     --2022材質
     "Use2022Materials",
-    --
+    --AFK
     "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
@@ -650,7 +650,10 @@ end)
 task.spawn(function()
     task.wait()
     
-    -- 2022材質 初始化
+    if _G.AntiAFK_ENABLED then
+        EnableAntiAFK()
+    end
+
     if _G.Use2022Materials then
         if sethiddenproperty then
             sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", true)
@@ -3917,9 +3920,11 @@ end
 
 -- Anti AFK
 local function EnableAntiAFK()
-    if _G.AntiAFK_ENABLED then return end
-    _G.AntiAFK_ENABLED = true
-    
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
     _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
         VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
         task.wait(1)
@@ -3928,23 +3933,21 @@ local function EnableAntiAFK()
 
     if getconnections then
         for _, connection in pairs(getconnections(LocalPlayer.Idled)) do
-            if connection.Disable then connection:Disable()
-            elseif connection.Disconnect then connection:Disconnect() end
+            if connection.Disable then 
+                connection:Disable()
+            elseif connection.Disconnect then 
+                connection:Disconnect() 
+            end
         end
     end
 end
 
 local function DisableAntiAFK()
-    if not _G.AntiAFK_ENABLED then return end
-    _G.AntiAFK_ENABLED = false
-    
     if _G.AntiAFK_Connection then 
         _G.AntiAFK_Connection:Disconnect()
         _G.AntiAFK_Connection = nil 
     end
 end
-
-EnableAntiAFK()
 
 --Anti Kick
 local function clearRejoinConnection()
@@ -5610,8 +5613,9 @@ Tabs["設定"]:Toggle({
     Title = "Anti AFK", 
     Desc = "防止閒置被踢出", 
     Value = _G.AntiAFK_ENABLED,
-    Callback = function(state) 
-        if state then 
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
             EnableAntiAFK() 
         else 
             DisableAntiAFK() 
