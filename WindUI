@@ -38,7 +38,7 @@ local Window = WindUI:CreateWindow({
     }
 })
 
---變數
+-- ==================== 變數區域 ====================
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
@@ -46,13 +46,17 @@ _G.TestToggleValue = false
 _G.TestSliderValue = 50
 _G.TestDropdownValue = "選項1"
 
--- 建立分頁
+-- 新增：換服自動執行設定與腳本來源字串（請將 URL 替換為你的腳本網址）
+_G.AutoExecute = false
+local ScriptLoadstring = 'loadstring(game:HttpGet("YOUR_SCRIPT_URL_HERE"))()'
+
+-- ==================== 建立分頁 ====================
 local Tabs = {
     Components = Window:Tab({ Title = "元件測試", Icon = "box" }),
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+    Settings   = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
--- ==================== 新增元件測試分頁 ====================
+-- ==================== 元件測試分頁 ====================
 Tabs.Components:Section({ Title = "全域變數元件測試 (示範)" })
 
 -- 按鈕 (Button)
@@ -101,6 +105,34 @@ Tabs.Components:Dropdown({
 })
 
 -- ==================== 設定分頁 ====================
+Tabs.Settings:Section({ Title = "系統設定" })
+
+-- 新增：換服自動啟動腳本 Toggle
+Tabs.Settings:Toggle({
+    Title = "換服後自動執行",
+    Desc = "切換伺服器時自動重新載入 Xu-hub",
+    Value = _G.AutoExecute,
+    Callback = function(state)
+        _G.AutoExecute = state
+        
+        -- 依照要求：不使用 OnTeleport:Connect，直接判斷並註冊換服佇列
+        if _G.AutoExecute and queue_on_teleport then
+            queue_on_teleport(ScriptLoadstring)
+            WindUI:Notify({
+                Title = "換服執行器",
+                Content = "已加入換服啟動佇列！",
+                Duration = 3
+            })
+        elseif not queue_on_teleport then
+            WindUI:Notify({
+                Title = "支援錯誤",
+                Content = "你目前的注入器不支援 queue_on_teleport 功能",
+                Duration = 3
+            })
+        end
+    end
+})
+
 Tabs.Settings:Section({ Title = "快捷鍵設定" })
 
 Tabs.Settings:Keybind({ 
