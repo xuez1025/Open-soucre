@@ -556,7 +556,7 @@ local ConfigKeys = {
 	"LoopFullBright",
     --Day&Night
     "NightToggleState", "DayToggleState",
-    
+    --
     "Xray", "Use2022Materials", "AntiAFK_ENABLED", "AutoRejoinEnabled",
     "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
@@ -642,10 +642,14 @@ task.spawn(function()
     end
 end)
 
---初始化狀態
+-- 初始化狀態
 task.spawn(function()
     task.wait()
     
+    if _G.Xray then
+        _G.UpdateXray(true)
+    end
+
     if _G.LoopFullBright then
         _G.SetFullBrightState(true)
     end
@@ -690,7 +694,7 @@ task.spawn(function()
             _G.CurrentYaw = root.Orientation.Y
             _G.AntiCCSpinConn = RunService.RenderStepped:Connect(function(dt)
                 local cr = LocalPlayer.Character
-                 realm = cr and cr:FindFirstChild("HumanoidRootPart")
+                local realm = cr and cr:FindFirstChild("HumanoidRootPart")
                 if not realm then return end
                 
                 _G.CurrentYaw = _G.CurrentYaw + (_G.SpinSpeed * dt * 10)
@@ -3884,7 +3888,7 @@ Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
 end)
 
 --Xray
-local function updateXray(state)
+_G.UpdateXray = function(state)
     for _, v in pairs(game.Workspace:GetDescendants()) do
         if v:IsA("BasePart") then
             if not v.Parent:FindFirstChildWhichIsA("Humanoid") then
@@ -5552,9 +5556,9 @@ Tabs["畫質"]:Toggle({
     Title = "X光 (Xray)", 
     Desc = "讓地圖所有部件半透明", 
     Value = _G.Xray,
-    Callback = function(state)
-        _G.Xray = state
-        updateXray(_G.Xray)
+    Callback = function(v)
+        _G.Xray = v
+        _G.UpdateXray(_G.Xray)
     end
 })
 
