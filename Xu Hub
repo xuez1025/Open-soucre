@@ -651,11 +651,13 @@ task.spawn(function()
     end
 end)
 
--- 初始化狀態
+-- 初始化狀態 (整合與修復版)
 task.spawn(function()
     task.wait()
     
+    --隱藏遊戲 UI
     if _G.HideGameUIState then
+        _G.HiddenGameUIsList = _G.HiddenGameUIsList or {}
         local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
         for _, gui in pairs(pg:GetChildren()) do
             if gui:IsA("ScreenGui") and gui.Enabled then
@@ -665,20 +667,23 @@ task.spawn(function()
         end
     end
 
+    --自動重連與防掛機
     if _G.AutoRejoinEnabled then
         _G.AutoRejoinEnabled = true
     end
 
-    if _G.AntiAFK_ENABLED then
+    if _G.AntiAFK_ENABLED and type(EnableAntiAFK) == "function" then
         EnableAntiAFK()
     end
 
+    --2022 材質初始化
     if _G.Use2022Materials then
         if sethiddenproperty then
             sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", true)
         end
     end
 
+    --視覺與渲染設定
     if _G.Xray then
         _G.UpdateXray(true)
     end
@@ -695,14 +700,6 @@ task.spawn(function()
         _G.SetLowVisualState(true)
     end
 
-    if _G.Noclip_Enabled then
-        _G.SetNoclipState(true)
-    end
-
-    if _G.Move_MovingEnabled then 
-        _G.ToggleMoveState(true) 
-    end
-
     if _G.WhiteScreen then
         pcall(function()
             game:GetService("RunService"):Set3dRenderingEnabled(not _G.WhiteScreen)
@@ -711,10 +708,22 @@ task.spawn(function()
 
     if _G.BlackScreen then
         pcall(function()
-            blackFrame.Visible = _G.BlackScreen
+            if blackFrame then
+                blackFrame.Visible = _G.BlackScreen
+            end
         end)
     end
 
+    --角色狀態功能
+    if _G.Noclip_Enabled then
+        _G.SetNoclipState(true)
+    end
+
+    if _G.Move_MovingEnabled then 
+        _G.ToggleMoveState(true) 
+    end
+
+    --反控旋轉
     if _G.AntiCCSpin then
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -725,22 +734,24 @@ task.spawn(function()
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if root then
             _G.CurrentYaw = root.Orientation.Y
+            if _G.AntiCCSpinConn then
+                _G.AntiCCSpinConn:Disconnect()
+            end
             _G.AntiCCSpinConn = RunService.RenderStepped:Connect(function(dt)
                 local cr = LocalPlayer.Character
-                local realm = cr and cr:FindFirstChild("HumanoidRootPart")
-                if not realm then return end
+                local crr = cr and cr:FindFirstChild("HumanoidRootPart")
+                if not crr then return end
                 
-                _G.CurrentYaw = _G.CurrentYaw + (_G.SpinSpeed * dt * 10)
-                realm.CFrame = CFrame.new(realm.Position) * CFrame.Angles(0, math.rad(_G.CurrentYaw), 0)
+                _G.CurrentYaw = _G.CurrentYaw + ((_G.SpinSpeed or 5) * dt * 10)
+                crr.CFrame = CFrame.new(crr.Position) * CFrame.Angles(0, math.rad(_G.CurrentYaw), 0)
             end)
         end
     end
 
+    --遊戲時間設定
     if _G.DayToggleState then
         game:GetService("Lighting").ClockTime = 14
-    end
-
-    if _G.NightToggleState then
+    elseif _G.NightToggleState then
         game:GetService("Lighting").ClockTime = 0
     end
 end)
