@@ -439,7 +439,6 @@ _G.AntiAFK_Connection = nil
 
 --anti kick
 _G.AutoRejoinEnabled = false
-local autorejoinConn = nil
 
 --hide UI
 _G.HiddenGameUIsList = {}
@@ -560,9 +559,12 @@ local ConfigKeys = {
     "Xray",
     --2022材質
     "Use2022Materials",
-    --AFK
+    --AFK&Kick
     "AntiAFK_ENABLED", "AutoRejoinEnabled",
-    "HideGameUIState", "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
+    --隱藏UI
+    "HideGameUIState",
+    --
+    "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
     "G_HopBountyRange"
 }
 
@@ -650,6 +652,20 @@ end)
 task.spawn(function()
     task.wait()
     
+    if _G.HideGameUIState then
+        local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+        for _, gui in pairs(pg:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                table.insert(_G.HiddenGameUIsList, gui)
+                gui.Enabled = false
+            end
+        end
+    end
+
+    if _G.AutoRejoinEnabled then
+        _G.AutoRejoinEnabled = true
+    end
+
     if _G.AntiAFK_ENABLED then
         EnableAntiAFK()
     end
@@ -3950,39 +3966,12 @@ local function DisableAntiAFK()
 end
 
 --Anti Kick
-local function clearRejoinConnection()
-    if autorejoinConn then
-        autorejoinConn:Disconnect()
-        autorejoinConn = nil
-    end
-end
-
 game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     if not _G.AutoRejoinEnabled then return end
     
     local ts = game:GetService("TeleportService")
-    ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer) -- 斷線時重新傳送加入當前遊戲
+    ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
-
---hide UI
-local function ToggleGameUI(state)
-    local pg = LocalPlayer:WaitForChild("PlayerGui")
-    if state then
-        for _, gui in pairs(pg:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                table.insert(_G.HiddenGameUIsList, gui)
-                gui.Enabled = false
-            end
-        end
-    else
-        for _, gui in pairs(_G.HiddenGameUIsList) do
-            if gui and gui.Parent then 
-                gui.Enabled = true 
-            end
-        end
-        table.clear(_G.HiddenGameUIsList)
-    end
-end
 
 --JobId
 local serverJobId = game.JobId
@@ -5627,8 +5616,8 @@ Tabs["設定"]:Toggle({
     Title = "自動重新連接", 
     Desc = "斷線或被踢出時自動重新加入伺服器", 
     Value = _G.AutoRejoinEnabled,
-    Callback = function(state)
-        _G.AutoRejoinEnabled = state
+    Callback = function(v)
+        _G.AutoRejoinEnabled = v
     end
 })
 
@@ -5636,9 +5625,25 @@ Tabs["設定"]:Toggle({
     Title = "隱藏遊戲 UI", 
     Desc = "隱藏遊戲內原本的所有 UI 介面", 
     Value = _G.HideGameUIState,
-    Callback = function(state) 
-        _G.HideGameUIState = state
-        ToggleGameUI(state) 
+    Callback = function(v) 
+        _G.HideGameUIState = v
+        local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+        
+        if _G.HideGameUIState then
+            for _, gui in pairs(pg:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Enabled then
+                    table.insert(_G.HiddenGameUIsList, gui)
+                    gui.Enabled = false
+                end
+            end
+        else
+            for _, gui in pairs(_G.HiddenGameUIsList) do
+                if gui and gui.Parent then 
+                    gui.Enabled = true 
+                end
+            end
+            table.clear(_G.HiddenGameUIsList)
+        end
     end
 })
 
