@@ -563,9 +563,12 @@ local ConfigKeys = {
     "AntiAFK_ENABLED", "AutoRejoinEnabled",
     --隱藏UI
     "HideGameUIState",
-    --
-    "CurrentKey", "KeyDisabled", "Theme", "G_ServerRegion", "G_HopPlayerRange",
-    "G_HopBountyRange"
+    --快捷鍵
+    "CurrentKey", "KeyDisabled",
+    --主題
+    "Theme",
+    --Server
+    "G_ServerRegion", "G_HopPlayerRange", "G_HopBountyRange"
 }
 
 local function CopyConfigValue(value)
@@ -5657,8 +5660,8 @@ Tabs["設定"]:Keybind({
     Title = "快捷鍵", 
     Desc = "可更改", 
     Value = _G.CurrentKey,
-    Callback = function(state)
-        _G.CurrentKey = typeof(state) == "EnumItem" and state.Name or tostring(state)
+    Callback = function(v)
+        _G.CurrentKey = typeof(v) == "EnumItem" and v.Name or tostring(v)
         
         if not _G.KeyDisabled then
             local success, keyCode = pcall(function() return Enum.KeyCode[_G.CurrentKey] end)
@@ -5673,10 +5676,10 @@ Tabs["設定"]:Toggle({
     Title = "停用快捷鍵",
     Desc = "開啟後將禁用快捷鍵",
     Value = _G.KeyDisabled,
-    Callback = function(state)
-        _G.KeyDisabled = state
+    Callback = function(v)
+        _G.KeyDisabled = v
         
-        if state then
+        if _G.KeyDisabled then
             Window:SetToggleKey(nil)
         else
             local success, keyCode = pcall(function() return Enum.KeyCode[_G.CurrentKey] end)
