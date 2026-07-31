@@ -3864,20 +3864,6 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
 
---自動執行
-local ScriptLoadstring =
-'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
-
-local function QueueAutoExecute()
-    if not _G.AutoExecute then
-        return
-    end
-
-    if queue_on_teleport then
-        queue_on_teleport(ScriptLoadstring)
-    end
-end
-
 --JobId
 local serverJobId = game.JobId
 if serverJobId == "" then
@@ -5490,7 +5476,7 @@ Tabs["設定"]:Section({ Title = "重置腳本" })
 Tabs["設定"]:Button({
     Title = "將所有配置恢復初始",
     Icon = "trash-2",
-    Desc = "標記為待重置，下次啟動腳本時套用初始設定",
+    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
     Callback = function()
         local ok = pcall(function()
             if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
@@ -5502,14 +5488,14 @@ Tabs["設定"]:Button({
         end)
         if ok then
             WindUI:Notify({
-                Title = "配置已標記重置",
-                Content = "設定已寫入初始值，下次啟動腳本後將完全生效，當前功能不受影響。",
+                Title = "配置等待重置",
+                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
                 Duration = 4
             })
         else
             WindUI:Notify({
                 Title = "重置失敗",
-                Content = "無法寫入設定檔，請確認執行器是否支援檔案寫入。",
+                Content = "無法重置腳本 請確認執行器是否支援檔案寫入",
                 Duration = 4
             })
         end
@@ -5541,19 +5527,29 @@ Tabs["設定"]:Toggle({
     end
 })
 
-Tabs["設定"]:Toggle({
+Tabs["設定"]:Toggle({ 
     Title = "換服後自動執行",
     Desc = "切換伺服器時自動重新載入",
     Value = _G.AutoExecute,
-
     Callback = function(v)
         _G.AutoExecute = v
-
-        WindUI:Notify({
-            Title = "通知",
-            Content = v and "已開啟自動執行" or "已關閉自動執行",
-            Duration = 3
-        })
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        end
     end
 })
 
