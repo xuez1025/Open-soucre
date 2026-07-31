@@ -653,12 +653,15 @@ task.spawn(function()
     task.wait()
     
     -- 換服後自動執行 (新增的初始化判定)
-    if _G.AutoExecute then
-        local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
-        if queue_on_teleport then
-            queue_on_teleport(ScriptLoadstring)
-        end
-    end
+	if _G.AutoExecute then
+		if queue_on_teleport then
+			queue_on_teleport(ScriptLoadstring)
+		end
+	else
+		if queue_on_teleport then
+			queue_on_teleport("")
+		end
+	end
 
     --隱藏遊戲 UI
     if _G.HideGameUIState then
@@ -3298,21 +3301,34 @@ end)
 
 -- Auto V4
 local function GetAwakeningRemote()
-    local player = game.Players.LocalPlayer
+    local player = Players.LocalPlayer
     if not player then return nil end
+
     local backpack = player:FindFirstChild("Backpack")
     local awakening = backpack and backpack:FindFirstChild("Awakening")
-    return awakening and awakening:FindFirstChild("RemoteFunction")
+    if awakening and awakening:FindFirstChild("RemoteFunction") then
+        return awakening.RemoteFunction
+    end
+
+    local char = player.Character
+    local charAwakening = char and char:FindFirstChild("Awakening")
+    if charAwakening and charAwakening:FindFirstChild("RemoteFunction") then
+        return charAwakening.RemoteFunction
+    end
+
+    return nil
 end
 
 task.spawn(function()
-    while task.wait(0.1) do
-        if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
+    while true do
+        task.wait(0.1)
         if _G.AutoV4_Enabled then
             local remote = GetAwakeningRemote()
             if remote then
-                pcall(function()
-                    remote:InvokeServer(true)
+                task.spawn(function()
+                    pcall(function()
+                        remote:InvokeServer(true)
+                    end)
                 end)
             end
         end
@@ -5549,6 +5565,15 @@ Tabs["設定"]:Toggle({
                     Duration = 3
                 })
             end
+        else
+            if queue_on_teleport then
+                queue_on_teleport("")
+            end
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已關閉自動執行",
+                Duration = 3
+            })
         end
     end
 })
