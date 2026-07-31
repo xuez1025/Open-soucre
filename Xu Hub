@@ -3864,6 +3864,20 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
 
+--自動執行
+local ScriptLoadstring =
+'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
+
+local function QueueAutoExecute()
+    if not _G.AutoExecute then
+        return
+    end
+
+    if queue_on_teleport then
+        queue_on_teleport(ScriptLoadstring)
+    end
+end
+
 --JobId
 local serverJobId = game.JobId
 if serverJobId == "" then
@@ -5527,33 +5541,19 @@ Tabs["設定"]:Toggle({
     end
 })
 
-Tabs["設定"]:Toggle({ 
+Tabs["設定"]:Toggle({
     Title = "換服後自動執行",
     Desc = "切換伺服器時自動重新載入",
     Value = _G.AutoExecute,
+
     Callback = function(v)
         _G.AutoExecute = v
-        
-        if _G.AutoExecute then
-            if queue_on_teleport then
-                local TeleportScript = [[
-                    loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()
-                ]]
-                queue_on_teleport(TeleportScript)
-                
-                WindUI:Notify({
-                    Title = "通知",
-                    Content = "已開啟自動執行",
-                    Duration = 3
-                })
-            else
-                WindUI:Notify({
-                    Title = "支援錯誤",
-                    Content = "你目前的注入器不支援",
-                    Duration = 3
-                })
-            end
-        end
+
+        WindUI:Notify({
+            Title = "通知",
+            Content = v and "已開啟自動執行" or "已關閉自動執行",
+            Duration = 3
+        })
     end
 })
 
