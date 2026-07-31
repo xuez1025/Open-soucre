@@ -652,13 +652,14 @@ end)
 task.spawn(function()
     task.wait()
     
-    -- 換服後自動執行 (新增的初始化判定)
-    if _G.AutoExecute then
+    -- 換服後自動執行
+LocalPlayer.OnTeleport:Connect(function(teleportState)
+    -- 當發生傳送時，才判斷當下 _G.AutoExecute 的開關狀態
+    if _G.AutoExecute and queue_on_teleport then
         local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
-        if queue_on_teleport then
-            queue_on_teleport(ScriptLoadstring)
-        end
+        queue_on_teleport(ScriptLoadstring)
     end
+end)
 
     --隱藏遊戲 UI
     if _G.HideGameUIState then
@@ -5534,21 +5535,27 @@ Tabs["設定"]:Toggle({
     Callback = function(v)
         _G.AutoExecute = v
         
+        -- 提示玩家狀態，不需要在這裡 queue_on_teleport
         if _G.AutoExecute then
-            if queue_on_teleport then
-                queue_on_teleport(ScriptLoadstring)
+            if not queue_on_teleport then
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援此功能",
+                    Duration = 3
+                })
+            else
                 WindUI:Notify({
                     Title = "通知",
                     Content = "已開啟自動執行",
                     Duration = 3
                 })
-            else
-                WindUI:Notify({
-                    Title = "支援錯誤",
-                    Content = "你目前的注入器不支援",
-                    Duration = 3
-                })
             end
+        else
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已關閉自動執行",
+                Duration = 3
+            })
         end
     end
 })
