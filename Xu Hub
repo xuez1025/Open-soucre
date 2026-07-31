@@ -5536,7 +5536,11 @@ Tabs["設定"]:Toggle({
         
         if _G.AutoExecute then
             if queue_on_teleport then
-                queue_on_teleport(ScriptLoadstring)
+                local TeleportScript = [[
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()
+                ]]
+                queue_on_teleport(TeleportScript)
+                
                 WindUI:Notify({
                     Title = "通知",
                     Content = "已開啟自動執行",
