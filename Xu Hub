@@ -432,9 +432,17 @@ _G.AntiAFK_Connection = nil
 _G.AutoRejoinEnabled = false
 
 --自動執行
-_G.AutoExecute = false
-local ScriptLoadstring = [[if isfile("AutoFarm.flag") then
-    if readfile("AutoFarm.flag") == "true" then
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+
+if isfile and isfile("TopPVP.file") then
+    local success, content = pcall(function() return readfile("TopPVP.file") end)
+    _G.AutoExecute = (success and content == "true")
+else
+    _G.AutoExecute = false
+end
+
+local ScriptLoadstring = [[if isfile("TopPVP.file") then
+    if readfile("TopPVP.file") == "true" then
         loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()
     end
 end]]
@@ -657,19 +665,22 @@ end)
 task.spawn(function()
     task.wait()
     
-    -- 換服後自動執行 (新增的初始化判定)
-	if _G.AutoExecute then
-		if queue_on_teleport and not isfile("AutoFarm.flag") then
-            writefile("AutoFarm.flag", "true")
-			queue_on_teleport(ScriptLoadstring)
-		end
-	else
-		if queue_on_teleport and isfile("AutoFarm.flag") then
-            delfile("AutoFarm.flag")
-		end
-	end
+    -- 2. 換服後自動執行（修正後的初始化 logic）
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("TopPVP.file") then
+                writefile("TopPVP.file", "true")
+            end
+            -- 重新向當前伺服器註冊下一次跳服時的執行碼
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("TopPVP.file") then
+            delfile("TopPVP.file")
+        end
+    end
 
-    --隱藏遊戲 UI
+    -- 隱藏遊戲 UI
     if _G.HideGameUIState then
         _G.HiddenGameUIsList = _G.HiddenGameUIsList or {}
         local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
@@ -681,7 +692,7 @@ task.spawn(function()
         end
     end
 
-    --自動重連與防掛機
+    -- 自動重連與防掛機
     if _G.AutoRejoinEnabled then
         _G.AutoRejoinEnabled = true
     end
@@ -690,14 +701,14 @@ task.spawn(function()
         EnableAntiAFK()
     end
 
-    --2022 材質初始化
+    -- 2022 材質初始化
     if _G.Use2022Materials then
         if sethiddenproperty then
             sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", true)
         end
     end
 
-    --視覺與渲染設定
+    -- 視覺與渲染設定
     if _G.Xray then
         _G.UpdateXray(true)
     end
@@ -728,7 +739,7 @@ task.spawn(function()
         end)
     end
 
-    --角色狀態功能
+    -- 角色狀態功能
     if _G.Noclip_Enabled then
         _G.SetNoclipState(true)
     end
@@ -737,8 +748,10 @@ task.spawn(function()
         _G.ToggleMoveState(true) 
     end
 
-    --反控旋轉
+    -- 反控旋轉
     if _G.AntiCCSpin then
+        local LocalPlayer = game:GetService("Players").LocalPlayer
+        local RunService = game:GetService("RunService")
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then 
@@ -762,7 +775,7 @@ task.spawn(function()
         end
     end
 
-    --遊戲時間設定
+    -- 遊戲時間設定
     if _G.DayToggleState then
         game:GetService("Lighting").ClockTime = 14
     elseif _G.NightToggleState then
@@ -5566,13 +5579,13 @@ Tabs["設定"]:Toggle({
 Tabs["設定"]:Toggle({ 
     Title = "換服後自動執行",
     Desc = "切換伺服器時自動重新載入",
-    Value = _G.AutoExecute,
+    Value = _G.AutoExecute, -- 綁定讀取到的真實狀態
     Callback = function(v)
         _G.AutoExecute = v
         
         if _G.AutoExecute then
             if queue_on_teleport then
-                writefile("AutoFarm.flag", "true")
+                writefile("TopPVP.file", "true")
                 queue_on_teleport(ScriptLoadstring)
                 WindUI:Notify({
                     Title = "通知",
@@ -5587,8 +5600,8 @@ Tabs["設定"]:Toggle({
                 })
             end
         else
-            if queue_on_teleport then
-                delfile("AutoFarm.flag")
+            if queue_on_teleport and isfile("TopPVP.file") then
+                delfile("TopPVP.file")
             end
             WindUI:Notify({
                 Title = "通知",
