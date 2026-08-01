@@ -211,6 +211,7 @@ _G.SilentAimSkills = { "Z", "X", "C", "V", "F", "R", "M1 (普攻)" }
 _G.DragonGunM1 = false
 _G.AttackMobs = false
 _G.AttackPlayers = false
+_G.M1FireInterval = 0.2
 
 --Fast attack
 _G.FastAttack = false
@@ -474,7 +475,7 @@ local ConfigKeys = {
     "SilentAimFOVTransparency", "SilentAimFOVMode", "SilentAimShowLine", "SilentAimTargetPlayers",
     "SilentAimTargetMobs", "SilentAimTeamCheck", "SilentAimSkills",
 	--DragonGun
-	"DragonGunM1", "AttackMobs", "AttackPlayers",
+	"DragonGunM1", "AttackMobs", "AttackPlayers","M1FireInterval",
 	--fast attack
 	"FastAttack", "FastAttackMode", "AttackDistance",
 	--Fruit M1
@@ -1435,7 +1436,8 @@ task.spawn(function()
         return closest
     end
     
-    while task.wait(0.085) do
+    while true do
+        task.wait(_G.M1FireInterval)
         if not _G.DragonGunM1 then continue end
         pcall(function()
             local char = LocalPlayer.Character
@@ -4296,8 +4298,21 @@ Tabs["Aimbot&M1"]:Toggle({
     end
 })
 
+Tabs["Aimbot&M1"]:Slider({
+    Title = "槍 M1 發射間隔",
+    Step = 0.001,
+    Value = {
+        Min = 0.001,
+        Max = 0.2,
+        Default = _G.M1FireInterval
+    },
+    Callback = function(v)
+        _G.M1FireInterval = v
+    end
+})
+
 Tabs["Aimbot&M1"]:Toggle({
-    Title = "攻擊 NPC ",
+    Title = "攻擊 NPC",
     Value = _G.AttackMobs,
     Callback = function(v) 
         _G.AttackMobs = v
