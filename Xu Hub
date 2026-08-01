@@ -70,7 +70,8 @@ end
 ----------------------------------------
 local Whitelist = {
     "powoMILOowoq",
-    "ez_"
+    "ez_",
+	"Jokerqwqp",
 }
 
 local function IsWhitelisted()
