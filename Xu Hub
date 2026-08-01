@@ -433,11 +433,7 @@ _G.AutoRejoinEnabled = false
 
 --自動執行
 _G.AutoExecute = false
-local ScriptLoadstring = [[if isfile("AutoFarm.flag") then
-    if readfile("AutoFarm.flag") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()
-    end
-end]]
+local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()'
 
 --hide UI
 _G.HiddenGameUIsList = {}
@@ -659,13 +655,12 @@ task.spawn(function()
     
     -- 換服後自動執行 (新增的初始化判定)
 	if _G.AutoExecute then
-		if queue_on_teleport and not isfile("AutoFarm.flag") then
-            writefile("AutoFarm.flag", "true")
+		if queue_on_teleport then
 			queue_on_teleport(ScriptLoadstring)
 		end
 	else
-		if queue_on_teleport and isfile("AutoFarm.flag") then
-            delfile("AutoFarm.flag")
+		if queue_on_teleport then
+			queue_on_teleport("")
 		end
 	end
 
@@ -5572,7 +5567,6 @@ Tabs["設定"]:Toggle({
         
         if _G.AutoExecute then
             if queue_on_teleport then
-                writefile("AutoFarm.flag", "true")
                 queue_on_teleport(ScriptLoadstring)
                 WindUI:Notify({
                     Title = "通知",
@@ -5588,7 +5582,7 @@ Tabs["設定"]:Toggle({
             end
         else
             if queue_on_teleport then
-                delfile("AutoFarm.flag")
+                queue_on_teleport("")
             end
             WindUI:Notify({
                 Title = "通知",
