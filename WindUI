@@ -1,7 +1,7 @@
 -- WindUI 載入
-local WindUI = loadstring(game:HttpGet(
-    "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
-))()
+local WindUI = loadstring(request({
+    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+}).Body)()
 
 local Window = WindUI:CreateWindow({
     Title         = "Xu-hub",
