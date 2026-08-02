@@ -4757,7 +4757,7 @@ Tabs["自身屬性"]:Toggle({
 })
 
 Tabs["自身屬性"]:Toggle({
-    Title = "自動卡幀(支持血拳Z/死步Z/龍爪Z/電爪X)",
+    Title = "自動卡幀(支持血拳Z/黑腳Z/龍爪Z/電爪X)",
     Value = _G.AutoFpsLock,
     Callback = function(v)
         _G.AutoFpsLock = v
