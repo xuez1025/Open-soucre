@@ -19,6 +19,23 @@ local RegisterHit = Net:WaitForChild("RE/RegisterHit")
 local RemoteSeed = Net:FindFirstChild("seed")
 
 ----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if getgenv().XuHubLoaded then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Auto Bounty",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
+getgenv().XuHubLoaded = true
+
+----------------------------------------
 -- WindUI
 ----------------------------------------
 local WindUI = loadstring(request({
@@ -50,9 +67,13 @@ local Window = WindUI:CreateWindow({
         OnlyMobile      = false,
         Draggable       = true,
         OnlyIcon        = false,
-        Color			= ColorSequence.new(Color3.fromHex("#FF2A2A"), Color3.fromHex("#800000")),
+        Color           = ColorSequence.new(Color3.fromHex("#FF2A2A"), Color3.fromHex("#800000")),
     }
 })
+
+Window:OnDestroy(function()
+    getgenv().XuHubLoaded = nil
+end)
 
 ----------------------------------------
 --變數
