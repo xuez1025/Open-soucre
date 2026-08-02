@@ -331,13 +331,12 @@ end)
 task.spawn(function()
     task.wait()
 
-	--換服自動執行
+    -- 2. 換服後自動執行（修正後的初始化 logic）
     if _G.AutoExecute then
         if queue_on_teleport then
             if not isfile("AutoBounty.file") then
                 writefile("AutoBounty.file", "true")
             end
-
             queue_on_teleport(ScriptLoadstring)
         end
     else
