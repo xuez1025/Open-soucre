@@ -173,7 +173,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoBounty.file") then
     if readfile("AutoBounty.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Bounty(New)"))()
     end
 end]]
 
@@ -2308,7 +2308,7 @@ Tabs.Settings:Toggle({
         
         if _G.AutoExecute then
             if queue_on_teleport then
-                writefile("TopPVP.file", "true")
+                writefile("AutoBounty.file", "true")
                 queue_on_teleport(ScriptLoadstring)
                 WindUI:Notify({
                     Title = "通知",
@@ -2323,8 +2323,8 @@ Tabs.Settings:Toggle({
                 })
             end
         else
-            if queue_on_teleport and isfile("TopPVP.file") then
-                delfile("TopPVP.file")
+            if queue_on_teleport and isfile("AutoBounty.file") then
+                delfile("AutoBounty.file")
             end
             WindUI:Notify({
                 Title = "通知",
