@@ -219,9 +219,6 @@ for themeName, _ in pairs(availableThemes) do
     table.insert(themeList, themeName)
 end
 
---自動隱藏UI
-_G.AutoHideEnabled = false
-
 --快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
@@ -279,8 +276,6 @@ local ConfigKeys = {
 	"AutoExecute",
     --主題
     "Theme",
-	--隱藏UI
-	"AutoHideEnabled",
 	--快捷鍵
     "CurrentKey", "KeyDisabled",
 }
@@ -412,10 +407,6 @@ task.spawn(function()
 
     end
 
-    -- 自動隱藏 UI
-    if _G.AutoHideEnabled and typeof(processAutoHide) == "function" then
-        processAutoHide()
-    end
 end)
 
 ----------------------------------------
@@ -2215,20 +2206,6 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
 
---Auto Hide UI
-local function processAutoHide()
-    task.delay(3, function()
-        if _G.AutoHideEnabled and Window then
-            Window:Toggle(false)
-            WindUI:Notify({
-                Title = "Auto Bounty",
-                Content = "腳本已隱藏",
-                Duration = 5
-            })
-        end
-    end)
-end
-
 ----------------------------------------
 -- 分頁
 ----------------------------------------
@@ -2710,18 +2687,6 @@ Tabs.Settings:Dropdown({
     Callback = function(state)
         _G.Theme = state             
         WindUI:SetTheme(state)         
-    end
-})
-
-Tabs.Settings:Toggle({
-    Title = "自動隱藏 UI",
-    Desc = "開啟時將在 3 秒後自動隱藏腳本",
-    Value = _G.AutoHideEnabled,
-    Callback = function(v)
-        _G.AutoHideEnabled = v
-        if v then
-            processAutoHide()
-        end
     end
 })
 
