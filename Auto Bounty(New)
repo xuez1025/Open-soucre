@@ -88,8 +88,6 @@ local TeamMap = {
 
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopPlayerRange = "8-12"
-_G.HopBountyRange = "大於3m"
 _G.HopMinPlayers = 8
 _G.HopMaxPlayers = 12
 _G.HopMinBounty = 3000000
@@ -230,7 +228,7 @@ local ConfigKeys = {
 	--選擇陣營
 	"SelectTeam",
 	--自動跳服
-	"ServerRegion", "HopPlayerRange", "HopBountyRange","HopMinPlayers", "HopMaxPlayers", "HopMinBounty", "HopMaxBounty",
+	"ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
     --Fast Attack&Fruit M1
 	"FastAttack", "FastAttackMode", "AttackDistance", "FruitsM1Enable", "FruitsM1DelayValue",
 	--ESP Players
@@ -454,7 +452,7 @@ local RegionValues = {
 }
 
 local function FormatNumber(n)
-    local num = math.floor(tonumber(n))
+    local num = math.floor(tonumber(n) or 0)
     local str = tostring(num)
     local k
     while true do
@@ -496,12 +494,10 @@ local function IsServerAllowed(info)
         return false
     end
 
-    -- 檢查人數 (8 - 12 人)
     if info.Players < _G.HopMinPlayers or info.Players > _G.HopMaxPlayers then
         return false
     end
 
-    -- 檢查賞金 (>= 3,000,000)
     if info.Bounty < _G.HopMinBounty then
         return false
     end
@@ -510,16 +506,28 @@ local function IsServerAllowed(info)
 end
 
 local function BuildFilterText()
-    return "地區: " .. tostring(_G.ServerRegion)
-        .. "\n人數: " .. tostring(_G.HopPlayerRange) .. " (" .. tostring(_G.HopMinPlayers) .. "-" .. tostring(_G.HopMaxPlayers) .. ")"
-        .. "\n賞金: " .. tostring(_G.HopBountyRange) .. " (" .. FormatNumber(_G.HopMinBounty) .. " - 無上限)"
+    local bountyStr = (_G.HopMaxBounty == math.huge) 
+        and string.format("≥ %s", FormatNumber(_G.HopMinBounty))
+        and string.format("%s ~ %s", FormatNumber(_G.HopMinBounty), FormatNumber(_G.HopMaxBounty))
+
+    return string.format(
+        "🌐 地區｜%s\n👥 人數｜%d ~ %d 人\n💰 賞金｜%s",
+        tostring(_G.ServerRegion),
+        tonumber(_G.HopMinPlayers) or 8,
+        tonumber(_G.HopMaxPlayers) or 12,
+        bountyStr
+    )
 end
 
 local function BuildServerInfoText(info, job)
-    return "地區: " .. tostring(info.Region)
-        .. "\n人數: " .. tostring(info.Players) .. "/" .. tostring(info.MaxPlayers)
-        .. "\n賞金: " .. FormatNumber(info.Bounty)
-        .. "\nJobId: " .. tostring(job)
+    return string.format(
+        "🌐 地區｜%s\n👥 人數｜%s / %s\n💰 賞金｜%s\n🆔 序號｜%s",
+        tostring(info.Region),
+        tostring(info.Players),
+        tostring(info.MaxPlayers),
+        FormatNumber(info.Bounty),
+        tostring(job)
+    )
 end
 
 local function SetParagraphDesc(paragraph, text)
@@ -529,6 +537,8 @@ local function SetParagraphDesc(paragraph, text)
         paragraph:SetDesc(text)
     elseif paragraph.Set then
         paragraph:Set({ Desc = text })
+    elseif paragraph.SetTitle then
+        paragraph:SetTitle(paragraph.Title or "當前篩選", text)
     end
 end
 
@@ -567,7 +577,7 @@ local function StartServerHop()
         Duration = 8,
     })
 
-    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local PlayerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 
     if not PlayerGui:FindFirstChild("ServerBrowser") then
         getgenv().IsServerHopping = false
@@ -609,12 +619,10 @@ local function StartServerHop()
     task.wait()
 
     local currentJobId = game.JobId
-    local ServerBrowserRemote = ReplicatedStorage:WaitForChild("__ServerBrowser")
+    local ServerBrowserRemote = game:GetService("ReplicatedStorage"):WaitForChild("__ServerBrowser")
 
     task.spawn(function()
         while getgenv().IsServerHopping do
-            local matched = 0
-
             for _, template in ipairs(Inside:GetChildren()) do
                 if template.Name == "Template" then
                     local joinButton = template:FindFirstChild("Join")
@@ -623,7 +631,6 @@ local function StartServerHop()
 
                     if joinButton and info then
                         if IsServerAllowed(info) then
-                            matched = matched + 1
                             local job = joinButton:GetAttribute("Job")
                             if job and tostring(job):find("-", 1, true) then
                                 job = tostring(job)
