@@ -445,8 +445,9 @@ local RegionValues = {
 }
 
 local FailedJobs = {}
-local TELEPORT_COOLDOWN = 15  -- 加長冷卻至 15 秒
+local TELEPORT_COOLDOWN = 15  -- 冷卻 15 秒
 local RETRY_DELAY = 30        -- 失敗後同一 job 的封鎖時間（秒）
+local isTeleporting = false   -- 避免重複傳送標記
 
 local function FormatNumber(n)
     local num = math.floor(tonumber(n) or 0)
@@ -464,9 +465,12 @@ local function ParseServerInfo(text)
         return nil
     end
 
-    local region = text:match("Region:%s*(.-)%s*%-%s*Players:")
-    local currentPlayers, maxPlayers = text:match("Players:%s*(%d+)%s*/%s*(%d+)")
-    local bountyText = text:match("Bounty:%s*([%d,]+)")
+    -- 清除可能影響解析的 RichText 標籤
+    local cleanText = text:gsub("<[^>]->", "")
+
+    local region = cleanText:match("Region:%s*(.-)%s*%-%s*Players:") or cleanText:match("Region:%s*(.-)%s*$")
+    local currentPlayers, maxPlayers = cleanText:match("Players:%s*(%d+)%s*/%s*(%d+)")
+    local bountyText = cleanText:match("Bounty:%s*([%d,]+)")
 
     if not currentPlayers or not maxPlayers or not bountyText then
         return nil
@@ -478,11 +482,11 @@ local function ParseServerInfo(text)
     end
 
     return {
-        Region = region or "Unknown",
-        Players = tonumber(currentPlayers),
-        MaxPlayers = tonumber(maxPlayers),
+        Region = region and region:match("^%s*(.-)%s*$") or "Unknown",
+        Players = tonumber(currentPlayers) or 0,
+        MaxPlayers = tonumber(maxPlayers) or 0,
         Bounty = bounty,
-        Raw = text,
+        Raw = cleanText,
     }
 end
 
@@ -490,21 +494,43 @@ local function IsServerAllowed(info)
     if not info then
         return false
     end
-    if info.Players < _G.HopMinPlayers or info.Players > _G.HopMaxPlayers then
+
+    local minP = tonumber(_G.HopMinPlayers) or 8
+    local maxP = tonumber(_G.HopMaxPlayers) or 10
+    local minB = tonumber(_G.HopMinBounty) or 3000000
+    local maxB = tonumber(_G.HopMaxBounty) or math.huge
+
+    -- 嚴格人數檢查 (確保不會少於 HopMinPlayers 或超過 HopMaxPlayers)
+    if info.Players < minP or info.Players > maxP then
         return false
     end
-    if info.Bounty < _G.HopMinBounty then
+
+    -- 賞金檢查
+    if info.Bounty < minB or info.Bounty > maxB then
         return false
     end
+
+    -- 地區二次雙重比對 (避免 UI 篩選延遲導致誤入其他地區)
+    if _G.ServerRegion and _G.ServerRegion ~= "" then
+        local targetRegion = tostring(_G.ServerRegion):lower()
+        local serverRegion = tostring(info.Region):lower()
+        if not serverRegion:find(targetRegion, 1, true) then
+            return false
+        end
+    end
+
     return true
 end
 
 local function BuildFilterText()
     local bountyStr
-    if _G.HopMaxBounty == math.huge then
-        bountyStr = string.format("≥ %s", FormatNumber(_G.HopMinBounty))
+    local minB = tonumber(_G.HopMinBounty) or 3000000
+    local maxB = _G.HopMaxBounty
+
+    if maxB == math.huge or not maxB then
+        bountyStr = string.format("≥ %s", FormatNumber(minB))
     else
-        bountyStr = string.format("%s ~ %s", FormatNumber(_G.HopMinBounty), FormatNumber(_G.HopMaxBounty))
+        bountyStr = string.format("%s ~ %s", FormatNumber(minB), FormatNumber(maxB))
     end
 
     return string.format(
@@ -545,7 +571,8 @@ end
 local function StopServerHop()
     getgenv().IsServerHopping = false
     getgenv().ShuttingDown = false
-    FailedJobs = {}  -- 停止時清空失敗記錄
+    FailedJobs = {}
+    isTeleporting = false
 
     WindUI:Notify({
         Title = "自動跳服",
@@ -566,56 +593,55 @@ local function StartServerHop()
 
     getgenv().IsServerHopping = true
     getgenv().ShuttingDown = true
-    FailedJobs = {}  -- 開始時清空失敗記錄
+    FailedJobs = {}
+    isTeleporting = false
 
     WindUI:Notify({
         Title = "自動跳服",
         Content = "準備跳服...\n\n" .. BuildFilterText(),
         Icon = "wind",
-        Duration = 8,
+        Duration = 5,
     })
 
     local PlayerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    local serverBrowser = PlayerGui:WaitForChild("ServerBrowser", 5)
 
-    if not PlayerGui:FindFirstChild("ServerBrowser") then
+    if not serverBrowser then
         getgenv().IsServerHopping = false
         return
     end
 
-    PlayerGui.ServerBrowser.Enabled = true
-    task.wait(0.5)  -- 稍微等久一點讓 UI 載入
+    serverBrowser.Enabled = true
+    task.wait(0.5)
 
-    local Filters = PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
+    local Filters = serverBrowser.Frame:FindFirstChild("Filters")
     local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
     local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
 
-    if not TextBox then
+    if TextBox then
+        TextBox.Text = tostring(_G.ServerRegion)
+    end
+
+    local ScrollingFrame = serverBrowser.Frame:FindFirstChild("ScrollingFrame")
+    local FakeScroll = serverBrowser.Frame:FindFirstChild("FakeScroll")
+    local Inside = FakeScroll and FakeScroll:FindFirstChild("Inside")
+
+    if not Inside or not ScrollingFrame then
         getgenv().IsServerHopping = false
         return
     end
 
-    TextBox.Text = _G.ServerRegion
-
-    local Full = Filters and Filters:FindFirstChild("Full")
-    local FullCheck = Full and Full:FindFirstChild("Check")
-    if FullCheck then
-        FullCheck.Text = "\226\156\148\239\184\143"
-        task.wait(0.1)
-    end
-
-    local ScrollingFrame = PlayerGui.ServerBrowser.Frame.ScrollingFrame
-    local FakeScroll = PlayerGui.ServerBrowser.Frame.FakeScroll
-    local Inside = FakeScroll.Inside
-
-    -- 自動滾動：掃描更多伺服器
+    -- 平滑滾動線程 (嘗試傳送時暫停滾動，防止 UI Template 被重用錯亂)
     task.spawn(function()
         while getgenv().IsServerHopping do
-            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
-            task.wait(0.3)
+            if not isTeleporting and ScrollingFrame then
+                ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 5000))
+            end
+            task.wait(0.6)
         end
     end)
 
-    task.wait(1)  -- 等待伺服器列表載入
+    task.wait(1)
 
     local currentJobId = game.JobId
     local ServerBrowserRemote = game:GetService("ReplicatedStorage"):WaitForChild("__ServerBrowser")
@@ -627,7 +653,8 @@ local function StartServerHop()
             for _, template in ipairs(Inside:GetChildren()) do
                 if not getgenv().IsServerHopping then break end
 
-                if template.Name == "Template" then
+                -- 關鍵修復：必須確保 Template 存在且為顯示狀態（Visible = true）
+                if template.Name == "Template" and template.Visible then
                     local joinButton = template:FindFirstChild("Join")
                     local textLabel = template:FindFirstChild("TextLabel")
                     local info = textLabel and ParseServerInfo(textLabel.Text)
@@ -643,34 +670,32 @@ local function StartServerHop()
                                 continue
                             end
 
-                            -- 跳過近期失敗的伺服器，等冷卻過了才重試
+                            -- 跳過冷卻中的失敗伺服器
                             local failTime = FailedJobs[job]
                             if failTime and (now - failTime) < RETRY_DELAY then
                                 continue
                             end
 
+                            isTeleporting = true
                             local serverText = BuildServerInfoText(info, job)
+                            
                             WindUI:Notify({
                                 Title = "匹配到伺服器",
                                 Content = serverText,
                                 Icon = "wind",
-                                Duration = 6,
+                                Duration = 5,
                             })
 
-                            -- 第一次嘗試
                             local success, err = pcall(function()
                                 ServerBrowserRemote:InvokeServer("teleport", job)
                             end)
 
                             if success then
-                                -- 傳送成功，等待冷卻再繼續
                                 task.wait(TELEPORT_COOLDOWN)
                             else
-                                -- 第一次失敗，記錄並通知，不立刻重試同一 job
                                 FailedJobs[job] = os.clock()
 
                                 local errMsg = tostring(err or "未知錯誤")
-                                -- 偵測 773 錯誤（空間受限）
                                 local is773 = errMsg:find("773") or errMsg:find("restricted") or errMsg:find("TeleportService")
 
                                 if is773 then
@@ -678,26 +703,26 @@ local function StartServerHop()
                                         Title = "傳送失敗（773）",
                                         Content = "此伺服器傳送受限，已跳過\n將在 " .. RETRY_DELAY .. " 秒後重試其他伺服器",
                                         Icon = "wind",
-                                        Duration = 6,
+                                        Duration = 5,
                                     })
                                 else
                                     WindUI:Notify({
                                         Title = "傳送失敗",
                                         Content = "錯誤：" .. errMsg:sub(1, 80),
                                         Icon = "wind",
-                                        Duration = 6,
+                                        Duration = 5,
                                     })
                                 end
 
-                                -- 失敗後等一段時間再嘗試下一台，避免連續觸發 773
-                                task.wait(8)
+                                task.wait(5)
                             end
+                            isTeleporting = false
                         end
                     end
                 end
             end
 
-            task.wait(3)
+            task.wait(1)
         end
     end)
 end
@@ -1736,13 +1761,62 @@ task.spawn(function()
 end)
 
 --自動列賞
+--自動列賞
 local HISTORY_WINDOW = 0.35
 local CLEAR_TIMEOUT = 10
 local FLY_SPEED = 300
 
 TargetHistory = TargetHistory or {}
 
--- 【新增】獲取玩家等級的函數
+-- 安全區座標設定 (按海域區分)
+local SafeZonePositions = {
+    World1 = {
+        { pos = Vector3.new(-3000, 250, 2057), radius = 700 },
+        { pos = Vector3.new(1101, 16, 1446), radius = 400 },
+    },
+    World2 = {
+        { pos = Vector3.new(-12, 29, 2840), radius = 200 },
+        { pos = Vector3.new(-376, 149, 307), radius = 150 },
+        { pos = Vector3.new(-6437, 306, -4730), radius = 150 },
+    },
+    World3 = {
+        { pos = Vector3.new(-338, 21, 5539), radius = 200 },
+        { pos = Vector3.new(-12550, 337, -7506), radius = 400 },
+        { pos = Vector3.new(-5046, 315, -2993), radius = 300 },
+        { pos = Vector3.new(-16228, 9, 443), radius = 300 },
+        { pos = Vector3.new(28695, 14959, -81), radius = 10000 },
+        { pos = Vector3.new(9637, -1989, 9618), radius = 10000 },
+        { pos = Vector3.new(-5167, 314, -2158), radius = 10000 },
+    }
+}
+
+-- 檢查玩家是否在安全區內
+local function IsInSafeZone(plr)
+    if not plr or not plr.Character then return false end
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local placeId = game.PlaceId
+    local zones = {}
+
+    if table.find({2753915549, 85211729168715}, placeId) then
+        zones = SafeZonePositions.World1
+    elseif table.find({4442272183, 79091703265657}, placeId) then
+        zones = SafeZonePositions.World2
+    elseif table.find({7449423635, 100117331123089}, placeId) then
+        zones = SafeZonePositions.World3
+    end
+
+    local pos = hrp.Position
+    for _, zone in ipairs(zones) do
+        if (pos - zone.pos).Magnitude <= zone.radius then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function GetLevel(plr)
     if not plr then return nil end
     local obj = (plr:FindFirstChild("Data") and plr.Data:FindFirstChild("Level"))
@@ -1842,14 +1916,14 @@ local function GetPredictedPosition2(plr)
 
     local totalWeight = 0
     local weightedVel = Vector3.new(0, 0, 0)
-    
+
     for i = 2, count do
         local prev = history[i - 1]
         local curr = history[i]
         local dt = curr.time - prev.time
         if dt > 0.001 then
             local instVel = (curr.pos - prev.pos) / dt
-            local weight = math.exp((curr.time - now) / 0.1) -- 時間衰減係數
+            local weight = math.exp((curr.time - now) / 0.1)
             weightedVel = weightedVel + (instVel * weight)
             totalWeight = totalWeight + weight
         end
@@ -1911,7 +1985,6 @@ local function GetPredictedPosition2(plr)
     return predictedPos
 end
 
--- 【整合等級過濾】尋找最近玩家
 local function GetNearestPlayer()
     local nearestPlayer = nil
     local shortestDistance = math.huge
@@ -1920,22 +1993,25 @@ local function GetNearestPlayer()
 
     if not myHRP then return nil end
 
-    -- 獲取本地玩家等級
     local myLv = GetLevel(LocalPlayer)
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character and not _G.FTP2_Blacklist[plr] then
-            local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
-            local tgHum = plr.Character:FindFirstChildOfClass("Humanoid")
-            
-            if tgHRP and tgHum and tgHum.Health > 0 then
-                -- 等級檢測邏輯：無法取得等級或等級差超過 600 則跳過
-                local tgLv = GetLevel(plr)
-                if myLv and tgLv and math.abs(myLv - tgLv) <= 600 then
-                    local dist = (tgHRP.Position - myHRP.Position).Magnitude
-                    if dist < shortestDistance then
-                        shortestDistance = dist
-                        nearestPlayer = plr
+            -- 檢測安全區：若在安全區則直接拉黑並跳過
+            if IsInSafeZone(plr) then
+                _G.FTP2_Blacklist[plr] = true
+            else
+                local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
+                local tgHum = plr.Character:FindFirstChildOfClass("Humanoid")
+                
+                if tgHRP and tgHum and tgHum.Health > 0 then
+                    local tgLv = GetLevel(plr)
+                    if myLv and tgLv and math.abs(myLv - tgLv) <= 600 then
+                        local dist = (tgHRP.Position - myHRP.Position).Magnitude
+                        if dist < shortestDistance then
+                            shortestDistance = dist
+                            nearestPlayer = plr
+                        end
                     end
                 end
             end
@@ -2069,13 +2145,13 @@ local function FlyToTargetLogic2(plr)
     end
 end
 
-local currentTarget = nil -- 記錄當前鎖定目標
+local currentTarget = nil
 
 local function StartFTPFlight2()
     if _G.FTP2_Enabled then return end
     _G.FTP2_Enabled = true
     table.clear(_G.FTP2_LastTeleportTicks) 
-    table.clear(_G.FTP2_Blacklist) -- 開啟時清空死亡黑名單
+    table.clear(_G.FTP2_Blacklist)
     _G.FTP2_TeleportPauseUntil = 0 
     currentTarget = nil
 
@@ -2109,24 +2185,51 @@ local function StartFTPFlight2()
         pcall(function()
             local myChar = LocalPlayer.Character
             if myChar then
+                local myHum = myChar:FindFirstChildOfClass("Humanoid")
+                local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+
+                -- ===== 新增：自動離座（防卡座位/船隻） =====
+                if myHum and myHum.Sit then
+                    myHum.Sit = false
+                    myHum.Jump = true
+                    myHum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    
+                    -- 強制刪除卡住座位的 SeatWeld 物品
+                    if myHRP then
+                        for _, child in ipairs(myHRP:GetChildren()) do
+                            if child:IsA("Weld") and (child.Name == "SeatWeld" or child.Name:find("Seat")) then
+                                child:Destroy()
+                            end
+                        end
+                    end
+                end
+                -- ===========================================
+
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and part.CanCollide then
                         part.CanCollide = false
                     end
                 end
-                local myHum = myChar:FindFirstChildOfClass("Humanoid")
+                
                 if myHum and not myHum.PlatformStand then
                     myHum.PlatformStand = true
                 end
             end
         end)
 
+        -- 鎖定目標檢查：當前目標無效、死亡、或跑進安全區時自動拉黑並清除
         if currentTarget then
             local tgChar = currentTarget.Character
             local tgHum = tgChar and tgChar:FindFirstChildOfClass("Humanoid")
             local tgHRP = tgChar and tgChar:FindFirstChild("HumanoidRootPart")
 
-            if not currentTarget:IsDescendantOf(Players) or not tgChar or not tgHum or tgHum.Health <= 0 or not tgHRP then
+            if not currentTarget:IsDescendantOf(Players) 
+               or not tgChar 
+               or not tgHum 
+               or tgHum.Health <= 0 
+               or not tgHRP 
+               or IsInSafeZone(currentTarget) then
+               
                 _G.FTP2_Blacklist[currentTarget] = true
                 currentTarget = nil
             end
