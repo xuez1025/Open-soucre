@@ -21,7 +21,7 @@ local RemoteSeed = Net:FindFirstChild("seed")
 ----------------------------------------
 -- 防重複啟用
 ----------------------------------------
-if getgenv().XuHubLoaded then
+if getgenv().AutoBountyLoaded then
     local StarterGui = game:GetService("StarterGui")
     pcall(function()
         StarterGui:SetCore("SendNotification", {
@@ -33,7 +33,7 @@ if getgenv().XuHubLoaded then
     return
 end
 
-getgenv().XuHubLoaded = true
+getgenv().AutoBountyLoaded = true
 
 ----------------------------------------
 -- WindUI
@@ -72,7 +72,7 @@ local Window = WindUI:CreateWindow({
 })
 
 Window:OnDestroy(function()
-    getgenv().XuHubLoaded = nil
+    getgenv().AutoBountyLoaded = nil
 end)
 
 ----------------------------------------
@@ -88,18 +88,17 @@ local TeamMap = {
 
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopPlayerRange = "1-12"
-_G.HopBountyRange = "大於3m"
-_G.HopMinPlayers = 1
+_G.HopPlayerRange = "9-12"
+_G.HopBountyRange = "大於25m"
+_G.HopMinPlayers = 9
 _G.HopMaxPlayers = 12
-_G.HopMinBounty = 3000000
+_G.HopMinBounty = 25000000
 _G.HopMaxBounty = math.huge
 
 local FilterParagraph = nil
-local StatusParagraph = nil
 
 -- Fast Attack
-_G.FastAttack = false
+_G.FastAttack = true
 _G.FastAttackMode = "模式1"
 _G.AttackDistance = 500
 
@@ -435,51 +434,6 @@ local RegionValues = {
     "Singapore",
 }
 
-local PlayerRangeValues = {
-    "1-12",
-    "3-12",
-    "5-12",
-    "7-12",
-    "9-12",
-}
-
-local BountyRangeValues = {
-    "大於3m",
-    "大於5m",
-    "大於10m",
-    "大於15m",
-    "大於25m",
-    "大於35m",
-    "大於50m",
-}
-
-local MULTIPLIERS = {
-    k = 1e3,
-    m = 1e6,
-    b = 1e9,
-}
-
-local function ContainsValue(list, value)
-    for _, item in ipairs(list) do
-        if item == value then
-            return true
-        end
-    end
-    return false
-end
-
-if not ContainsValue(PlayerRangeValues, _G.HopPlayerRange) then
-    _G.HopPlayerRange = "1-12"
-end
-
-if not ContainsValue(BountyRangeValues, _G.HopBountyRange) then
-    _G.HopBountyRange = "大於3m"
-end
-
-if not ContainsValue(RegionValues, _G.ServerRegion) then
-    _G.ServerRegion = "Singapore"
-end
-
 local function FormatNumber(n)
     local num = math.floor(tonumber(n))
     local str = tostring(num)
@@ -490,57 +444,6 @@ local function FormatNumber(n)
     end
     return str
 end
-
-local function ParseBountyToken(token)
-    if not token then return nil end
-
-    local numStr, unit = token:match("([%d%.]+)%s*([KkBbMm]?)")
-    if not numStr then return nil end
-
-    local val = tonumber(numStr)
-    if not val then return nil end
-
-    if unit ~= "" then
-        local mult = MULTIPLIERS[unit:lower()]
-        if not mult then mult = 1 end
-        val = val * mult
-    end
-
-    return math.floor(val)
-end
-
-local function ApplyPlayerRange(label)
-    _G.HopPlayerRange = label
-
-    local minPlayers, maxPlayers = label:match("(%d+)%-(%d+)")
-    if minPlayers and maxPlayers then
-        _G.HopMinPlayers = tonumber(minPlayers)
-        _G.HopMaxPlayers = tonumber(maxPlayers)
-        return
-    end
-
-    _G.HopMinPlayers = 1
-    _G.HopMaxPlayers = 12
-end
-
-local function ApplyBountyRange(label)
-    _G.HopBountyRange = label
-
-    local minOnly = label:match("大於([%d%.]+[KkBbMm]?)")
-    if minOnly then
-        local parsed = ParseBountyToken(minOnly)
-        if not parsed then parsed = 0 end
-        _G.HopMinBounty = parsed
-        _G.HopMaxBounty = math.huge
-        return
-    end
-
-    _G.HopMinBounty = 0
-    _G.HopMaxBounty = math.huge
-end
-
-ApplyPlayerRange(_G.HopPlayerRange)
-ApplyBountyRange(_G.HopBountyRange)
 
 local function ParseServerInfo(text)
     if type(text) ~= "string" or text == "" then
@@ -560,11 +463,8 @@ local function ParseServerInfo(text)
         return nil
     end
 
-    local regionStr = region
-    if not regionStr then regionStr = "Unknown" end
-
     return {
-        Region = regionStr,
+        Region = region or "Unknown",
         Players = tonumber(currentPlayers),
         MaxPlayers = tonumber(maxPlayers),
         Bounty = bounty,
@@ -577,11 +477,13 @@ local function IsServerAllowed(info)
         return false
     end
 
+    -- 檢查人數 (9 - 12 人)
     if info.Players < _G.HopMinPlayers or info.Players > _G.HopMaxPlayers then
         return false
     end
 
-    if info.Bounty < _G.HopMinBounty or info.Bounty > _G.HopMaxBounty then
+    -- 檢查賞金 (>= 25,000,000)
+    if info.Bounty < _G.HopMinBounty then
         return false
     end
 
@@ -589,16 +491,9 @@ local function IsServerAllowed(info)
 end
 
 local function BuildFilterText()
-    local maxBountyText = "無上限"
-    if _G.HopMaxBounty ~= math.huge then
-        maxBountyText = FormatNumber(_G.HopMaxBounty)
-    end
-
     return "地區: " .. tostring(_G.ServerRegion)
-        .. "\n人數: " .. tostring(_G.HopPlayerRange)
-        .. " (" .. _G.HopMinPlayers .. "-" .. _G.HopMaxPlayers .. ")"
-        .. "\n賞金: " .. tostring(_G.HopBountyRange)
-        .. " (" .. FormatNumber(_G.HopMinBounty) .. " - " .. maxBountyText .. ")"
+        .. "\n人數: " .. _G.HopPlayerRange .. " (9-12)"
+        .. "\n賞金: " .. _G.HopBountyRange .. " (25,000,000 - 無上限)"
 end
 
 local function BuildServerInfoText(info, job)
@@ -625,7 +520,6 @@ end
 local function StopServerHop()
     getgenv().IsServerHopping = false
     getgenv().ShuttingDown = false
-    SetParagraphDesc(StatusParagraph, "已停止")
     
     WindUI:Notify({
         Title = "自動跳服",
@@ -647,7 +541,6 @@ local function StartServerHop()
     getgenv().IsServerHopping = true
     getgenv().ShuttingDown = true
 
-    SetParagraphDesc(StatusParagraph, "準備跳服...\n" .. BuildFilterText())
     WindUI:Notify({
         Title = "自動跳服",
         Content = "準備跳服...\n\n" .. BuildFilterText(),
@@ -659,7 +552,6 @@ local function StartServerHop()
 
     if not PlayerGui:FindFirstChild("ServerBrowser") then
         getgenv().IsServerHopping = false
-        SetParagraphDesc(StatusParagraph, "失敗: 未找到 ServerBrowser")
         return
     end
 
@@ -672,7 +564,6 @@ local function StartServerHop()
 
     if not TextBox then
         getgenv().IsServerHopping = false
-        SetParagraphDesc(StatusParagraph, "失敗: 未找到區域輸入框")
         return
     end
 
@@ -720,7 +611,6 @@ local function StartServerHop()
 
                                 if job ~= currentJobId then
                                     local serverText = BuildServerInfoText(info, job)
-                                    SetParagraphDesc(StatusParagraph, "嘗試跳服\n" .. serverText)
                                     WindUI:Notify({
                                         Title = "匹配到伺服器",
                                         Content = serverText,
@@ -738,7 +628,6 @@ local function StartServerHop()
                                         end)
 
                                         if not success2 then
-                                            SetParagraphDesc(StatusParagraph, "跳服失敗\n" .. serverText)
                                             WindUI:Notify({
                                                 Title = "自動跳服",
                                                 Content = "跳服失敗\n\n請重新加入遊戲",
@@ -754,10 +643,6 @@ local function StartServerHop()
                         end
                     end
                 end
-            end
-
-            if matched == 0 then
-                SetParagraphDesc(StatusParagraph, "掃描中, 暫無符合條件的伺服器\n" .. BuildFilterText())
             end
 
             task.wait(3)
@@ -1935,37 +1820,12 @@ FilterParagraph = Tabs.Config:Paragraph({
     Desc = BuildFilterText(),
 })
 
-StatusParagraph = Tabs.Config:Paragraph({
-    Title = "跳服狀態",
-    Desc = "尚未開始",
-})
-
 Tabs.Config:Dropdown({
     Title = "選擇地區",
     Values = RegionValues,
     Value = _G.ServerRegion,
     Callback = function(v)
         _G.ServerRegion = v
-        RefreshFilterParagraph()
-    end,
-})
-
-Tabs.Config:Dropdown({
-    Title = "選擇人數",
-    Values = PlayerRangeValues,
-    Value = _G.HopPlayerRange,
-    Callback = function(v)
-        ApplyPlayerRange(v)
-        RefreshFilterParagraph()
-    end,
-})
-
-Tabs.Config:Dropdown({
-    Title = "選擇賞金",
-    Values = BountyRangeValues,
-    Value = _G.HopBountyRange,
-    Callback = function(v)
-        ApplyBountyRange(v)
         RefreshFilterParagraph()
     end,
 })
