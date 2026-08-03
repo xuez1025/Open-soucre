@@ -89,10 +89,10 @@ local TeamMap = {
 --自動換服
 _G.ServerRegion = "Singapore"
 _G.HopPlayerRange = "9-12"
-_G.HopBountyRange = "大於25m"
+_G.HopBountyRange = "大於3m"
 _G.HopMinPlayers = 9
 _G.HopMaxPlayers = 12
-_G.HopMinBounty = 25000000
+_G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
 
 local FilterParagraph = nil
@@ -361,7 +361,7 @@ end)
 task.spawn(function()
     task.wait()
 
-    -- 2. 換服後自動執行（修正後的初始化 logic）
+    --換服後自動執行
     if _G.AutoExecute then
         if queue_on_teleport then
             if not isfile("AutoBounty.file") then
@@ -402,6 +402,20 @@ task.spawn(function()
     -- 自動重新連接 (Anti Kick)
     if _G.AutoRejoinEnabled then
 
+    end
+
+    -- 自動隱藏 UI
+    if _G.AutoHideEnabled then
+        task.delay(3, function()
+            if _G.AutoHideEnabled then
+                Window:Toggle(false)
+                WindUI:Notify({
+                    Title = "Auto Bounty",
+                    Content = "腳本已隱藏",
+                    Duration = 5
+                })
+            end
+        end)
     end
 end)
 
@@ -487,7 +501,7 @@ local function IsServerAllowed(info)
         return false
     end
 
-    -- 檢查賞金 (>= 25,000,000)
+    -- 檢查賞金 (>= 3,000,000)
     if info.Bounty < _G.HopMinBounty then
         return false
     end
@@ -497,13 +511,13 @@ end
 
 local function BuildFilterText()
     return "地區: " .. tostring(_G.ServerRegion)
-        .. "\n人數: " .. _G.HopPlayerRange .. " (9-12)"
-        .. "\n賞金: " .. _G.HopBountyRange .. " (25,000,000 - 無上限)"
+        .. "\n人數: " .. tostring(_G.HopPlayerRange) .. " (" .. tostring(_G.HopMinPlayers) .. "-" .. tostring(_G.HopMaxPlayers) .. ")"
+        .. "\n賞金: " .. tostring(_G.HopBountyRange) .. " (" .. FormatNumber(_G.HopMinBounty) .. " - 無上限)"
 end
 
 local function BuildServerInfoText(info, job)
     return "地區: " .. tostring(info.Region)
-        .. "\n人數: " .. info.Players .. "/" .. info.MaxPlayers
+        .. "\n人數: " .. tostring(info.Players) .. "/" .. tostring(info.MaxPlayers)
         .. "\n賞金: " .. FormatNumber(info.Bounty)
         .. "\nJobId: " .. tostring(job)
 end
@@ -1838,7 +1852,7 @@ Tabs.Config:Dropdown({
 Tabs.Config:Button({
     Title = "開始跳服",
     Icon = "arrow-right-left",
-    Callback = function()
+    Callback = function(v)
         StartServerHop()
     end,
 })
@@ -1846,7 +1860,7 @@ Tabs.Config:Button({
 Tabs.Config:Button({
     Title = "停止跳服",
     Icon = "circle-stop",
-    Callback = function()
+    Callback = function(v)
         StopServerHop()
     end,
 })
