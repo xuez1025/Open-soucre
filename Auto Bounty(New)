@@ -412,8 +412,8 @@ task.spawn(function()
 
     end
 
-    -- 自動隱藏 UI（修復部分）
-    if _G.AutoHideEnabled then
+    -- 自動隱藏 UI
+    if _G.AutoHideEnabled and typeof(processAutoHide) == "function" then
         processAutoHide()
     end
 end)
