@@ -412,19 +412,21 @@ task.spawn(function()
 
     end
 
-    -- 自動隱藏 UI
-    if _G.AutoHideEnabled then
-        task.delay(3, function()
-            if _G.AutoHideEnabled then
+    -- 自動隱藏 UI (修復版)
+    task.delay(3, function()
+        if _G.AutoHideEnabled then
+            if Window and Window.Toggle then
                 Window:Toggle(false)
+            end
+            if WindUI and WindUI.Notify then
                 WindUI:Notify({
                     Title = "Auto Bounty",
                     Content = "腳本已隱藏",
                     Duration = 5
                 })
             end
-        end)
-    end
+        end
+    end)
 end)
 
 ----------------------------------------
