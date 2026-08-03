@@ -365,11 +365,11 @@ task.spawn(function()
     end
 end)
 
--- 初始化狀態
+--初始化狀態
 task.spawn(function()
     task.wait()
 
-    --換服後自動執行
+    -- 換服後自動執行
     if _G.AutoExecute then
         if queue_on_teleport then
             if not isfile("AutoBounty.file") then
@@ -412,19 +412,10 @@ task.spawn(function()
 
     end
 
-    -- 自動隱藏 UI (已修復)
-    task.delay(3, function()
-        if _G.AutoHideEnabled then
-            if Window then
-                Window:Toggle(false)
-                WindUI:Notify({
-                    Title = "Auto Bounty",
-                    Content = "腳本已隱藏",
-                    Duration = 5
-                })
-            end
-        end
-    end)
+    -- 自動隱藏 UI（修復部分）
+    if _G.AutoHideEnabled then
+        processAutoHide()
+    end
 end)
 
 ----------------------------------------
@@ -2224,6 +2215,20 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
 
+--Auto Hide UI
+local function processAutoHide()
+    task.delay(3, function()
+        if _G.AutoHideEnabled and Window then
+            Window:Toggle(false)
+            WindUI:Notify({
+                Title = "Auto Bounty",
+                Content = "腳本已隱藏",
+                Duration = 5
+            })
+        end
+    end)
+end
+
 ----------------------------------------
 -- 分頁
 ----------------------------------------
@@ -2715,16 +2720,7 @@ Tabs.Settings:Toggle({
     Callback = function(v)
         _G.AutoHideEnabled = v
         if v then
-            task.delay(3, function()
-                if _G.AutoHideEnabled then
-                    Window:Toggle(false)
-                    WindUI:Notify({
-                        Title = "Auto Bounty",
-                        Content = "腳本已隱藏",
-                        Duration = 5
-                    })
-                end
-            end)
+            processAutoHide()
         end
     end
 })
