@@ -88,9 +88,9 @@ local TeamMap = {
 
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopPlayerRange = "9-12"
+_G.HopPlayerRange = "8-12"
 _G.HopBountyRange = "大於3m"
-_G.HopMinPlayers = 9
+_G.HopMinPlayers = 8
 _G.HopMaxPlayers = 12
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
@@ -230,7 +230,7 @@ local ConfigKeys = {
 	--選擇陣營
 	"SelectTeam",
 	--自動跳服
-	"ServerRegion", "HopPlayerRange", "HopBountyRange",
+	"ServerRegion", "HopPlayerRange", "HopBountyRange","HopMinPlayers", "HopMaxPlayers", "HopMinBounty", "HopMaxBounty",
     --Fast Attack&Fruit M1
 	"FastAttack", "FastAttackMode", "AttackDistance", "FruitsM1Enable", "FruitsM1DelayValue",
 	--ESP Players
@@ -496,7 +496,7 @@ local function IsServerAllowed(info)
         return false
     end
 
-    -- 檢查人數 (9 - 12 人)
+    -- 檢查人數 (8 - 12 人)
     if info.Players < _G.HopMinPlayers or info.Players > _G.HopMaxPlayers then
         return false
     end
