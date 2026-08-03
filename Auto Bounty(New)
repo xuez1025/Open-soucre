@@ -486,18 +486,11 @@ local function IsServerAllowed(info)
         return false
     end
 
-    -- 地區二次比對（防止介面搜尋延遲造成誤入）
-    if _G.ServerRegion and _G.ServerRegion ~= "" then
-        if not string.find(string.lower(info.Region), string.lower(_G.ServerRegion)) then
-            return false
-        end
-    end
-
     if info.Players < _G.HopMinPlayers or info.Players > _G.HopMaxPlayers then
         return false
     end
 
-    if info.Bounty < _G.HopMinBounty or info.Bounty > _G.HopMaxBounty then
+    if info.Bounty < _G.HopMinBounty then
         return false
     end
 
@@ -507,7 +500,7 @@ end
 local function BuildFilterText()
     local bountyStr = (_G.HopMaxBounty == math.huge) 
         and string.format("≥ %s", FormatNumber(_G.HopMinBounty))
-        or string.format("%s ~ %s", FormatNumber(_G.HopMinBounty), FormatNumber(_G.HopMaxBounty))
+        and string.format("%s ~ %s", FormatNumber(_G.HopMinBounty), FormatNumber(_G.HopMaxBounty))
 
     return string.format(
         "🌐 地區｜%s\n👥 人數｜%d ~ %d 人\n💰 賞金｜%s",
@@ -550,7 +543,7 @@ local function StopServerHop()
     getgenv().ShuttingDown = false
     
     WindUI:Notify({
-        Title = "手動跳服",
+        Title = "自動跳服",
         Content = "已停止跳服",
         Duration = 2,
     })
@@ -559,8 +552,8 @@ end
 local function StartServerHop()
     if getgenv().IsServerHopping == true then
         WindUI:Notify({
-            Title = "手動跳服",
-            Content = "跳服搜尋中...",
+            Title = "自動跳服",
+            Content = "跳服已在進行中",
             Duration = 3,
         })
         return
@@ -570,29 +563,23 @@ local function StartServerHop()
     getgenv().ShuttingDown = true
 
     WindUI:Notify({
-        Title = "手動跳服",
-        Content = "開始尋找目標伺服器 (每10秒嘗試加入一次)...\n\n" .. BuildFilterText(),
+        Title = "自動跳服",
+        Content = "準備跳服...\n\n" .. BuildFilterText(),
         Icon = "wind",
-        Duration = 5,
+        Duration = 8,
     })
 
-    local PlayerGui = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
-    local ServerBrowser = PlayerGui and PlayerGui:FindFirstChild("ServerBrowser")
+    local PlayerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 
-    if not ServerBrowser then
+    if not PlayerGui:FindFirstChild("ServerBrowser") then
         getgenv().IsServerHopping = false
-        WindUI:Notify({
-            Title = "手動跳服",
-            Content = "未找到伺服器列表介面！",
-            Duration = 3,
-        })
         return
     end
 
-    ServerBrowser.Enabled = true
+    PlayerGui.ServerBrowser.Enabled = true
     task.wait(0.1)
 
-    local Filters = ServerBrowser.Frame:FindFirstChild("Filters")
+    local Filters = PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
     local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
     local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
 
@@ -610,72 +597,74 @@ local function StartServerHop()
         task.wait(0.1)
     end
 
-    local ScrollingFrame = ServerBrowser.Frame.ScrollingFrame
-    local FakeScroll = ServerBrowser.Frame.FakeScroll
+    local ScrollingFrame = PlayerGui.ServerBrowser.Frame.ScrollingFrame
+    local FakeScroll = PlayerGui.ServerBrowser.Frame.FakeScroll
     local Inside = FakeScroll.Inside
 
-    -- 背景滾動刷頁線程
     task.spawn(function()
         while getgenv().IsServerHopping do
-            if ScrollingFrame and ScrollingFrame.Parent then
-                ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
-            end
+            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
             task.wait(0.3)
         end
     end)
 
+    task.wait()
+
     local currentJobId = game.JobId
     local ServerBrowserRemote = game:GetService("ReplicatedStorage"):WaitForChild("__ServerBrowser")
-    local attemptedJobs = {} -- 紀錄已嘗試過的 JobId
 
     task.spawn(function()
         while getgenv().IsServerHopping do
-            local attemptedTarget = false
-
             for _, template in ipairs(Inside:GetChildren()) do
-                if not getgenv().IsServerHopping then break end
-
                 if template.Name == "Template" then
                     local joinButton = template:FindFirstChild("Join")
                     local textLabel = template:FindFirstChild("TextLabel")
                     local info = textLabel and ParseServerInfo(textLabel.Text)
 
-                    if joinButton and info and IsServerAllowed(info) then
-                        local job = joinButton:GetAttribute("Job")
-                        if job and tostring(job):find("-", 1, true) then
-                            job = tostring(job)
+                    if joinButton and info then
+                        if IsServerAllowed(info) then
+                            local job = joinButton:GetAttribute("Job")
+                            if job and tostring(job):find("-", 1, true) then
+                                job = tostring(job)
 
-                            -- 過濾當前伺服器與已嘗試過的伺服器
-                            if job ~= currentJobId and not attemptedJobs[job] then
-                                attemptedJobs[job] = true
-                                attemptedTarget = true
+                                if job ~= currentJobId then
+                                    local serverText = BuildServerInfoText(info, job)
+                                    WindUI:Notify({
+                                        Title = "匹配到伺服器",
+                                        Content = serverText,
+                                        Icon = "wind",
+                                        Duration = 6,
+                                    })
 
-                                local serverText = BuildServerInfoText(info, job)
-                                WindUI:Notify({
-                                    Title = "嘗試加入伺服器",
-                                    Content = serverText .. "\n\n⏱️ 若未傳送，10 秒後嘗試下一個伺服器",
-                                    Icon = "wind",
-                                    Duration = 8,
-                                })
+                                    local success = pcall(function()
+                                        ServerBrowserRemote:InvokeServer("teleport", job)
+                                    end)
 
-                                -- 發送傳送請求
-                                pcall(function()
-                                    ServerBrowserRemote:InvokeServer("teleport", job)
-                                end)
+                                    if not success then
+                                        local success2 = pcall(function()
+                                            ServerBrowserRemote:InvokeServer("teleport", job)
+                                        end)
 
-                                -- 核心修復：強制每隔 10 秒才嘗試加入下一個，避免過頻請求卡 Bug
-                                task.wait(10)
-                                break
+                                        if not success2 then
+                                            WindUI:Notify({
+                                                Title = "自動跳服",
+                                                Content = "跳服失敗\n\n請重新加入遊戲",
+                                                Icon = "wind",
+                                                Duration = 10,
+                                            })
+                                        end
+                                    end
+
+                                    -- 改為等待 5 秒冷卻，防止過度頻繁進入伺服器導致 Bug
+                                    task.wait(5)
+                                end
                             end
                         end
                     end
                 end
             end
 
-            -- 若沒找到新目標，稍作等待再繼續掃描
-            if not attemptedTarget then
-                task.wait(2)
-            end
+            task.wait(3)
         end
     end)
 end
@@ -2247,7 +2236,7 @@ Tabs.Config:Dropdown({
     end
 })
 
-Tabs.Config:Section({ Title = "手動換服" })
+Tabs.Config:Section({ Title = "自動換服" })
 
 FilterParagraph = Tabs.Config:Paragraph({
     Title = "當前篩選",
@@ -2265,9 +2254,9 @@ Tabs.Config:Dropdown({
 })
 
 Tabs.Config:Button({
-    Title = "手動跳服",
+    Title = "開始跳服",
     Icon = "arrow-right-left",
-    Callback = function()
+    Callback = function(v)
         StartServerHop()
     end,
 })
@@ -2275,7 +2264,7 @@ Tabs.Config:Button({
 Tabs.Config:Button({
     Title = "停止跳服",
     Icon = "circle-stop",
-    Callback = function()
+    Callback = function(v)
         StopServerHop()
     end,
 })
