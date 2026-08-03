@@ -81,6 +81,11 @@ end)
 --選擇陣營
 _G.SelectTeam = "海賊 (Pirates)"
 
+local TeamMap = { 
+    ["海賊 (Pirates)"] = { Display = "海賊", Raw = "Pirates" }, 
+    ["海軍 (Marines)"] = { Display = "海軍", Raw = "Marines" } 
+}
+
 --自動換服
 _G.ServerRegion = "Singapore"
 _G.HopPlayerRange = "1-12"
@@ -99,18 +104,18 @@ _G.FastAttackMode = "模式1"
 _G.AttackDistance = 500
 
 --Fruit m1
-_G.FruitsM1Enable = false
+_G.FruitsM1Enable = true
 _G.FruitsM1DelayValue = 0.05
 
 --ESP Players
-_G.ESP_Master         = false
-_G.ESP_ShowName       = false
-_G.ESP_ShowHealth     = false
-_G.ESP_ShowDistance   = false
+_G.ESP_Master         = true
+_G.ESP_ShowName       = true
+_G.ESP_ShowHealth     = true
+_G.ESP_ShowDistance   = true
 _G.ESP_ShowTracers    = false
-_G.ESP_TeamColor      = false
-_G.ESP_ShowLevel      = false
-_G.ESP_ShowPVPStatus  = false
+_G.ESP_TeamColor      = true
+_G.ESP_ShowLevel      = true
+_G.ESP_ShowPVPStatus  = true
 _G.ESP_TracerColor    = Color3.fromRGB(255, 255, 255)
 _G.ESP_HighlightColor = Color3.fromRGB(30, 30, 30)
 _G.ESP_FontSize       = 12
@@ -118,19 +123,19 @@ _G.ESP_FontSize       = 12
 local Tracers = {}
 
 --Auto Enabled PVP
-_G.AutoEnablePVP = false
+_G.AutoEnablePVP = true
 
 --Auto Buso
-_G.AutoBusoEnabled = false
+_G.AutoBusoEnabled = true
 
 --Auto V3
-_G.AutoV3_Enabled = false
+_G.AutoV3_Enabled = true
 
 --Auto V4
-_G.AutoV4_Enabled = false
+_G.AutoV4_Enabled = true
 
 --Auto Ken
-_G.AutoKenEnabled = false
+_G.AutoKenEnabled = true
 
 --自動順步
 _G.AutoSoru = false
@@ -140,40 +145,40 @@ local SORU_COOLDOWN = 10
 local MAX_SORU_DISTANCE = 900
 
 --Hitbox
-_G.Hitbox_Enabled = false
-_G.Hitbox_Size = 1
+_G.Hitbox_Enabled = true
+_G.Hitbox_Size = 500
 _G.Hitbox_Transparency = 0.5
 
 --Auto Flee
-_G.AutoFlee = false
+_G.AutoFlee = true
 _G.AutoFleeHP = 30
 _G.AutoFleeConn = nil
 
 -- 移除動作
-_G.RemoveAnim = false
+_G.RemoveAnim = true
 _G.RemoveAnimCharConn = nil
 _G.RemoveAnimTrackConn = nil
 
 -- Walk on water
-_G.WaterWalkEnabled = false
+_G.WaterWalkEnabled = true
 
 --移除岩漿傷害
-_G.RemoveLavaEnabled = false
+_G.RemoveLavaEnabled = true
 local lavaRemoved = false
 
 -- 移除鬼船傷害
-_G.RemoveGhostShipLavaEnabled = false
+_G.RemoveGhostShipLavaEnabled = true
 local ghostShipLavaRemoved = false
 
 --FPS
-_G.UnlockFPS = false
+_G.UnlockFPS = true
 
 --低配模式
-_G.LowVisualMode = false
+_G.LowVisualMode = true
 _G.LowVisualConnection = nil
 
 --移除迷霧
-_G.RemoveFogEnabled = false
+_G.RemoveFogEnabled = true
 
 --anti AFK
 _G.AntiAFK_ENABLED = true
@@ -189,7 +194,7 @@ if isfile and isfile("AutoBounty.file") then
     local success, content = pcall(function() return readfile("AutoBounty.file") end)
     _G.AutoExecute = (success and content == "true")
 else
-    _G.AutoExecute = false
+    _G.AutoExecute = true
 end
 
 local ScriptLoadstring = [[if isfile("AutoBounty.file") then
@@ -399,6 +404,25 @@ end)
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
+--Select Team
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Update_Character()
+    
+    if DiedCon then
+        DiedCon:Disconnect()
+        DiedCon = nil
+    end
+    
+    DiedCon = HD.Died:Connect(function()
+        local teamData = TeamMap[_G.SelectTeam]
+        if teamData and LocalPlayer.Team and LocalPlayer.Team.Name == teamData.Raw then
+            Character = nil
+            HD = nil
+            HRP = nil
+        end
+    end)
+end)
+
 --自動換服
 local RegionValues = {
     "Oregon",
@@ -1896,15 +1920,10 @@ Tabs.Config:Dropdown({
     Callback = function(v)
         _G.SelectTeam = v
         
-        local map = { 
-            ["海賊 (Pirates)"] = { "海賊", "Pirates" }, 
-            ["海軍 (Marines)"] = { "海軍", "Marines" } 
-        }
-        local teamData = map[_G.SelectTeam]
-        
+        local teamData = TeamMap[_G.SelectTeam]
         if teamData then
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", teamData[2])
-            WindUI:Notify({ Title = "隊伍切換", Content = "正在加入 " .. teamData[1] .. "...", Duration = 3 })
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", teamData.Raw)
+            WindUI:Notify({ Title = "隊伍切換", Content = "正在加入 " .. teamData.Display .. "...", Duration = 3 })
         end
     end
 })
