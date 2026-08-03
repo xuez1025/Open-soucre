@@ -90,7 +90,7 @@ local TeamMap = {
 --自動換服
 _G.ServerRegion = "Singapore"
 _G.HopMinPlayers = 8
-_G.HopMaxPlayers = 12
+_G.HopMaxPlayers = 10
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
 
@@ -176,6 +176,7 @@ _G.FTP2_LinearVelocity = nil
 _G.FTP2_AntiGravity = nil
 _G.FTP2_LastTeleportTicks = {}
 _G.FTP2_TeleportPauseUntil = 0
+_G.FTP2_Blacklist = {} -- 新增：死亡黑名單
 
 --FPS
 _G.UnlockFPS = true
@@ -443,7 +444,6 @@ local RegionValues = {
     "Singapore",
 }
 
--- 記錄已嘗試過的失敗伺服器，避免重複觸發 773
 local FailedJobs = {}
 local TELEPORT_COOLDOWN = 15  -- 加長冷卻至 15 秒
 local RETRY_DELAY = 30        -- 失敗後同一 job 的封鎖時間（秒）
@@ -499,7 +499,6 @@ local function IsServerAllowed(info)
     return true
 end
 
--- 修正：Lua 沒有三元運算子，改用 if/else
 local function BuildFilterText()
     local bountyStr
     if _G.HopMaxBounty == math.huge then
@@ -512,7 +511,7 @@ local function BuildFilterText()
         "🌐 地區｜%s\n👥 人數｜%d ~ %d 人\n💰 賞金｜%s",
         tostring(_G.ServerRegion),
         tonumber(_G.HopMinPlayers) or 8,
-        tonumber(_G.HopMaxPlayers) or 12,
+        tonumber(_G.HopMaxPlayers) or 10,
         bountyStr
     )
 end
@@ -1743,7 +1742,6 @@ local FLY_SPEED = 300
 
 TargetHistory = TargetHistory or {}
 
-
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
@@ -1850,7 +1848,6 @@ local function GetPredictedPosition2(plr)
     end
 
     local historyVel = (totalWeight > 0) and (weightedVel / totalWeight) or currentVel
-    
     local finalVel = historyVel:Lerp(currentVel, 0.3)
 
     if finalVel.Magnitude > 280 then
@@ -1915,7 +1912,7 @@ local function GetNearestPlayer()
     if not myHRP then return nil end
 
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
+        if plr ~= LocalPlayer and plr.Character and not _G.FTP2_Blacklist[plr] then
             local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
             local tgHum = plr.Character:FindFirstChildOfClass("Humanoid")
             
@@ -2056,11 +2053,15 @@ local function FlyToTargetLogic2(plr)
     end
 end
 
+local currentTarget = nil -- 記錄當前鎖定目標
+
 local function StartFTPFlight2()
     if _G.FTP2_Enabled then return end
     _G.FTP2_Enabled = true
     table.clear(_G.FTP2_LastTeleportTicks) 
+    table.clear(_G.FTP2_Blacklist) -- 開啟時清空死亡黑名單
     _G.FTP2_TeleportPauseUntil = 0 
+    currentTarget = nil
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
@@ -2104,19 +2105,34 @@ local function StartFTPFlight2()
             end
         end)
 
-        local nearestTarget = GetNearestPlayer()
-        if not nearestTarget then 
+        if currentTarget then
+            local tgChar = currentTarget.Character
+            local tgHum = tgChar and tgChar:FindFirstChildOfClass("Humanoid")
+            local tgHRP = tgChar and tgChar:FindFirstChild("HumanoidRootPart")
+
+            if not currentTarget:IsDescendantOf(Players) or not tgChar or not tgHum or tgHum.Health <= 0 or not tgHRP then
+                _G.FTP2_Blacklist[currentTarget] = true
+                currentTarget = nil
+            end
+        end
+
+        if not currentTarget then
+            currentTarget = GetNearestPlayer()
+        end
+
+        if not currentTarget then 
             if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
             return 
         end
         
-        FlyToTargetLogic2(nearestTarget)
+        FlyToTargetLogic2(currentTarget)
     end)
 end
 
 local function StopFTPFlight2()
     _G.FTP2_Enabled = false
     _G.FTP2_TeleportPauseUntil = 0
+    currentTarget = nil
     
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(false) end
 
