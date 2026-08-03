@@ -11,6 +11,7 @@ local Camera = workspace.CurrentCamera
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
+local Stats = game:GetService("Stats")
 
 -- Fast Attack Serve
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
@@ -672,7 +673,8 @@ local function StartServerHop()
                                         end
                                     end
 
-                                    task.wait(0.3)
+                                    -- 改為等待 5 秒冷卻，防止過度頻繁進入伺服器導致 Bug
+                                    task.wait(5)
                                 end
                             end
                         end
@@ -1719,28 +1721,32 @@ task.spawn(function()
 end)
 
 --自動列賞
+local HISTORY_WINDOW = 0.35      -- 紀錄過去 0.35 秒內的位置 (提升平滑度)
+local CLEAR_TIMEOUT = 10         -- 10 秒未更新離線即釋放記憶體
+local FLY_SPEED = 350            -- 預設飛行速度
+
+TargetHistory = TargetHistory or {}
+
+
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
 
-    -- 一海 (World 1)
-    if table.find({2753915549, 85211729168715}, placeId) then
+    if table.find({2753915549, 85211729168715}, placeId) then -- 一海
         pool = {
             { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
             { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
             { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
             { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
         }
-    -- 二海 (World 2)
-    elseif table.find({4442272183, 79091703265657}, placeId) then
+    elseif table.find({4442272183, 79091703265657}, placeId) then -- 二海
         pool = {
             { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
             { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
             { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
             { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) }
         }
-    -- 三海 (World 3)
-    elseif table.find({7449423635, 100117331123089}, placeId) then
+    elseif table.find({7449423635, 100117331123089}, placeId) then -- 三海
         pool = {
             { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
             { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
@@ -1748,8 +1754,140 @@ local function GetCurrentWorldEntrances()
             { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
         }
     end
-    
     return pool
+end
+
+local function UpdatePositionHistory()
+    local now = os.clock()
+    local activePlayers = {}
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            activePlayers[plr] = true
+            local char = plr.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+            if hrp and hum and hum.Health > 0 then
+                TargetHistory[plr] = TargetHistory[plr] or {}
+                local history = TargetHistory[plr]
+
+                table.insert(history, { time = now, pos = hrp.Position, vel = hrp.AssemblyLinearVelocity })
+
+                while #history > 0 and (now - history[1].time) > HISTORY_WINDOW do
+                    table.remove(history, 1)
+                end
+            end
+        end
+    end
+
+    for plr, history in pairs(TargetHistory) do
+        if not activePlayers[plr] or not plr:IsDescendantOf(Players) then
+            TargetHistory[plr] = nil
+        elseif #history == 0 then
+            TargetHistory[plr] = nil
+        else
+            local lastRecord = history[#history]
+            if (now - lastRecord.time) > CLEAR_TIMEOUT then
+                TargetHistory[plr] = nil
+            end
+        end
+    end
+end
+
+local function GetPredictedPosition2(plr)
+    if not plr or not plr.Character then return nil end
+
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local history = TargetHistory and TargetHistory[plr]
+    local currentPos = hrp.Position
+    local currentVel = hrp.AssemblyLinearVelocity
+
+    local ping = 0.04
+    pcall(function()
+        ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
+    end)
+
+    if not history or #history < 3 then
+        local t = math.clamp(ping, 0.03, 0.25)
+        return currentPos + (currentVel * t)
+    end
+
+    local count = #history
+    local now = os.clock()
+
+    local totalWeight = 0
+    local weightedVel = Vector3.new(0, 0, 0)
+    
+    for i = 2, count do
+        local prev = history[i - 1]
+        local curr = history[i]
+        local dt = curr.time - prev.time
+        if dt > 0.001 then
+            local instVel = (curr.pos - prev.pos) / dt
+            local weight = math.exp((curr.time - now) / 0.1) -- 時間衰減係數
+            weightedVel = weightedVel + (instVel * weight)
+            totalWeight = totalWeight + weight
+        end
+    end
+
+    local historyVel = (totalWeight > 0) and (weightedVel / totalWeight) or currentVel
+    
+    local finalVel = historyVel:Lerp(currentVel, 0.3)
+
+    if finalVel.Magnitude > 280 then
+        finalVel = finalVel.Unit * 280
+    end
+
+    local oldest = history[1]
+    local mid = history[math.floor(count / 2)]
+    local newest = history[count]
+
+    local dt1 = mid.time - oldest.time
+    local dt2 = newest.time - mid.time
+    local accel = Vector3.new(0, 0, 0)
+
+    if dt1 > 0.005 and dt2 > 0.005 then
+        local v1 = (mid.pos - oldest.pos) / dt1
+        local v2 = (newest.pos - mid.pos) / dt2
+        accel = (v2 - v1) / ((dt1 + dt2) * 0.5)
+    end
+
+    if accel.Magnitude > 150 then
+        accel = accel.Unit * 150
+    end
+
+    local oldDir = (mid.pos - oldest.pos)
+    local newDir = (newest.pos - mid.pos)
+    if oldDir.Magnitude > 1 and newDir.Magnitude > 1 then
+        local dirDot = math.clamp(oldDir.Unit:Dot(newDir.Unit), 0, 1)
+        accel = accel * dirDot
+    end
+
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local predTime = 0.15
+
+    if myHRP then
+        local dist = (currentPos - myHRP.Position).Magnitude
+        local flightTime = dist / FLY_SPEED
+        predTime = math.clamp((flightTime * 0.55) + ping, 0.04, 0.45)
+    end
+
+    local predictedPos = currentPos + (finalVel * predTime) + (0.5 * accel * (predTime ^ 2))
+
+    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local state = hum:GetState()
+        if state == Enum.HumanoidStateType.Freefall then
+            local gravity = workspace.Gravity
+            predictedPos = predictedPos - Vector3.new(0, 0.5 * gravity * (predTime ^ 2), 0)
+        end
+    end
+
+    return predictedPos
 end
 
 local function GetNearestPlayer()
@@ -1777,64 +1915,10 @@ local function GetNearestPlayer()
     return nearestPlayer
 end
 
-local function GetPredictedPosition2(plr)
-    if not plr then return nil end
-    if not plr.Character then return nil end
-
-    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-
-    local history = nil
-    if TargetHistory then
-        history = TargetHistory[plr]
-    end
-
-    if not history then
-        return hrp.Position
-    end
-    if #history < 2 then
-        return hrp.Position
-    end
-
-    local oldest = history[1]
-    local newest = history[#history]
-    local dt = newest.time - oldest.time
-    if dt <= 0 then return newest.pos end
-
-    local vel = (newest.pos - oldest.pos) / dt
-    
-    local myChar = LocalPlayer.Character
-    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-    local flightSpeed = 300
-    local predTime = 0.135 
-
-    if myHRP then
-        local actualDist = (hrp.Position - myHRP.Position).Magnitude
-        local timeToInterception = actualDist / math.max(flightSpeed, 1)
-        predTime = math.clamp(timeToInterception * 0.6, 0.05, 0.4)
-    end
-
-    if vel.Magnitude > 60 then
-        predTime = predTime * 1.2
-    end
-
-    return newest.pos + (vel * predTime)
-end
-
 local function ClearFTP2FlightComponents()
-    if _G.FTP2_LinearVelocity then 
-        _G.FTP2_LinearVelocity:Destroy() 
-        _G.FTP2_LinearVelocity = nil 
-    end
-    if _G.FTP2_AntiGravity then 
-        _G.FTP2_AntiGravity:Destroy() 
-        _G.FTP2_AntiGravity = nil 
-    end
-    if _G.FTP2_Attachment then 
-        _G.FTP2_Attachment:Destroy() 
-        _G.FTP2_Attachment = nil 
-    end
+    if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity:Destroy() _G.FTP2_LinearVelocity = nil end
+    if _G.FTP2_AntiGravity then _G.FTP2_AntiGravity:Destroy() _G.FTP2_AntiGravity = nil end
+    if _G.FTP2_Attachment then _G.FTP2_Attachment:Destroy() _G.FTP2_Attachment = nil end
 end
 
 local function SetupFTP2FlightComponents(hrp)
@@ -1883,35 +1967,37 @@ local function FlyToTargetLogic2(plr)
     if not myHRP or not tgHRP then return end
 
     if os.clock() < _G.FTP2_TeleportPauseUntil then
-        if _G.FTP2_LinearVelocity then 
-            _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) 
-        end
+        if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
         myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         return
     end
 
-    local targetPos = GetPredictedPosition2(plr)
-    if not targetPos then
-        targetPos = tgHRP.Position
-    end
+    local rawTargetPos = GetPredictedPosition2(plr) or tgHRP.Position
+
+    local HeightOffset = 15
+    local targetPos = rawTargetPos + Vector3.new(0, HeightOffset, 0)
 
     local dir = targetPos - myHRP.Position
     local currentDist = dir.Magnitude
-    local currentSpeed = 300
-    
-    local directFlightTime = currentDist / currentSpeed
+
+    local flySpeed = FLY_SPEED
+    if currentDist < 20 then
+        flySpeed = math.clamp(currentDist * 20, 15, FLY_SPEED)
+    end
+
+    local distToTargetCenter = (rawTargetPos - myHRP.Position).Magnitude
+    local directFlightTime = distToTargetCenter / FLY_SPEED
     local bestEntrance = nil
     local bestTotalTime = directFlightTime 
-    
     local teleportPenalty = 1.5 
     local pool = GetCurrentWorldEntrances()
 
     for _, e in ipairs(pool) do
-        local destDistToTarget = (e.Dest - targetPos).Magnitude
-        local totalTimeViaPortal = (destDistToTarget / currentSpeed) + teleportPenalty
+        local destDistToTarget = (e.Dest - rawTargetPos).Magnitude
+        local totalTimeViaPortal = (destDistToTarget / FLY_SPEED) + teleportPenalty
         
         if totalTimeViaPortal < bestTotalTime then
-            if (currentDist - destDistToTarget) > 150 then
+            if (distToTargetCenter - destDistToTarget) > 150 then
                 bestTotalTime = totalTimeViaPortal
                 bestEntrance = e
             end
@@ -1919,18 +2005,12 @@ local function FlyToTargetLogic2(plr)
     end
 
     if bestEntrance then
-        local lastTime = _G.FTP2_LastTeleportTicks[bestEntrance.Arg]
-        if not lastTime then
-            lastTime = 0
-        end
-
+        local lastTime = _G.FTP2_LastTeleportTicks[bestEntrance.Arg] or 0
         if os.clock() - lastTime > 4 then
             _G.FTP2_LastTeleportTicks[bestEntrance.Arg] = os.clock()
             _G.FTP2_TeleportPauseUntil = os.clock() + 1.2
             
-            if _G.FTP2_LinearVelocity then 
-                _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) 
-            end
+            if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
             myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             
             task.spawn(function()
@@ -1939,28 +2019,18 @@ local function FlyToTargetLogic2(plr)
                     commF:InvokeServer("requestEntrance", bestEntrance.Arg)
                 end)
             end)
-            
             return 
         end
     end
 
     local needSetup = not _G.FTP2_LinearVelocity or _G.FTP2_LinearVelocity.Parent ~= myHRP
-    if needSetup then
-        SetupFTP2FlightComponents(myHRP)
-    end
+    if needSetup then SetupFTP2FlightComponents(myHRP) end
 
-    if currentDist <= 500 and currentDist > 0 then
-        local targetMaxSpeed = 500
-        local minSpeed = 300
-        currentSpeed = minSpeed + (500 - currentDist) * ((targetMaxSpeed - minSpeed) / 500)
-    end
+    _G.FTP2_LinearVelocity.VectorVelocity = dir.Unit * flySpeed
 
-    if currentDist > 0.1 then 
-        _G.FTP2_LinearVelocity.VectorVelocity = dir.Unit * currentSpeed
-        local lookAt = Vector3.new(targetPos.X, myHRP.Position.Y, targetPos.Z)
-        if (lookAt - myHRP.Position).Magnitude > 0.1 then
-            myHRP.CFrame = CFrame.new(myHRP.Position, lookAt)
-        end
+    local lookAt = Vector3.new(rawTargetPos.X, myHRP.Position.Y, rawTargetPos.Z)
+    if (lookAt - myHRP.Position).Magnitude > 0.1 then
+        myHRP.CFrame = CFrame.new(myHRP.Position, lookAt)
     end
 end
 
@@ -1970,21 +2040,14 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_LastTeleportTicks) 
     _G.FTP2_TeleportPauseUntil = 0 
 
-    if type(setPlatformStand) == "function" then
-        setPlatformStand(true)
-    end
+    if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum:ChangeState(Enum.HumanoidStateType.Physics)
-    end
-    
-    if type(_G.SetNoclipState) == "function" then
-        _G.SetNoclipState(true)
-    end
+    if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
+    if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
 
-    _G.FTP2_FlightConn = game:GetService("RunService").RenderStepped:Connect(function()
+    _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
 
         local currentChar = LocalPlayer.Character
@@ -1995,20 +2058,14 @@ local function StartFTPFlight2()
             local fleeHP = _G.AutoFleeHP or 30
 
             if hpPercent <= fleeHP then
-                if _G.FTP2_LinearVelocity then
-                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
-                end
+                if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
                 return
             end
         end
         
-        if type(UpdatePositionHistory) == "function" then
-            UpdatePositionHistory()
-        end
+        UpdatePositionHistory()
         
-        if type(_G.SetNoclipState) == "function" then
-            _G.SetNoclipState(true)
-        end
+        if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
         
         pcall(function()
             local myChar = LocalPlayer.Character
@@ -2027,9 +2084,7 @@ local function StartFTPFlight2()
 
         local nearestTarget = GetNearestPlayer()
         if not nearestTarget then 
-            if _G.FTP2_LinearVelocity then 
-                _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) 
-            end
+            if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
             return 
         end
         
@@ -2041,9 +2096,7 @@ local function StopFTPFlight2()
     _G.FTP2_Enabled = false
     _G.FTP2_TeleportPauseUntil = 0
     
-    if type(_G.SetNoclipState) == "function" then
-        _G.SetNoclipState(false)
-    end
+    if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(false) end
 
     if _G.FTP2_FlightConn then 
         _G.FTP2_FlightConn:Disconnect()
@@ -2052,9 +2105,7 @@ local function StopFTPFlight2()
 
     ClearFTP2FlightComponents()
 
-    if type(setPlatformStand) == "function" then
-        setPlatformStand(false)
-    end
+    if type(setPlatformStand) == "function" then setPlatformStand(false) end
     
     local char = LocalPlayer.Character
     if char then
