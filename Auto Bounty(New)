@@ -1737,9 +1737,9 @@ task.spawn(function()
 end)
 
 --自動列賞
-local HISTORY_WINDOW = 0.35      -- 紀錄過去 0.35 秒內的位置 (提升平滑度)
-local CLEAR_TIMEOUT = 10         -- 10 秒未更新離線即釋放記憶體
-local FLY_SPEED = 350            -- 預設飛行速度
+local HISTORY_WINDOW = 0.35
+local CLEAR_TIMEOUT = 10
+local FLY_SPEED = 300
 
 TargetHistory = TargetHistory or {}
 
@@ -1996,9 +1996,15 @@ local function FlyToTargetLogic2(plr)
     local dir = targetPos - myHRP.Position
     local currentDist = dir.Magnitude
 
-    local flySpeed = FLY_SPEED
-    if currentDist < 20 then
-        flySpeed = math.clamp(currentDist * 20, 15, FLY_SPEED)
+    local flySpeed = 300
+    if currentDist < 150 then
+        flySpeed = 600
+    elseif currentDist < 250 then
+        flySpeed = 450
+    elseif currentDist < 500 then
+        flySpeed = 400
+    elseif currentDist < 750 then
+        flySpeed = 300
     end
 
     local distToTargetCenter = (rawTargetPos - myHRP.Position).Magnitude
