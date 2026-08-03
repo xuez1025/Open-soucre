@@ -787,6 +787,7 @@ end)
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
+--統一tween
 local function setPlatformStand(state)
     local char = LocalPlayer.Character
     if not char then return end
@@ -4757,7 +4758,7 @@ Tabs["自身屬性"]:Toggle({
 })
 
 Tabs["自身屬性"]:Toggle({
-    Title = "自動卡幀(支持血拳Z/黑腳Z/龍爪Z/電爪X)",
+    Title = "自動卡幀(支持血拳Z/死步Z/龍爪Z/電爪X)",
     Value = _G.AutoFpsLock,
     Callback = function(v)
         _G.AutoFpsLock = v
@@ -5212,7 +5213,7 @@ Tabs["Teleport"]:Button({
         Title = "海德拉",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(vector.create(-5027.0302734375, 318.50201416015625, -3206.70361328125))
+            teleportViaRemote(Vector3.new(5661.5322265625, 1013.0907592773438, -334.9649963378906))
         end
     })
 
@@ -5220,7 +5221,7 @@ Tabs["Teleport"]:Button({
         Title = "烏龜屋",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(vector.create(-5060.41162109375, 318.50201416015625, -3193.224853515625))
+            teleportViaRemote(Vector3.new(-12468.5380859375, 375.0094299316406, -7554.62548828125))
         end
     })
 
@@ -5236,7 +5237,7 @@ Tabs["Teleport"]:Button({
     Title = "海上城堡",
     Icon = "map-pin",
     Callback = function()
-        teleportViaRemote(Vector3.new(-12463.6, 376.26, -7566.08))
+        teleportViaRemote(Vector3.new(-5075.50927734375, 314.5155029296875, -3150.0224609375))
     end
 })
 
