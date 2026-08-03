@@ -1975,8 +1975,8 @@ local function GetCurrentWorldEntrances()
         pool = {
             { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
             { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
-            { Arg = Vector3.new(-12464, 376, -7566), Dest = Vector3.new(-5096, 317, -3178) },
-            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) }
+            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
+            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
         }
     end
     
