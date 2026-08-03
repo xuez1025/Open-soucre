@@ -1742,6 +1742,14 @@ local FLY_SPEED = 300
 
 TargetHistory = TargetHistory or {}
 
+-- 【新增】獲取玩家等級的函數
+local function GetLevel(plr)
+    if not plr then return nil end
+    local obj = (plr:FindFirstChild("Data") and plr.Data:FindFirstChild("Level"))
+             or (plr:FindFirstChild("leaderstats") and plr.leaderstats:FindFirstChild("Level"))
+    return obj and obj.Value or nil
+end
+
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
@@ -1903,6 +1911,7 @@ local function GetPredictedPosition2(plr)
     return predictedPos
 end
 
+-- 【整合等級過濾】尋找最近玩家
 local function GetNearestPlayer()
     local nearestPlayer = nil
     local shortestDistance = math.huge
@@ -1911,16 +1920,23 @@ local function GetNearestPlayer()
 
     if not myHRP then return nil end
 
+    -- 獲取本地玩家等級
+    local myLv = GetLevel(LocalPlayer)
+
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character and not _G.FTP2_Blacklist[plr] then
             local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
             local tgHum = plr.Character:FindFirstChildOfClass("Humanoid")
             
             if tgHRP and tgHum and tgHum.Health > 0 then
-                local dist = (tgHRP.Position - myHRP.Position).Magnitude
-                if dist < shortestDistance then
-                    shortestDistance = dist
-                    nearestPlayer = plr
+                -- 等級檢測邏輯：無法取得等級或等級差超過 600 則跳過
+                local tgLv = GetLevel(plr)
+                if myLv and tgLv and math.abs(myLv - tgLv) <= 600 then
+                    local dist = (tgHRP.Position - myHRP.Position).Magnitude
+                    if dist < shortestDistance then
+                        shortestDistance = dist
+                        nearestPlayer = plr
+                    end
                 end
             end
         end
