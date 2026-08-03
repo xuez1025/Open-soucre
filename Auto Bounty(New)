@@ -167,6 +167,15 @@ local lavaRemoved = false
 _G.RemoveGhostShipLavaEnabled = true
 local ghostShipLavaRemoved = false
 
+--自動列賞
+_G.FTP2_Enabled = false
+_G.FTP2_FlightConn = nil
+_G.FTP2_Attachment = nil
+_G.FTP2_LinearVelocity = nil
+_G.FTP2_AntiGravity = nil
+_G.FTP2_LastTeleportTicks = {}
+_G.FTP2_TeleportPauseUntil = 0
+
 --FPS
 _G.UnlockFPS = true
 
@@ -1709,6 +1718,361 @@ task.spawn(function()
     end
 end)
 
+--自動列賞
+local function GetCurrentWorldEntrances()
+    local pool = {}
+    local placeId = game.PlaceId
+
+    -- 一海 (World 1)
+    if table.find({2753915549, 85211729168715}, placeId) then
+        pool = {
+            { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
+            { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
+            { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
+            { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
+        }
+    -- 二海 (World 2)
+    elseif table.find({4442272183, 79091703265657}, placeId) then
+        pool = {
+            { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
+            { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
+            { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
+            { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) }
+        }
+    -- 三海 (World 3)
+    elseif table.find({7449423635, 100117331123089}, placeId) then
+        pool = {
+            { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
+            { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
+            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
+            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
+        }
+    end
+    
+    return pool
+end
+
+local function GetNearestPlayer()
+    local nearestPlayer = nil
+    local shortestDistance = math.huge
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+    if not myHRP then return nil end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
+            local tgHum = plr.Character:FindFirstChildOfClass("Humanoid")
+            
+            if tgHRP and tgHum and tgHum.Health > 0 then
+                local dist = (tgHRP.Position - myHRP.Position).Magnitude
+                if dist < shortestDistance then
+                    shortestDistance = dist
+                    nearestPlayer = plr
+                end
+            end
+        end
+    end
+    return nearestPlayer
+end
+
+local function GetPredictedPosition2(plr)
+    if not plr then return nil end
+    if not plr.Character then return nil end
+
+    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local history = nil
+    if TargetHistory then
+        history = TargetHistory[plr]
+    end
+
+    if not history then
+        return hrp.Position
+    end
+    if #history < 2 then
+        return hrp.Position
+    end
+
+    local oldest = history[1]
+    local newest = history[#history]
+    local dt = newest.time - oldest.time
+    if dt <= 0 then return newest.pos end
+
+    local vel = (newest.pos - oldest.pos) / dt
+    
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+    local flightSpeed = 300
+    local predTime = 0.135 
+
+    if myHRP then
+        local actualDist = (hrp.Position - myHRP.Position).Magnitude
+        local timeToInterception = actualDist / math.max(flightSpeed, 1)
+        predTime = math.clamp(timeToInterception * 0.6, 0.05, 0.4)
+    end
+
+    if vel.Magnitude > 60 then
+        predTime = predTime * 1.2
+    end
+
+    return newest.pos + (vel * predTime)
+end
+
+local function ClearFTP2FlightComponents()
+    if _G.FTP2_LinearVelocity then 
+        _G.FTP2_LinearVelocity:Destroy() 
+        _G.FTP2_LinearVelocity = nil 
+    end
+    if _G.FTP2_AntiGravity then 
+        _G.FTP2_AntiGravity:Destroy() 
+        _G.FTP2_AntiGravity = nil 
+    end
+    if _G.FTP2_Attachment then 
+        _G.FTP2_Attachment:Destroy() 
+        _G.FTP2_Attachment = nil 
+    end
+end
+
+local function SetupFTP2FlightComponents(hrp)
+    ClearFTP2FlightComponents()
+
+    local att = Instance.new("Attachment")
+    att.Name = "XuHub_FlightAttachment2"
+    att.Parent = hrp
+    _G.FTP2_Attachment = att
+
+    local lv = Instance.new("LinearVelocity")
+    lv.Name = "XuHub_FlightVelocity2"
+    lv.MaxForce = math.huge
+    lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+    lv.VectorVelocity = Vector3.new(0, 0, 0)
+    lv.Attachment0 = att
+    lv.Parent = hrp
+    _G.FTP2_LinearVelocity = lv
+
+    local totalMass = 0
+    local char = hrp.Parent
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and not part.Massless then
+                totalMass = totalMass + part:GetMass()
+            end
+        end
+    end
+
+    local vf = Instance.new("VectorForce")
+    vf.Name = "XuHub_AntiGravity2"
+    vf.ApplyAtCenterOfMass = true
+    vf.Attachment0 = att
+    vf.Force = Vector3.new(0, totalMass * workspace.Gravity, 0)
+    vf.Parent = hrp
+    _G.FTP2_AntiGravity = vf
+end
+
+local function FlyToTargetLogic2(plr)
+    if not plr or not plr.Character then return end
+
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
+
+    if not myHRP or not tgHRP then return end
+
+    if os.clock() < _G.FTP2_TeleportPauseUntil then
+        if _G.FTP2_LinearVelocity then 
+            _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) 
+        end
+        myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        return
+    end
+
+    local targetPos = GetPredictedPosition2(plr)
+    if not targetPos then
+        targetPos = tgHRP.Position
+    end
+
+    local dir = targetPos - myHRP.Position
+    local currentDist = dir.Magnitude
+    local currentSpeed = 300
+    
+    local directFlightTime = currentDist / currentSpeed
+    local bestEntrance = nil
+    local bestTotalTime = directFlightTime 
+    
+    local teleportPenalty = 1.5 
+    local pool = GetCurrentWorldEntrances()
+
+    for _, e in ipairs(pool) do
+        local destDistToTarget = (e.Dest - targetPos).Magnitude
+        local totalTimeViaPortal = (destDistToTarget / currentSpeed) + teleportPenalty
+        
+        if totalTimeViaPortal < bestTotalTime then
+            if (currentDist - destDistToTarget) > 150 then
+                bestTotalTime = totalTimeViaPortal
+                bestEntrance = e
+            end
+        end
+    end
+
+    if bestEntrance then
+        local lastTime = _G.FTP2_LastTeleportTicks[bestEntrance.Arg]
+        if not lastTime then
+            lastTime = 0
+        end
+
+        if os.clock() - lastTime > 4 then
+            _G.FTP2_LastTeleportTicks[bestEntrance.Arg] = os.clock()
+            _G.FTP2_TeleportPauseUntil = os.clock() + 1.2
+            
+            if _G.FTP2_LinearVelocity then 
+                _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) 
+            end
+            myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+            task.spawn(function()
+                pcall(function()
+                    local commF = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_")
+                    commF:InvokeServer("requestEntrance", bestEntrance.Arg)
+                end)
+            end)
+            
+            return 
+        end
+    end
+
+    local needSetup = not _G.FTP2_LinearVelocity or _G.FTP2_LinearVelocity.Parent ~= myHRP
+    if needSetup then
+        SetupFTP2FlightComponents(myHRP)
+    end
+
+    if currentDist <= 500 and currentDist > 0 then
+        local targetMaxSpeed = 500
+        local minSpeed = 300
+        currentSpeed = minSpeed + (500 - currentDist) * ((targetMaxSpeed - minSpeed) / 500)
+    end
+
+    if currentDist > 0.1 then 
+        _G.FTP2_LinearVelocity.VectorVelocity = dir.Unit * currentSpeed
+        local lookAt = Vector3.new(targetPos.X, myHRP.Position.Y, targetPos.Z)
+        if (lookAt - myHRP.Position).Magnitude > 0.1 then
+            myHRP.CFrame = CFrame.new(myHRP.Position, lookAt)
+        end
+    end
+end
+
+local function StartFTPFlight2()
+    if _G.FTP2_Enabled then return end
+    _G.FTP2_Enabled = true
+    table.clear(_G.FTP2_LastTeleportTicks) 
+    _G.FTP2_TeleportPauseUntil = 0 
+
+    if type(setPlatformStand) == "function" then
+        setPlatformStand(true)
+    end
+    
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum:ChangeState(Enum.HumanoidStateType.Physics)
+    end
+    
+    if type(_G.SetNoclipState) == "function" then
+        _G.SetNoclipState(true)
+    end
+
+    _G.FTP2_FlightConn = game:GetService("RunService").RenderStepped:Connect(function()
+        if not _G.FTP2_Enabled then return end
+
+        local currentChar = LocalPlayer.Character
+        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
+
+        if _G.AutoFlee and currentHum and currentHum.Health > 0 then
+            local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
+            local fleeHP = _G.AutoFleeHP or 30
+
+            if hpPercent <= fleeHP then
+                if _G.FTP2_LinearVelocity then
+                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+                return
+            end
+        end
+        
+        if type(UpdatePositionHistory) == "function" then
+            UpdatePositionHistory()
+        end
+        
+        if type(_G.SetNoclipState) == "function" then
+            _G.SetNoclipState(true)
+        end
+        
+        pcall(function()
+            local myChar = LocalPlayer.Character
+            if myChar then
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+                local myHum = myChar:FindFirstChildOfClass("Humanoid")
+                if myHum and not myHum.PlatformStand then
+                    myHum.PlatformStand = true
+                end
+            end
+        end)
+
+        local nearestTarget = GetNearestPlayer()
+        if not nearestTarget then 
+            if _G.FTP2_LinearVelocity then 
+                _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) 
+            end
+            return 
+        end
+        
+        FlyToTargetLogic2(nearestTarget)
+    end)
+end
+
+local function StopFTPFlight2()
+    _G.FTP2_Enabled = false
+    _G.FTP2_TeleportPauseUntil = 0
+    
+    if type(_G.SetNoclipState) == "function" then
+        _G.SetNoclipState(false)
+    end
+
+    if _G.FTP2_FlightConn then 
+        _G.FTP2_FlightConn:Disconnect()
+        _G.FTP2_FlightConn = nil 
+    end
+
+    ClearFTP2FlightComponents()
+
+    if type(setPlatformStand) == "function" then
+        setPlatformStand(false)
+    end
+    
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+
+        if hum then
+            hum.PlatformStand = false
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
 --低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
@@ -1935,6 +2299,55 @@ Tabs.Config:Slider({
 Tabs.Config:Section({ Title = "Auto Enabled Config" })
 
 Tabs.Config:Toggle({
+    Type = "Checkbox",
+    Title = "ESP Players",
+    Value = _G.ESP_Master,
+    Callback = function(state)
+        _G.ESP_Master        = state
+        _G.ESP_ShowName      = state
+        _G.ESP_ShowLevel     = state
+        _G.ESP_ShowPVPStatus = state
+        _G.ESP_ShowHealth    = state
+        _G.ESP_ShowDistance  = state
+        _G.ESP_TeamColor     = state
+        
+        for _, p in ipairs(Players:GetPlayers()) do
+            if state then 
+                createESP(p) 
+            else 
+                removeESP(p) 
+            end
+        end
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "顯示玩家射線",
+    Value = _G.ESP_ShowTracers,
+    Callback = function(state)
+        _G.ESP_ShowTracers = state
+        if not state then 
+            for _, p in ipairs(Players:GetPlayers()) do 
+                removeTracer(p) 
+            end 
+        end
+    end
+})
+
+Tabs.Config:Slider({
+    Title = "ESP字體大小",
+    Desc = "調整字體大小",
+    Value = {
+        Min = 10,
+        Max = 32,
+        Default = _G.ESP_FontSize
+    },
+    Callback = function(value)
+        _G.ESP_FontSize = value
+    end
+})
+
+Tabs.Config:Toggle({
     Title = "Auto Enabled PVP",
     Desc = "自動開啟PVP",
     Value = _G.AutoEnablePVP,
@@ -2081,52 +2494,26 @@ Tabs.Config:Toggle({
     end
 })
 
-Tabs.Config:Toggle({
-    Type = "Checkbox",
-    Title = "ESP Players",
-    Value = _G.ESP_Master,
-    Callback = function(state)
-        _G.ESP_Master        = state
-        _G.ESP_ShowName      = state
-        _G.ESP_ShowLevel     = state
-        _G.ESP_ShowPVPStatus = state
-        _G.ESP_ShowHealth    = state
-        _G.ESP_ShowDistance  = state
-        _G.ESP_TeamColor     = state
-        
-        for _, p in ipairs(Players:GetPlayers()) do
-            if state then 
-                createESP(p) 
-            else 
-                removeESP(p) 
+Tabs.Skills:Section({ Title = "自動列賞" })
+
+Tabs.Skills:Toggle({ 
+    Title = "自動列賞", 
+    Value = _G.FTP2_Enabled,
+    Callback = function(v)
+        if v then
+            if _G.FTP_Enabled and type(StopFTPFlight) == "function" then 
+                StopFTPFlight()
+            end
+            StartFTPFlight2()
+            if WindUI then 
+                WindUI:Notify({ Title = "自動列賞", Content = "已啟動：正在搜索最近玩家", duration = 3 }) 
+            end
+        else
+            StopFTPFlight2()
+            if WindUI then 
+                WindUI:Notify({ Title = "自動列賞", Content = "已關閉", duration = 3 }) 
             end
         end
-    end
-})
-
-Tabs.Config:Toggle({
-    Title = "顯示玩家射線",
-    Value = _G.ESP_ShowTracers,
-    Callback = function(state)
-        _G.ESP_ShowTracers = state
-        if not state then 
-            for _, p in ipairs(Players:GetPlayers()) do 
-                removeTracer(p) 
-            end 
-        end
-    end
-})
-
-Tabs.Config:Slider({
-    Title = "ESP字體大小",
-    Desc = "調整字體大小",
-    Value = {
-        Min = 10,
-        Max = 32,
-        Default = _G.ESP_FontSize
-    },
-    Callback = function(value)
-        _G.ESP_FontSize = value
     end
 })
 
