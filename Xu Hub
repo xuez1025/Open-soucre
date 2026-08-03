@@ -1950,7 +1950,6 @@ local function StopFTPFlight()
 end
 
 --鎖人v2
--- 共用的傳送點資料（鎖人v2 與 Teleport 共用同一份）
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
@@ -5175,7 +5174,7 @@ Tabs["Teleport"]:Button({
         Title = "天鵝房間",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(Vector3.new(2284.9091796875, 15.537796020507812, 905.4730834960938))
+            teleportViaRemote(Vector3.new(2285, 15, 882))
         end
     })
 
@@ -5183,7 +5182,7 @@ Tabs["Teleport"]:Button({
         Title = "豪宅",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(vector.create(-286.9859619140625, 306.13739013671875, 597.8901977539062))
+            teleportViaRemote(vector.create(-380, 350, 630))
         end
     })
 
@@ -5191,7 +5190,7 @@ Tabs["Teleport"]:Button({
         Title = "鬼船內",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(vector.create(923.2130126953125, 126.97599792480469, 32852.83203125))
+            teleportViaRemote(vector.create(924, 125, 32882))
         end
     })
 
@@ -5199,7 +5198,7 @@ Tabs["Teleport"]:Button({
         Title = "鬼船外",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(vector.create(-6508.55810546875, 89.03500366210938, -132.83999633789062))
+            teleportViaRemote(vector.create(-6491, 116, -107))
         end
     })
 
@@ -5213,7 +5212,7 @@ Tabs["Teleport"]:Button({
         Title = "海德拉",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(Vector3.new(5661.5322265625, 1013.0907592773438, -334.9649963378906))
+            teleportViaRemote(Vector3.new(5678, 1013, -312))
         end
     })
 
@@ -5221,7 +5220,7 @@ Tabs["Teleport"]:Button({
         Title = "烏龜屋",
         Icon = "map-pin",
         Callback = function()
-            teleportViaRemote(Vector3.new(-12468.5380859375, 375.0094299316406, -7554.62548828125))
+            teleportViaRemote(Vector3.new(-12551, 337, -7507))
         end
     })
 
@@ -5229,7 +5228,7 @@ Tabs["Teleport"]:Button({
     	Title = "司法島",
         Icon = "map-pin",
     	Callback = function()
-    	    teleportViaRemote(Vector3.new(-5096.48, 316.43, -3177.91))
+    	    teleportViaRemote(Vector3.new(-5096, 317, -3178))
     	end
 })
 
@@ -5237,7 +5236,7 @@ Tabs["Teleport"]:Button({
     Title = "海上城堡",
     Icon = "map-pin",
     Callback = function()
-        teleportViaRemote(Vector3.new(-5075.50927734375, 314.5155029296875, -3150.0224609375))
+        teleportViaRemote(Vector3.new(-5038, 315, -3135))
     end
 })
 
