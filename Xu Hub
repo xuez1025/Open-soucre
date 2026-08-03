@@ -1965,18 +1965,18 @@ local function GetCurrentWorldEntrances()
     -- 二海 (World 2)
     elseif table.find({4442272183, 79091703265657}, placeId) then
         pool = {
-            { Arg = Vector3.new(2284.90, 50.53, 905.47), Dest = Vector3.new(2285, 15, 905) },
-            { Arg = Vector3.new(-286.98, 331.13, 597.89), Dest = Vector3.new(-287, 306, 598) },
-            { Arg = Vector3.new(923.21, 161.97, 32852.83), Dest = Vector3.new(923, 125, 32853) },
-            { Arg = Vector3.new(-6508.55, 124.03, -132.83), Dest = Vector3.new(-6509, 83, -133) }
+            { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
+            { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
+            { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
+            { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) }
         }
     -- 三海 (World 3)
     elseif table.find({7449423635, 100117331123089}, placeId) then
         pool = {
-            { Arg = Vector3.new(-5027.03, 318.50, -3206.70), Dest = Vector3.new(5651, 1015, -350) },
-            { Arg = Vector3.new(-5060.41, 318.50, -3193.22), Dest = Vector3.new(-12464, 376, -7566) },
-            { Arg = Vector3.new(-12464, 376, -7566), Dest = Vector3.new(-5060, 317, -3193) },
-            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) }
+            { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
+            { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
+            { Arg = Vector3.new(-12464, 376, -7566), Dest = Vector3.new(-5096, 317, -3178) },
+            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) }
         }
     end
     
