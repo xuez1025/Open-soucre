@@ -171,12 +171,13 @@ local ghostShipLavaRemoved = false
 --自動列賞
 _G.FTP2_Enabled = false
 _G.FTP2_FlightConn = nil
+_G.FTP2_PlayerLeaveConn = nil
 _G.FTP2_Attachment = nil
 _G.FTP2_LinearVelocity = nil
 _G.FTP2_AntiGravity = nil
 _G.FTP2_LastTeleportTicks = {}
 _G.FTP2_TeleportPauseUntil = 0
-_G.FTP2_Blacklist = {} -- 死亡與無效目標黑名單
+_G.FTP2_Blacklist = {}
 
 --FPS
 _G.UnlockFPS = true
@@ -1593,6 +1594,8 @@ local function StartAutoFlee()
         while _G.AutoFlee do
             task.wait(0.01)
             pcall(function()
+                if _G.FTP2_Enabled then return end
+
                 local char = LocalPlayer.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1906,21 +1909,21 @@ local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
 
-    if table.find({2753915549, 85211729168715}, placeId) then -- 一海
+    if table.find({2753915549, 85211729168715}, placeId) then
         pool = {
             { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
             { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
             { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
             { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
         }
-    elseif table.find({4442272183, 79091703265657}, placeId) then -- 二海
+    elseif table.find({4442272183, 79091703265657}, placeId) then
         pool = {
             { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
             { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
             { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
             { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) }
         }
-    elseif table.find({7449423635, 100117331123089}, placeId) then -- 三海
+    elseif table.find({7449423635, 100117331123089}, placeId) then
         pool = {
             { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
             { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
@@ -1931,7 +1934,6 @@ local function GetCurrentWorldEntrances()
     return pool
 end
 
--- ── 位置履歷更新 ──
 local function UpdatePositionHistory()
     local now = os.clock()
     local activePlayers = {}
@@ -1970,7 +1972,6 @@ local function UpdatePositionHistory()
     end
 end
 
--- ── 軌跡預測演算法 ──
 local function GetPredictedPosition2(plr)
     if not plr or not plr.Character then return nil end
 
@@ -2065,7 +2066,6 @@ local function GetPredictedPosition2(plr)
     return predictedPos
 end
 
--- ── 獲取最近的合法目標 ──
 local function GetNearestPlayer()
     local nearestPlayer = nil
     local shortestDistance = math.huge
@@ -2076,18 +2076,19 @@ local function GetNearestPlayer()
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if IsValidTarget(plr) then
-            local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
-            local dist = (tgHRP.Position - myHRP.Position).Magnitude
-            if dist < shortestDistance then
-                shortestDistance = dist
-                nearestPlayer = plr
+            local tgHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+            if tgHRP then
+                local dist = (tgHRP.Position - myHRP.Position).Magnitude
+                if dist < shortestDistance then
+                    shortestDistance = dist
+                    nearestPlayer = plr
+                end
             end
         end
     end
     return nearestPlayer
 end
 
--- ── 飛行組件控制 ──
 local function ClearFTP2FlightComponents()
     if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity:Destroy() _G.FTP2_LinearVelocity = nil end
     if _G.FTP2_AntiGravity then _G.FTP2_AntiGravity:Destroy() _G.FTP2_AntiGravity = nil end
@@ -2130,7 +2131,6 @@ local function SetupFTP2FlightComponents(hrp)
     _G.FTP2_AntiGravity = vf
 end
 
--- ── 飛行追蹤邏輯 ──
 local function FlyToTargetLogic2(plr)
     if not plr or not plr.Character then return end
 
@@ -2194,7 +2194,7 @@ local function FlyToTargetLogic2(plr)
             
             task.spawn(function()
                 pcall(function()
-                    local commF = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_")
+                    local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
                     commF:InvokeServer("requestEntrance", bestEntrance.Arg)
                 end)
             end)
@@ -2213,9 +2213,23 @@ local function FlyToTargetLogic2(plr)
     end
 end
 
+local function FleeUpLogic()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hum or not hrp or hum.Health <= 0 then return end
+
+        if _G.FTP2_LinearVelocity then
+            _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+        end
+
+        hrp.CFrame = hrp.CFrame + Vector3.new(0, 10, 0)
+    end)
+end
+
 local currentTarget = nil
 
--- ── 啟動自動列賞 ──
 local function StartFTPFlight2()
     if _G.FTP2_Enabled then return end
     _G.FTP2_Enabled = true
@@ -2231,19 +2245,29 @@ local function StartFTPFlight2()
     if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
 
+    -- 監聽玩家離開遊戲事件（離開時及時清理紀錄與當前鎖定）
+    _G.FTP2_PlayerLeaveConn = Players.PlayerRemoving:Connect(function(plr)
+        TargetHistory[plr] = nil
+        _G.FTP2_Blacklist[plr] = nil
+        if currentTarget == plr then
+            currentTarget = nil
+        end
+    end)
+
     _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
 
         local currentChar = LocalPlayer.Character
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
 
-        -- 低血量逃跑機制
         if _G.AutoFlee and currentHum and currentHum.Health > 0 then
             local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
             local fleeHP = _G.AutoFleeHP or 30
-
             if hpPercent <= fleeHP then
-                if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
+                if _G.FTP2_LinearVelocity then
+                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+                FleeUpLogic()
                 return
             end
         end
@@ -2258,7 +2282,6 @@ local function StartFTPFlight2()
                 local myHum = myChar:FindFirstChildOfClass("Humanoid")
                 local myHRP = myChar:FindFirstChild("HumanoidRootPart")
 
-                -- 自動離座（防卡座位/船隻）
                 if myHum and myHum.Sit then
                     myHum.Sit = false
                     myHum.Jump = true
@@ -2273,7 +2296,6 @@ local function StartFTPFlight2()
                     end
                 end
 
-                -- 穿牆設定
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and part.CanCollide then
                         part.CanCollide = false
@@ -2286,7 +2308,7 @@ local function StartFTPFlight2()
             end
         end)
 
-        -- 鎖定目標實時檢查：當前目標失效或符合非法條件時自動拉黑並清除
+        -- 驗證當前鎖定目標是否依然有效
         if currentTarget then
             if not IsValidTarget(currentTarget) then
                 _G.FTP2_Blacklist[currentTarget] = true
@@ -2294,17 +2316,17 @@ local function StartFTPFlight2()
             end
         end
 
-        -- 重新尋找新目標
-        if not currentTarget then
-            currentTarget = GetNearestPlayer()
+        -- 實時動態檢測最近的有效玩家（進出或距離改變時會自動更新鎖定）
+        local nearest = GetNearestPlayer()
+        if nearest then
+            currentTarget = nearest
         end
 
-        if not currentTarget then 
-            if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
-            return 
+        if currentTarget then
+            FlyToTargetLogic2(currentTarget)
+        else
+            FleeUpLogic()
         end
-        
-        FlyToTargetLogic2(currentTarget)
     end)
 end
 
@@ -2318,6 +2340,11 @@ local function StopFTPFlight2()
     if _G.FTP2_FlightConn then 
         _G.FTP2_FlightConn:Disconnect()
         _G.FTP2_FlightConn = nil 
+    end
+
+    if _G.FTP2_PlayerLeaveConn then
+        _G.FTP2_PlayerLeaveConn:Disconnect()
+        _G.FTP2_PlayerLeaveConn = nil
     end
 
     ClearFTP2FlightComponents()
@@ -2774,7 +2801,7 @@ Tabs.Skills:Toggle({
             end
             StartFTPFlight2()
             if WindUI then 
-                WindUI:Notify({ Title = "自動列賞", Content = "已啟動：正在搜索最近玩家", duration = 3 }) 
+                WindUI:Notify({ Title = "自動列賞", Content = "已開啟", duration = 3 }) 
             end
         else
             StopFTPFlight2()
