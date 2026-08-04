@@ -1800,6 +1800,9 @@ end)
 
 --自動列賞
 local function GetCombatStatus()
+    local mainUI = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local bottomHUD = mainUI and mainUI:FindFirstChild("BottomHUDList")
+    local inCombatUI = bottomHUD and bottomHUD:FindFirstChild("InCombat")
 
     if inCombatUI and inCombatUI.Visible then
         local rawText = ""
@@ -1813,7 +1816,8 @@ local function GetCombatStatus()
             end
         end
 
-        if string.find(rawText, "Bounty at risk") or string.find(rawText, "bounty") or string.find(rawText, "賞金") then
+        local lowerText = string.lower(rawText)
+        if string.find(lowerText, "bounty at risk") or string.find(lowerText, "bounty") or string.find(lowerText, "賞金") then
             return "BountyAtRisk"
         else
             return "InCombatNoRisk"
@@ -1844,6 +1848,7 @@ local function CheckAndNotifyCombatStatus()
         task.spawn(function()
             if StartServerHop then StartServerHop() end
         end)
+    elseif status == "BountyAtRisk" then
     end
 end
 
