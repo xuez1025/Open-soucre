@@ -138,23 +138,23 @@ _G.HopMaxBounty = math.huge
 local FilterParagraph = nil
 
 -- Fast Attack
-_G.FastAttack = true
+_G.FastAttack = false
 _G.FastAttackMode = "模式1"
 _G.AttackDistance = 500
 
 --Fruit m1
-_G.FruitsM1Enable = true
+_G.FruitsM1Enable = false
 _G.FruitsM1DelayValue = 0.05
 
 --ESP Players
-_G.ESP_Master         = true
-_G.ESP_ShowName       = true
-_G.ESP_ShowHealth     = true
-_G.ESP_ShowDistance   = true
+_G.ESP_Master         = false
+_G.ESP_ShowName       = false
+_G.ESP_ShowHealth     = false
+_G.ESP_ShowDistance   = false
 _G.ESP_ShowTracers    = false
-_G.ESP_TeamColor      = true
-_G.ESP_ShowLevel      = true
-_G.ESP_ShowPVPStatus  = true
+_G.ESP_TeamColor      = false
+_G.ESP_ShowLevel      = false
+_G.ESP_ShowPVPStatus  = false
 _G.ESP_TracerColor    = Color3.fromRGB(255, 255, 255)
 _G.ESP_HighlightColor = Color3.fromRGB(30, 30, 30)
 _G.ESP_FontSize       = 12
@@ -162,19 +162,19 @@ _G.ESP_FontSize       = 12
 local Tracers = {}
 
 --Auto Enabled PVP
-_G.AutoEnablePVP = true
+_G.AutoEnablePVP = false
 
 --Auto Buso
-_G.AutoBusoEnabled = true
+_G.AutoBusoEnabled = false
 
 --Auto V3
-_G.AutoV3_Enabled = true
+_G.AutoV3_Enabled = false
 
 --Auto V4
-_G.AutoV4_Enabled = true
+_G.AutoV4_Enabled = false
 
 --Auto Ken
-_G.AutoKenEnabled = true
+_G.AutoKenEnabled = false
 
 --自動順步
 _G.AutoSoru = false
@@ -184,29 +184,29 @@ local SORU_COOLDOWN = 10
 local MAX_SORU_DISTANCE = 900
 
 --Hitbox
-_G.Hitbox_Enabled = true
-_G.Hitbox_Size = 500
+_G.Hitbox_Enabled = false
+_G.Hitbox_Size = 1
 _G.Hitbox_Transparency = 0.5
 
 --Auto Flee
-_G.AutoFlee = true
+_G.AutoFlee = false
 _G.AutoFleeHP = 30
 _G.AutoFleeConn = nil
 
 -- 移除動作
-_G.RemoveAnim = true
+_G.RemoveAnim = false
 _G.RemoveAnimCharConn = nil
 _G.RemoveAnimTrackConn = nil
 
 -- Walk on water
-_G.WaterWalkEnabled = true
+_G.WaterWalkEnabled = false
 
 --移除岩漿傷害
-_G.RemoveLavaEnabled = true
+_G.RemoveLavaEnabled = false
 local lavaRemoved = false
 
 -- 移除鬼船傷害
-_G.RemoveGhostShipLavaEnabled = true
+_G.RemoveGhostShipLavaEnabled = false
 local ghostShipLavaRemoved = false
 
 --自動列賞
@@ -259,15 +259,18 @@ _G.SilentAimTeamCheck = false
 local currentSilentAimTarget = nil
 local currentSilentAimTargetPos = nil
 
+--Camlock
+_G.CamlockEnabled = false
+
 --FPS
-_G.UnlockFPS = true
+_G.UnlockFPS = false
 
 --低配模式
-_G.LowVisualMode = true
+_G.LowVisualMode = false
 _G.LowVisualConnection = nil
 
 --移除迷霧
-_G.RemoveFogEnabled = true
+_G.RemoveFogEnabled = false
 
 --anti AFK
 _G.AntiAFK_ENABLED = true
@@ -283,7 +286,7 @@ if isfile and isfile("AutoBounty.file") then
     local success, content = pcall(function() return readfile("AutoBounty.file") end)
     _G.AutoExecute = (success and content == "true")
 else
-    _G.AutoExecute = true
+    _G.AutoExecute = false
 end
 
 local ScriptLoadstring = [[if isfile("AutoBounty.file") then
@@ -348,6 +351,10 @@ local ConfigKeys = {
 	"RemoveGhostShipLavaEnabled",
 	--自動列賞
     "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
+	--自瞄
+	"SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
+    --畫面鎖定
+    "CamlockEnabled",
 	--FPS
 	"UnlockFPS",
 	--低配模式
@@ -2645,6 +2652,22 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
     end
 end)
 
+--Camlock
+RunService.RenderStepped:Connect(function()
+    if not _G.CamlockEnabled then return end
+    if not _G.FTP2_CurrentTarget then return end
+    if not _G.FTP2_CurrentTarget.Character then return end
+    if not LocalPlayer.Character then return end
+
+    local camera = Workspace.CurrentCamera
+    local targetHRP = _G.FTP2_CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+    local localHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    if targetHRP and localHRP then
+        camera.CFrame = CFrame.new(camera.CFrame.Position, targetHRP.Position)
+    end
+end)
+
 --低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
@@ -3139,6 +3162,20 @@ Tabs.Skills:Toggle({
     Value = _G.SilentAimTeamCheck,
     Callback = function(v)
         _G.SilentAimTeamCheck = v
+    end
+})
+
+Tabs.Skills:Toggle({
+    Title = "畫面鎖定",
+    Desc = "供無法使用自瞄的啟動器",
+    Value = _G.CamlockEnabled,
+    Callback = function(v)
+        _G.CamlockEnabled = v
+        if v then
+            if not _G.FTP2_CurrentTarget then
+                WindUI:Notify({ Title = "視角鎖定", Content = "提示：請先開啟自動列賞鎖定目標玩家！", Duration = 3 })
+            end
+        end
     end
 })
 
