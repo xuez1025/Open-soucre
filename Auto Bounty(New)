@@ -178,7 +178,9 @@ _G.FTP2_AntiGravity = nil
 _G.FTP2_LastTeleportTicks = {}
 _G.FTP2_TeleportPauseUntil = 0
 _G.FTP2_Blacklist = {}
-_G.FTP2_LastCombatNotifyTime = 0 -- 新增：通知冷卻時間戳
+_G.FTP2_HasTriggeredHop = false -- 修改：用來記錄是否已經觸發過換服，取代原本的時間戳
+
+local StartServerHop
 
 --FPS
 _G.UnlockFPS = true
@@ -1821,26 +1823,32 @@ local function GetCombatStatus()
 end
 
 local function CheckAndNotifyCombatStatus()
-    local now = os.clock()
-    -- 設定 10 秒冷卻，避免持續飛行的每一幀大量重複洗版通知
-    if now - (_G.FTP2_LastCombatNotifyTime or 0) < 10 then return end
+    -- 如果已經觸發過換服，就直接返回，確保只執行一次
+    if _G.FTP2_HasTriggeredHop then return end
 
     local status = GetCombatStatus()
     
     if status == "NotInCombat" then
-        _G.FTP2_LastCombatNotifyTime = now
+        _G.FTP2_HasTriggeredHop = true -- 標記為已觸發
         if WindUI then
-            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標，飛行中（非戰鬥狀態）", duration = 3 })
+            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標（非戰鬥狀態），開始自動換服", duration = 3 })
         end
+        -- 執行換服邏輯
+        task.spawn(function()
+            if StartServerHop then StartServerHop() end
+        end)
     elseif status == "InCombatNoRisk" then
-        _G.FTP2_LastCombatNotifyTime = now
+        _G.FTP2_HasTriggeredHop = true -- 標記為已觸發
         if WindUI then
-            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標，飛行中（戰鬥中 無賞金風險）", duration = 3 })
+            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標（無賞金風險），開始自動換服", duration = 3 })
         end
+        -- 執行換服邏輯
+        task.spawn(function()
+            if StartServerHop then StartServerHop() end
+        end)
     end
-    -- 若為 BountyAtRisk（賞金風險狀態），則不發送通知
+    -- 若為 BountyAtRisk（賞金風險狀態），則不發送通知且不換服
 end
--- =========================================================================
 
 local function IsInSafeZone(plr)
     if not plr or not plr.Character then return false end
@@ -2288,7 +2296,7 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_LastTeleportTicks) 
     table.clear(_G.FTP2_Blacklist)
     _G.FTP2_TeleportPauseUntil = 0 
-    _G.FTP2_LastCombatNotifyTime = 0
+    _G.FTP2_HasTriggeredHop = false -- 修改：重置換服標記，準備下一次檢測
     currentTarget = nil
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
