@@ -206,7 +206,10 @@ _G.SilentAimTargetMobs      = false
 _G.SilentAimTeamCheck       = false
 _G.SilentAimDrawings        = {}
 
-_G.SilentAimSkills = { "Z", "X", "C", "V", "F", "R", "M1 (普攻)" }
+_G.SilentAimSkills  = { "Z", "X", "C", "V", "F", "R", "M1 (普攻)" }
+
+_G.SilentAimTargetMode     = "最近目標"
+_G.SilentAimSelectedPlayer = nil
 
 --DragonGun
 _G.DragonGunM1 = false
@@ -484,9 +487,7 @@ local ConfigSaving = false
 local ConfigDirty = false
 local ConfigKeys = {
 	--aimbot
-    "SilentAimEnabled", "SilentAimShowFOV", "SilentAimFOV", "SilentAimFOVThickness",
-    "SilentAimFOVTransparency", "SilentAimFOVMode", "SilentAimShowLine", "SilentAimTargetPlayers",
-    "SilentAimTargetMobs", "SilentAimTeamCheck", "SilentAimSkills",
+    "SilentAimEnabled", "SilentAimShowFOV", "SilentAimFOV", "SilentAimFOVThickness", "SilentAimFOVTransparency", "SilentAimFOVMode", "SilentAimShowLine", "SilentAimTargetPlayers", "SilentAimTargetMode", "SilentAimTargetMobs", "SilentAimTeamCheck", "SilentAimSkills",
 	--DragonGun
 	"DragonGunM1", "AttackMobs", "AttackPlayers","M1FireInterval",
 	--fast attack
@@ -1059,12 +1060,52 @@ local currentSilentAimTargetPos = nil
 local currentTargetDistance = math.huge
 
 local function GetClosestSilentAimTarget()
-    local closest = nil
-    local shortest = math.huge
-
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myRoot then return nil, math.huge end
+
+    ---------------------------------------------------------
+    -- 1. 指定玩家模式
+    ---------------------------------------------------------
+    if _G.SilentAimTargetMode == "指定玩家" then
+        local targetPlr = _G.SilentAimSelectedPlayer
+        if targetPlr and targetPlr.Parent and targetPlr.Character then
+            if not _G.SilentAimTeamCheck or IsSilentAimEnemy(targetPlr) then
+                local char = targetPlr.Character
+                if IsAlive(char) then
+                    local part = char:FindFirstChild("HumanoidRootPart")
+                    if part then
+                        local dist = (part.Position - myRoot.Position).Magnitude
+                        local passFOV = true
+
+                        if _G.SilentAimShowFOV then
+                            local origin = GetSilentAimOrigin()
+                            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                            if onScreen then
+                                local screenDist = (Vector2.new(pos.X, pos.Y) - origin).Magnitude
+                                if screenDist > _G.SilentAimFOV then
+                                    passFOV = false
+                                end
+                            else
+                                passFOV = false
+                            end
+                        end
+
+                        if passFOV then
+                            return part, dist
+                        end
+                    end
+                end
+            end
+        end
+        return nil, math.huge
+    end
+
+    ---------------------------------------------------------
+    -- 2. 最近目標模式 (原本的搜尋邏輯)
+    ---------------------------------------------------------
+    local closest = nil
+    local shortest = math.huge
 
     local function check(character)
         if not IsAlive(character) then return end
@@ -1111,6 +1152,7 @@ local function GetClosestSilentAimTarget()
             end
         end
     end
+
     return closest, shortest
 end
 
@@ -4228,6 +4270,54 @@ Tabs["Aimbot&M1"]:Dropdown({
     Multi = true, 
     Callback = function(v) 
         _G.SilentAimSkills = v 
+    end 
+})
+
+local function GetSilentAimPlayerList()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then 
+            table.insert(list, plr.Name) 
+        end
+    end
+    return list
+end
+
+local silentAimPlayerDropdown
+silentAimPlayerDropdown = Tabs["Aimbot&M1"]:Dropdown({ 
+    Title = "選擇指定玩家", 
+    Values = GetSilentAimPlayerList(), 
+    Value = nil,
+    Callback = function(v)
+        _G.SilentAimSelectedPlayer = nil
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Name == v then 
+                _G.SilentAimSelectedPlayer = plr
+                break 
+            end
+        end
+    end
+})
+
+-- 當有新玩家加入或離開時自動更新列表
+Players.PlayerAdded:Connect(function() 
+    if silentAimPlayerDropdown then
+        silentAimPlayerDropdown:Refresh(GetSilentAimPlayerList()) 
+    end
+end)
+
+Players.PlayerRemoving:Connect(function() 
+    if silentAimPlayerDropdown then
+        silentAimPlayerDropdown:Refresh(GetSilentAimPlayerList()) 
+    end
+end)
+
+Tabs["Aimbot&M1"]:Dropdown({ 
+    Title = "瞄準模式", 
+    Values = { "最近目標", "指定玩家" }, 
+    Value = _G.SilentAimTargetMode, 
+    Callback = function(v) 
+        _G.SilentAimTargetMode = v 
     end 
 })
 
