@@ -262,6 +262,34 @@ local currentSilentAimTargetPos = nil
 --Camlock
 _G.CamlockEnabled = false
 
+--自動放技能
+_G.AutoSkillMainEnable = false
+_G.AutoSkillWeapons = {
+    ["Melee"]      = { Enable = false, Skills = {
+        Z = { Enable = false, HoldTime = 0 },
+        X = { Enable = false, HoldTime = 0 },
+        C = { Enable = false, HoldTime = 0 },
+    }},
+    ["Blox Fruit"] = { Enable = false, Skills = {
+        Z = { Enable = false, HoldTime = 0 },
+        X = { Enable = false, HoldTime = 0 },
+        C = { Enable = false, HoldTime = 0 },
+        V = { Enable = false, HoldTime = 0 },
+        F = { Enable = false, HoldTime = 0 },
+    }},
+    ["Gun"]   = { Enable = false, Skills = {
+        Z = { Enable = false, HoldTime = 0 },
+        X = { Enable = false, HoldTime = 0 },
+    }},
+    ["Sword"] = { Enable = false, Skills = {
+        Z = { Enable = false, HoldTime = 0 },
+        X = { Enable = false, HoldTime = 0 },
+    }},
+}
+
+local SkillKeyMap = { Z=Enum.KeyCode.Z, X=Enum.KeyCode.X, C=Enum.KeyCode.C, V=Enum.KeyCode.V, F=Enum.KeyCode.F }
+local SkillCoolDownTrack = {}
+
 --FPS
 _G.UnlockFPS = false
 
@@ -355,6 +383,8 @@ local ConfigKeys = {
 	"SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
     --畫面鎖定
     "CamlockEnabled",
+	--自動放技能
+    "AutoSkillMainEnable",
 	--FPS
 	"UnlockFPS",
 	--低配模式
@@ -2692,6 +2722,176 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+--自動放技能
+local function GetMyCharacter()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum.Health > 0 then
+            return char
+        end
+    end
+    return nil
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    SkillCoolDownTrack = {}
+end)
+
+local function getToolType(tool)
+    if not tool or not tool:IsA("Tool") then return nil end
+    local tType = tool:GetAttribute("Type") or tool.ToolTip
+    if tType == "Fruit" then tType = "Blox Fruit" end
+    return tType
+end
+
+local function SkillEquipByType(toolType)
+    local char = GetMyCharacter()
+    if not char then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return nil end
+
+    for _, tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") and getToolType(tool) == toolType then
+            return tool
+        end
+    end
+
+    local targetTool = nil
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and getToolType(tool) == toolType then
+                targetTool = tool
+                break
+            end
+        end
+    end
+
+    if not targetTool then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") and getToolType(tool) == toolType then
+                targetTool = tool
+                break
+            end
+        end
+    end
+
+    if targetTool then
+        hum:EquipTool(targetTool)
+        task.wait(0.15)
+    end
+    return targetTool
+end
+
+local function SkillPressKey(key, holdTime)
+    if not key then return end
+    VirtualInputManager:SendKeyEvent(true, key, false, game)
+    task.wait(holdTime or 0.05)
+    VirtualInputManager:SendKeyEvent(false, key, false, game)
+end
+
+local function GetAvailableSkills()
+    local available = {}
+    local currentTime = os.clock()
+    local myChar = GetMyCharacter()
+    if not myChar then return available end
+
+    local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local SkillsFolder = PlayerGui and PlayerGui:FindFirstChild("Main") and PlayerGui.Main:FindFirstChild("Skills")
+
+    for weaponName, weaponData in pairs(_G.AutoSkillWeapons) do
+        if weaponData.Enable then
+            local toolInstance = nil
+            for _, item in ipairs(myChar:GetChildren()) do
+                if item:IsA("Tool") and getToolType(item) == weaponName then toolInstance = item break end
+            end
+            if not toolInstance then
+                local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+                if backpack then
+                    for _, item in ipairs(backpack:GetChildren()) do
+                        if item:IsA("Tool") and getToolType(item) == weaponName then toolInstance = item break end
+                    end
+                end
+            end
+
+            if toolInstance then
+                local uiFolder = SkillsFolder and SkillsFolder:FindFirstChild(toolInstance.Name)
+                for skillName, skillData in pairs(weaponData.Skills) do
+                    if skillData.Enable then
+                        local cdKey = weaponName .. "_" .. skillName
+                        local isReady = false
+
+                        if uiFolder and uiFolder:FindFirstChild(skillName) then
+                            local skillGui = uiFolder[skillName]
+                            local cdFrame = skillGui:FindFirstChild("Cooldown", true)
+                            local lvlFrame = skillGui:FindFirstChild("Level")
+
+                            local reqLevel = lvlFrame and tonumber(lvlFrame.Text:match("%d+")) or 0
+                            local currentLevel = toolInstance:FindFirstChild("Level") and toolInstance.Level.Value or 0
+
+                            if cdFrame and cdFrame.Size.X.Scale == 0 and reqLevel <= currentLevel then
+                                if currentTime >= (SkillCoolDownTrack[cdKey] or 0) then
+                                    isReady = true
+                                end
+                            end
+                        else
+                            if currentTime >= (SkillCoolDownTrack[cdKey] or 0) then
+                                isReady = true
+                            end
+                        end
+
+                        if isReady then
+                            table.insert(available, {
+                                Weapon = weaponName,
+                                Skill = skillName,
+                                HoldTime = skillData.HoldTime,
+                                Cooldown = 1.0,
+                                Tool = toolInstance
+                            })
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return available
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if not _G.AutoSkillMainEnable then continue end
+
+        local targetPart = currentSilentAimTarget
+        local dist = targetPart and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            and (targetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude or math.huge
+
+        if targetPart and dist <= 80 then
+            local available = GetAvailableSkills()
+            if #available > 0 then
+                local chosen = available[math.random(1, #available)]
+                local myChar = GetMyCharacter()
+                if myChar then
+                    local equipped = SkillEquipByType(chosen.Weapon)
+                    if equipped then
+                        local cdKey = chosen.Weapon .. "_" .. chosen.Skill
+                        SkillCoolDownTrack[cdKey] = os.clock() + chosen.Cooldown + chosen.HoldTime
+
+                        local keyEnum = SkillKeyMap[chosen.Skill]
+                        if keyEnum then
+                            SkillPressKey(keyEnum, chosen.HoldTime)
+                        end
+                        task.wait(0.2)
+                    end
+                end
+            else
+                task.wait(0.1)
+            end
+        end
+    end
+end)
+
 --低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
@@ -3201,6 +3401,71 @@ Tabs.Skills:Toggle({
             end
         end
     end
+})
+
+Tabs.Skills:Section({ Title = "主控制 (Main Control)" })
+
+Tabs.Skills:Toggle({
+    Title = "Auto Skills",
+    Value = _G.AutoSkillMainEnable,
+    Callback = function(v)
+        _G.AutoSkillMainEnable = v
+    end
+})
+
+Tabs.Skills:Dropdown({
+    Title = "配置",
+    Desc = "Melee, Blox Fruit, Sword, Gun",
+    Multi = true,
+    Value = {},
+    Values = {"Melee", "Blox Fruit", "Sword", "Gun"},
+    Callback = function(v)
+        for k, wData in pairs(_G.AutoSkillWeapons) do wData.Enable = false end
+        for k, val in pairs(v) do
+            local wName = type(k) == "number" and val or k
+            local isEnabled = type(k) == "number" and true or val
+            if isEnabled and _G.AutoSkillWeapons[wName] then
+                _G.AutoSkillWeapons[wName].Enable = true
+            end
+        end
+    end
+})
+
+local function HandleSkillDropdown(weaponType, selectedValues)
+    for key, data in pairs(_G.AutoSkillWeapons[weaponType].Skills) do
+        data.Enable = false
+    end
+    for k, val in pairs(selectedValues) do
+        local skillKey = type(k) == "number" and val or k
+        local isEnabled = type(k) == "number" and true or val
+        if isEnabled and _G.AutoSkillWeapons[weaponType].Skills[skillKey] then
+            _G.AutoSkillWeapons[weaponType].Skills[skillKey].Enable = true
+        end
+    end
+end
+
+Tabs.Skills:Dropdown({
+    Title = "拳法(Melee)",
+    Multi = true, Value = {}, Values = {"Z", "X", "C"},
+    Callback = function(v) HandleSkillDropdown("Melee", v) end
+})
+
+Tabs.Skills:Dropdown({
+    Title = "果實(Blox Fruit)",
+    Multi = true, Value = {}, Values = {"Z", "X", "C", "V", "F"},
+    Callback = function(v) HandleSkillDropdown("Blox Fruit", v) end
+})
+
+Tabs.Skills:Dropdown({
+    Title = "刀(Sword)",
+    Multi = true, Value = {}, Values = {"Z", "X"},
+    Callback = function(v) HandleSkillDropdown("Sword", v) end
+})
+
+Tabs.Skills:Dropdown({
+    Title = "槍(Gun)",
+    Multi = true, Value = {}, Values = {"Z", "X"},
+    Callback = function(v) HandleSkillDropdown("Gun", v) end
 })
 
 Tabs.Settings:Section({ Title = "重置腳本" })
