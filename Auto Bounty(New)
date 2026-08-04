@@ -191,6 +191,7 @@ _G.FTP2_FlySpeed = 300
 _G.FTP2_CurrentTarget = nil
 _G.FTP2_TargetLockTime = 0
 _G.TargetHistory = {}
+_G.FTP2_StartTime = 0
 
 _G.FTP2_SafeZonePositions = {
     World1 = {
@@ -301,6 +302,8 @@ local ConfigKeys = {
 	"RemoveLavaEnabled",
 	--移除鬼船傷害
 	"RemoveGhostShipLavaEnabled",
+	--自動列賞
+    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
 	--FPS
 	"UnlockFPS",
 	--低配模式
@@ -1743,7 +1746,7 @@ task.spawn(function()
         if _G.RemoveLavaEnabled and not lavaRemoved then
             lavaRemoved = true
             removeLava()
-            WindUI:Notify({ Title = "已移除岩漿傷害", Content = "已成功移除岩漿物件", Duration = 5 })
+            WindUI:Notify({ Title = "已移除岩漿傷害", Content = "已成功移除岩漿物件", Duration = 3 })
         elseif not _G.RemoveLavaEnabled then
             lavaRemoved = false
         end
@@ -1834,17 +1837,11 @@ local function CheckAndNotifyCombatStatus()
     
     if status == "NotInCombat" then
         _G.FTP2_HasTriggeredHop = true
-        if WindUI then
-            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標（非戰鬥狀態），開始自動換服", duration = 3 })
-        end
         task.spawn(function()
             if StartServerHop then StartServerHop() end
         end)
     elseif status == "InCombatNoRisk" then
         _G.FTP2_HasTriggeredHop = true
-        if WindUI then
-            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標（無賞金風險），開始自動換服", duration = 3 })
-        end
         task.spawn(function()
             if StartServerHop then StartServerHop() end
         end)
@@ -1881,7 +1878,7 @@ end
 local function GetLevel(plr)
     if not plr then return nil end
     local obj = (plr:FindFirstChild("Data") and plr.Data:FindFirstChild("Level"))
-             or (plr:FindFirstChild("leaderstats") and plr.leaderstats:FindFirstChild("Level"))
+              or (plr:FindFirstChild("leaderstats") and plr.leaderstats:FindFirstChild("Level"))
     return obj and obj.Value or nil
 end
 
@@ -2293,7 +2290,32 @@ local function FleeUpLogic()
 end
 
 local function StartFTPFlight2()
-    if _G.FTP2_Enabled then return end
+    -- 【修正重點 1】改為檢查實體連線是否已存在，而不是檢查布林值，防止設定為 true 時直接 return
+    if _G.FTP2_FlightConn ~= nil then return end 
+
+    -- ==========================================
+    -- 【新增邏輯】確保玩家角色完全載入完成才開始
+    -- ==========================================
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    char:WaitForChild("Humanoid", 9e9)
+    char:WaitForChild("HumanoidRootPart", 9e9)
+    
+    -- 確保角色模型已經存在於 Workspace 中
+    while not char.Parent do 
+        task.wait() 
+    end
+    
+    -- 確保角色還活著 (防止在載入/等待過程中剛好死亡)
+    local checkHum = char:FindFirstChildOfClass("Humanoid")
+    if checkHum and checkHum.Health <= 0 then
+        LocalPlayer.CharacterAdded:Wait()
+        return StartFTPFlight2() -- 重新執行等待流程
+    end
+
+    -- 若在等待期間玩家手動關閉，則不繼續執行
+    if not _G.FTP2_Enabled then return end
+    -- ==========================================
+
     _G.FTP2_Enabled = true
     table.clear(_G.FTP2_LastTeleportTicks) 
     table.clear(_G.FTP2_Blacklist)
@@ -2301,10 +2323,10 @@ local function StartFTPFlight2()
     _G.FTP2_HasTriggeredHop = false
     _G.FTP2_CurrentTarget = nil
     _G.FTP2_TargetLockTime = os.clock()
+    _G.FTP2_StartTime = os.clock() -- 【新增】啟動時記錄時間，作為3秒等待緩衝的基準點
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
-    local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
@@ -2407,7 +2429,10 @@ local function StartFTPFlight2()
             FlyToTargetLogic2(_G.FTP2_CurrentTarget)
         else
             FleeUpLogic()
-            CheckAndNotifyCombatStatus()
+
+            if os.clock() - _G.FTP2_StartTime >= 5 then
+                CheckAndNotifyCombatStatus()
+            end
         end
     end)
 end
@@ -2450,6 +2475,10 @@ local function StopFTPFlight2()
     end
 end
 
+if _G.FTP2_Enabled then
+    task.spawn(StartFTPFlight2)
+end
+
 --低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
@@ -2458,7 +2487,7 @@ _G.SetLowVisualState = function(state)
         WindUI:Notify({ 
             Title = "優化系統", 
             Content = "低配模式已啟動，正在清理地圖並優化效能...", 
-            Duration = 3 
+            Duration = 5
         })
         
         Lighting.GlobalShadows = false
@@ -2877,6 +2906,7 @@ Tabs.Skills:Toggle({
     Title = "自動列賞", 
     Value = _G.FTP2_Enabled,
     Callback = function(v)
+        _G.FTP2_Enabled = v
         if v then
             if _G.FTP_Enabled and type(StopFTPFlight) == "function" then 
                 StopFTPFlight()
