@@ -24,6 +24,43 @@ local RegisterHit = Net:WaitForChild("RE/RegisterHit")
 local RemoteSeed = Net:FindFirstChild("seed")
 
 ----------------------------------------
+-- Hook Check (執行器檢測)
+----------------------------------------
+local executorName = (identifyexecutor and identifyexecutor()) or "Unknown"
+local lowerName = string.lower(executorName)
+
+local unsupportedList = {"xeno", "solara"}
+local isUnsupportedName = false
+
+for _, name in ipairs(unsupportedList) do
+    if string.find(lowerName, name) then
+        isUnsupportedName = true
+        break
+    end
+end
+
+local isMissingFunctions = (hookmetamethod == nil) or (getrawmetatable == nil) or (setreadonly == nil)
+
+-- 判斷是否需要禁用 Hook
+local disableHook = isUnsupportedName or isMissingFunctions
+
+if disableHook then
+    warn("[Anti-Crash] Detected limited executor (" .. executorName .. "). Silent Aim hooks have been disabled to prevent freezing.")
+    
+    task.spawn(function()
+        task.wait(5)
+        pcall(function()
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "⚠️ 執行器限制",
+                Text = "檢測到不支援 Hook 的執行器 (" .. executorName .. ") 已禁用自瞄以防崩潰 其餘功能正常載入",
+                Duration = 15,
+                Icon = "rbxassetid://11419714821"
+            })
+        end)
+    end)
+end
+
+----------------------------------------
 -- 防重複啟用
 ----------------------------------------
 if getgenv().AutoBountyLoaded then
@@ -214,6 +251,13 @@ _G.FTP2_SafeZonePositions = {
 }
 
 local StartServerHop
+
+--自瞄
+_G.SilentAimEnabled = false
+_G.SilentAimTargetMode = "目前鎖定的目標玩家"
+_G.SilentAimTeamCheck = false
+local currentSilentAimTarget = nil
+local currentSilentAimTargetPos = nil
 
 --FPS
 _G.UnlockFPS = true
@@ -2290,31 +2334,23 @@ local function FleeUpLogic()
 end
 
 local function StartFTPFlight2()
-    -- 【修正重點 1】改為檢查實體連線是否已存在，而不是檢查布林值，防止設定為 true 時直接 return
     if _G.FTP2_FlightConn ~= nil then return end 
 
-    -- ==========================================
-    -- 【新增邏輯】確保玩家角色完全載入完成才開始
-    -- ==========================================
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     char:WaitForChild("Humanoid", 9e9)
     char:WaitForChild("HumanoidRootPart", 9e9)
     
-    -- 確保角色模型已經存在於 Workspace 中
     while not char.Parent do 
         task.wait() 
     end
     
-    -- 確保角色還活著 (防止在載入/等待過程中剛好死亡)
     local checkHum = char:FindFirstChildOfClass("Humanoid")
     if checkHum and checkHum.Health <= 0 then
         LocalPlayer.CharacterAdded:Wait()
         return StartFTPFlight2() -- 重新執行等待流程
     end
 
-    -- 若在等待期間玩家手動關閉，則不繼續執行
     if not _G.FTP2_Enabled then return end
-    -- ==========================================
 
     _G.FTP2_Enabled = true
     table.clear(_G.FTP2_LastTeleportTicks) 
@@ -2323,7 +2359,7 @@ local function StartFTPFlight2()
     _G.FTP2_HasTriggeredHop = false
     _G.FTP2_CurrentTarget = nil
     _G.FTP2_TargetLockTime = os.clock()
-    _G.FTP2_StartTime = os.clock() -- 【新增】啟動時記錄時間，作為3秒等待緩衝的基準點
+    _G.FTP2_StartTime = os.clock()
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
@@ -2478,6 +2514,136 @@ end
 if _G.FTP2_Enabled then
     task.spawn(StartFTPFlight2)
 end
+
+--自瞄
+local function IsSilentAimEnemy(player)
+    if not player or player == LocalPlayer then return false end
+    if IsPlayerAlly(player) then return false end
+    local myTeam = LocalPlayer.Team
+    local targetTeam = player.Team
+    if myTeam and targetTeam and myTeam.Name == "Marines" and targetTeam.Name == "Marines" then
+        return false
+    end
+    return true
+end
+
+local function SilentAim_GetTargetPartAndDist()
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil, math.huge end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil, math.huge end
+
+    if _G.SilentAimTargetMode == "目前鎖定的目標玩家" then
+        local targetPlr = _G.FTP2_CurrentTarget
+        if targetPlr and targetPlr.Parent and targetPlr.Character then
+            if not _G.SilentAimTeamCheck or IsSilentAimEnemy(targetPlr) then
+                local char = targetPlr.Character
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if hum and hum.Health > 0 and root then
+                    local dist = (root.Position - myRoot.Position).Magnitude
+                    return root, dist
+                end
+            end
+        end
+        return nil, math.huge
+    end
+
+    local closest = nil
+    local shortest = math.huge
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if not _G.SilentAimTeamCheck or IsSilentAimEnemy(player) then
+                local char = player.Character
+                if IsAlive(char) then
+                    local part = char:FindFirstChild("HumanoidRootPart")
+                    if part then
+                        local dist = (part.Position - myRoot.Position).Magnitude
+                        if dist < shortest then
+                            closest = part
+                            shortest = dist
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return closest, shortest
+end
+
+-- 自瞄 Hook 邏輯
+if not _G.SilentAimHooked and not disableHook then
+    _G.SilentAimHooked = true
+
+    task.spawn(function()
+        local MouseModuleInstance = ReplicatedStorage:WaitForChild("Mouse", 5)
+        if MouseModuleInstance then
+            pcall(function()
+                local MouseModule = require(MouseModuleInstance)
+                if typeof(MouseModule) == "table" then
+                    local realStore = { Hit = rawget(MouseModule, "Hit"), Target = rawget(MouseModule, "Target") }
+                    local mmt = getrawmetatable(MouseModule) or {}
+                    setreadonly(mmt, false)
+                    rawset(MouseModule, "Hit", nil)
+                    rawset(MouseModule, "Target", nil)
+
+                    mmt.__index = function(self, key)
+                        if key == "Hit" then
+                            if _G.SilentAimEnabled and currentSilentAimTargetPos then return CFrame.new(currentSilentAimTargetPos) end
+                            return realStore.Hit
+                        elseif key == "Target" then
+                            if _G.SilentAimEnabled and currentSilentAimTarget then return currentSilentAimTarget end
+                            return realStore.Target
+                        end
+                        return rawget(self, key)
+                    end
+
+                    mmt.__newindex = function(self, key, value)
+                        if key == "Hit" or key == "Target" then realStore[key] = value else rawset(self, key, value) end
+                    end
+                    setreadonly(mmt, true)
+                    setmetatable(MouseModule, mmt)
+                end
+            end)
+        end
+    end)
+
+    local gmt = getrawmetatable(game)
+    if gmt then
+        setreadonly(gmt, false)
+        local oldIndex = gmt.__index
+        local mouse = LocalPlayer:GetMouse()
+
+        gmt.__index = newcclosure(function(self, key)
+            if not checkcaller() and _G.SilentAimEnabled and currentSilentAimTargetPos and self == mouse then
+                local targetPos = currentSilentAimTargetPos
+                local camPos = Camera.CFrame.Position
+                if key == "Hit" then return CFrame.new(targetPos)
+                elseif key == "Target" then return currentSilentAimTarget
+                elseif key == "UnitRay" then return Ray.new(camPos, (targetPos - camPos).Unit)
+                elseif key == "Origin" then return CFrame.new(camPos)
+                elseif key == "Direction" then return (targetPos - camPos).Unit end
+            end
+            return oldIndex(self, key)
+        end)
+        setreadonly(gmt, true)
+    end
+end
+
+if _G.SilentAimLoop then _G.SilentAimLoop:Disconnect() end
+_G.SilentAimLoop = RunService.RenderStepped:Connect(function()
+    if _G.SilentAimEnabled then
+        currentSilentAimTarget, _ = SilentAim_GetTargetPartAndDist()
+        currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
+        _G.SilentAimTargetPos = currentSilentAimTargetPos
+    else
+        currentSilentAimTarget = nil
+        currentSilentAimTargetPos = nil
+        _G.SilentAimTargetPos = nil
+    end
+end)
 
 --低配模式
 _G.SetLowVisualState = function(state)
@@ -2952,6 +3118,27 @@ Tabs.Skills:Button({
                 WindUI:Notify({ Title = "手動跳過", Content = "目前沒有鎖定的目標玩家", duration = 3 })
             end
         end
+    end
+})
+
+Tabs.Skills:Section({ Title = "自瞄" })
+
+Tabs.Skills:Toggle({
+    Title = "開啟自瞄 (技能 & M1)",
+    Value = _G.SilentAimEnabled,
+    Locked = disableHook,
+    LockedTitle = disableHook and ("目前不支援 " .. tostring(executorName) .. " 執行器") or nil,
+    Callback = function(v)
+        if disableHook then return end
+        _G.SilentAimEnabled = v
+    end
+})
+
+Tabs.Skills:Toggle({
+    Title = "隊伍檢測(不瞄隊友)",
+    Value = _G.SilentAimTeamCheck,
+    Callback = function(v)
+        _G.SilentAimTeamCheck = v
     end
 })
 
