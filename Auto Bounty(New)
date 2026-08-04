@@ -178,7 +178,8 @@ _G.FTP2_AntiGravity = nil
 _G.FTP2_LastTeleportTicks = {}
 _G.FTP2_TeleportPauseUntil = 0
 _G.FTP2_Blacklist = {}
-_G.FTP2_HasTriggeredHop = false -- 修改：用來記錄是否已經觸發過換服，取代原本的時間戳
+_G.FTP2_HasTriggeredHop = false
+_G.FTP2_TimeoutLimit = 120
 
 local StartServerHop
 
@@ -1793,7 +1794,6 @@ local SafeZonePositions = {
     }
 }
 
--- ==================== 新增：PVP戰鬥狀態檢測與通知函數 ====================
 local function GetCombatStatus()
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     local mainUI = playerGui and playerGui:FindFirstChild("Main")
@@ -1813,41 +1813,37 @@ local function GetCombatStatus()
         end
 
         if string.find(rawText, "Bounty at risk") or string.find(rawText, "bounty") or string.find(rawText, "賞金") then
-            return "BountyAtRisk" -- 賞金風險狀態
+            return "BountyAtRisk"
         else
-            return "InCombatNoRisk" -- 戰鬥中 無賞金風險
+            return "InCombatNoRisk"
         end
     else
-        return "NotInCombat" -- 非戰鬥狀態
+        return "NotInCombat"
     end
 end
 
 local function CheckAndNotifyCombatStatus()
-    -- 如果已經觸發過換服，就直接返回，確保只執行一次
     if _G.FTP2_HasTriggeredHop then return end
 
     local status = GetCombatStatus()
     
     if status == "NotInCombat" then
-        _G.FTP2_HasTriggeredHop = true -- 標記為已觸發
+        _G.FTP2_HasTriggeredHop = true
         if WindUI then
             WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標（非戰鬥狀態），開始自動換服", duration = 3 })
         end
-        -- 執行換服邏輯
         task.spawn(function()
             if StartServerHop then StartServerHop() end
         end)
     elseif status == "InCombatNoRisk" then
-        _G.FTP2_HasTriggeredHop = true -- 標記為已觸發
+        _G.FTP2_HasTriggeredHop = true
         if WindUI then
             WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標（無賞金風險），開始自動換服", duration = 3 })
         end
-        -- 執行換服邏輯
         task.spawn(function()
             if StartServerHop then StartServerHop() end
         end)
     end
-    -- 若為 BountyAtRisk（賞金風險狀態），則不發送通知且不換服
 end
 
 local function IsInSafeZone(plr)
@@ -2288,7 +2284,9 @@ local function FleeUpLogic()
     end)
 end
 
+-- [新增] 目標追蹤變數
 local currentTarget = nil
+local targetLockTime = 0 
 
 local function StartFTPFlight2()
     if _G.FTP2_Enabled then return end
@@ -2296,8 +2294,9 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_LastTeleportTicks) 
     table.clear(_G.FTP2_Blacklist)
     _G.FTP2_TeleportPauseUntil = 0 
-    _G.FTP2_HasTriggeredHop = false -- 修改：重置換服標記，準備下一次檢測
+    _G.FTP2_HasTriggeredHop = false
     currentTarget = nil
+    targetLockTime = os.clock() -- 初始化鎖定時間
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
@@ -2306,7 +2305,6 @@ local function StartFTPFlight2()
     if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
 
-    -- 監聽玩家離開遊戲事件（離開時及時清理紀錄與當前鎖定）
     _G.FTP2_PlayerLeaveConn = Players.PlayerRemoving:Connect(function(plr)
         TargetHistory[plr] = nil
         _G.FTP2_Blacklist[plr] = nil
@@ -2369,7 +2367,7 @@ local function StartFTPFlight2()
             end
         end)
 
-        -- 驗證當前鎖定目標是否依然有效
+        -- [修改] 結合原有的目標驗證 + 限時跳過功能
         if currentTarget then
             if not IsValidTarget(currentTarget) then
                 _G.FTP2_Blacklist[currentTarget] = true
@@ -2377,17 +2375,40 @@ local function StartFTPFlight2()
             end
         end
 
-        -- 實時動態檢測最近的有效玩家（進出或距離改變時會自動更新鎖定）
+        local oldTarget = currentTarget
         local nearest = GetNearestPlayer()
         if nearest then
             currentTarget = nearest
+        else
+            currentTarget = nil
+        end
+
+        -- [新增] 鎖定時間超時判斷邏輯
+        if currentTarget then
+            -- 如果目標換人了，就重置計時
+            if currentTarget ~= oldTarget then
+                targetLockTime = os.clock()
+            end
+            
+            -- 檢查是否超時
+            if os.clock() - targetLockTime >= _G.FTP2_TimeoutLimit then
+                _G.FTP2_Blacklist[currentTarget] = true
+                if WindUI then
+                    WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，已跳過玩家: " .. currentTarget.Name, duration = 3 })
+                end
+                currentTarget = nil
+                targetLockTime = os.clock()
+            end
+        else
+            -- 沒目標的時候保持重置計時
+            targetLockTime = os.clock()
         end
 
         if currentTarget then
             FlyToTargetLogic2(currentTarget)
         else
             FleeUpLogic()
-            CheckAndNotifyCombatStatus() -- 新增：持續往上飛時檢測 PVP 狀態並發送 WindUI 通知
+            CheckAndNotifyCombatStatus()
         end
     end)
 end
@@ -2869,6 +2890,37 @@ Tabs.Skills:Toggle({
             StopFTPFlight2()
             if WindUI then 
                 WindUI:Notify({ Title = "自動列賞", Content = "已關閉", duration = 3 }) 
+            end
+        end
+    end
+})
+
+Tabs.Skills:Slider({
+    Title = "鎖定玩家限時時間",
+    Value = {
+    	Min = 120,
+    	Max = 300,
+		Default = _G.FTP2_TimeoutLimit
+    },
+    Callback = function(Value)
+        _G.FTP2_TimeoutLimit = Value
+    end
+})
+
+Tabs.Skills:Button({
+    Title = "跳過當前目標玩家",
+    Callback = function()
+        if currentTarget then
+            local skippedName = currentTarget.Name
+            _G.FTP2_Blacklist[currentTarget] = true
+            currentTarget = nil
+            targetLockTime = os.clock()
+            if WindUI then
+                WindUI:Notify({ Title = "手動跳過", Content = "已跳過該名目標玩家", duration = 3 })
+            end
+        else
+            if WindUI then
+                WindUI:Notify({ Title = "手動跳過", Content = "目前沒有鎖定的目標玩家", duration = 3 })
             end
         end
     end
