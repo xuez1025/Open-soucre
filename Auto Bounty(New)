@@ -2652,7 +2652,7 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
     end
 end)
 
---Camlock
+--Camlock (第一人稱)
 RunService.RenderStepped:Connect(function()
     if not _G.CamlockEnabled then return end
     if not _G.FTP2_CurrentTarget then return end
@@ -2661,10 +2661,11 @@ RunService.RenderStepped:Connect(function()
 
     local camera = Workspace.CurrentCamera
     local targetHRP = _G.FTP2_CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
-    local localHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local localHead = LocalPlayer.Character:FindFirstChild("Head")
 
-    if targetHRP and localHRP then
-        camera.CFrame = CFrame.new(camera.CFrame.Position, targetHRP.Position)
+    if targetHRP and localHead then
+        local camPos = localHead.Position + localHead.CFrame.LookVector * 0.5
+        camera.CFrame = CFrame.new(camPos, targetHRP.Position)
     end
 end)
 
@@ -3167,7 +3168,7 @@ Tabs.Skills:Toggle({
 
 Tabs.Skills:Toggle({
     Title = "畫面鎖定",
-    Desc = "供無法使用自瞄的啟動器",
+    Desc = "提供不支援自瞄功能的啟動器",
     Value = _G.CamlockEnabled,
     Callback = function(v)
         _G.CamlockEnabled = v
