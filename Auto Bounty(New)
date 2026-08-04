@@ -178,6 +178,7 @@ _G.FTP2_AntiGravity = nil
 _G.FTP2_LastTeleportTicks = {}
 _G.FTP2_TeleportPauseUntil = 0
 _G.FTP2_Blacklist = {}
+_G.FTP2_LastCombatNotifyTime = 0 -- 新增：通知冷卻時間戳
 
 --FPS
 _G.UnlockFPS = true
@@ -1790,6 +1791,57 @@ local SafeZonePositions = {
     }
 }
 
+-- ==================== 新增：PVP戰鬥狀態檢測與通知函數 ====================
+local function GetCombatStatus()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local mainUI = playerGui and playerGui:FindFirstChild("Main")
+    local bottomHUD = mainUI and mainUI:FindFirstChild("BottomHUDList")
+    local inCombatUI = bottomHUD and bottomHUD:FindFirstChild("InCombat")
+
+    if inCombatUI and inCombatUI.Visible then
+        local rawText = ""
+        
+        if inCombatUI:IsA("TextLabel") then
+            rawText = inCombatUI.Text
+        else
+            local childText = inCombatUI:FindFirstChildWhichIsA("TextLabel", true)
+            if childText then
+                rawText = childText.Text
+            end
+        end
+
+        if string.find(rawText, "Bounty at risk") or string.find(rawText, "bounty") or string.find(rawText, "賞金") then
+            return "BountyAtRisk" -- 賞金風險狀態
+        else
+            return "InCombatNoRisk" -- 戰鬥中 無賞金風險
+        end
+    else
+        return "NotInCombat" -- 非戰鬥狀態
+    end
+end
+
+local function CheckAndNotifyCombatStatus()
+    local now = os.clock()
+    -- 設定 10 秒冷卻，避免持續飛行的每一幀大量重複洗版通知
+    if now - (_G.FTP2_LastCombatNotifyTime or 0) < 10 then return end
+
+    local status = GetCombatStatus()
+    
+    if status == "NotInCombat" then
+        _G.FTP2_LastCombatNotifyTime = now
+        if WindUI then
+            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標，飛行中（非戰鬥狀態）", duration = 3 })
+        end
+    elseif status == "InCombatNoRisk" then
+        _G.FTP2_LastCombatNotifyTime = now
+        if WindUI then
+            WindUI:Notify({ Title = "自動列賞狀態", Content = "目前無目標，飛行中（戰鬥中 無賞金風險）", duration = 3 })
+        end
+    end
+    -- 若為 BountyAtRisk（賞金風險狀態），則不發送通知
+end
+-- =========================================================================
+
 local function IsInSafeZone(plr)
     if not plr or not plr.Character then return false end
     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
@@ -2236,6 +2288,7 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_LastTeleportTicks) 
     table.clear(_G.FTP2_Blacklist)
     _G.FTP2_TeleportPauseUntil = 0 
+    _G.FTP2_LastCombatNotifyTime = 0
     currentTarget = nil
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
@@ -2326,6 +2379,7 @@ local function StartFTPFlight2()
             FlyToTargetLogic2(currentTarget)
         else
             FleeUpLogic()
+            CheckAndNotifyCombatStatus() -- 新增：持續往上飛時檢測 PVP 狀態並發送 WindUI 通知
         end
     end)
 end
