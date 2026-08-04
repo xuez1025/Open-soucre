@@ -12,6 +12,10 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local Stats = game:GetService("Stats")
+local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+local mainUI = playerGui and playerGui:FindFirstChild("Main")
+local bottomHUD = mainUI and mainUI:FindFirstChild("BottomHUDList")
+local inCombatUI = bottomHUD and bottomHUD:FindFirstChild("InCombat")
 
 -- Fast Attack Serve
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
@@ -180,6 +184,33 @@ _G.FTP2_TeleportPauseUntil = 0
 _G.FTP2_Blacklist = {}
 _G.FTP2_HasTriggeredHop = false
 _G.FTP2_TimeoutLimit = 120
+
+_G.FTP2_HistoryWindow = 0.35
+_G.FTP2_ClearTimeout = 10
+_G.FTP2_FlySpeed = 300
+_G.FTP2_CurrentTarget = nil
+_G.FTP2_TargetLockTime = 0
+_G.TargetHistory = {}
+
+_G.FTP2_SafeZonePositions = {
+    World1 = {
+        { pos = Vector3.new(-3000, 250, 2057), radius = 700 },
+        { pos = Vector3.new(1101, 16, 1446), radius = 400 },
+    },
+    World2 = {
+        { pos = Vector3.new(-12, 29, 2840), radius = 200 },
+        { pos = Vector3.new(-376, 149, 307), radius = 150 },
+        { pos = Vector3.new(-6437, 306, -4730), radius = 150 },
+    },
+    World3 = {
+        { pos = Vector3.new(-338, 21, 5539), radius = 200 },
+        { pos = Vector3.new(-12550, 337, -7506), radius = 400 },
+        { pos = Vector3.new(-5046, 315, -2993), radius = 300 },
+        { pos = Vector3.new(-16228, 9, 443), radius = 300 },
+        { pos = Vector3.new(28695, 14959, -81), radius = 10000 },
+        { pos = Vector3.new(9637, -1989, 9618), radius = 10000 },
+    }
+}
 
 local StartServerHop
 
@@ -1768,37 +1799,7 @@ task.spawn(function()
 end)
 
 --自動列賞
-local HISTORY_WINDOW = 0.35
-local CLEAR_TIMEOUT = 10
-local FLY_SPEED = 300
-
-TargetHistory = TargetHistory or {}
-
-local SafeZonePositions = {
-    World1 = {
-        { pos = Vector3.new(-3000, 250, 2057), radius = 700 },
-        { pos = Vector3.new(1101, 16, 1446), radius = 400 },
-    },
-    World2 = {
-        { pos = Vector3.new(-12, 29, 2840), radius = 200 },
-        { pos = Vector3.new(-376, 149, 307), radius = 150 },
-        { pos = Vector3.new(-6437, 306, -4730), radius = 150 },
-    },
-    World3 = {
-        { pos = Vector3.new(-338, 21, 5539), radius = 200 },
-        { pos = Vector3.new(-12550, 337, -7506), radius = 400 },
-        { pos = Vector3.new(-5046, 315, -2993), radius = 300 },
-        { pos = Vector3.new(-16228, 9, 443), radius = 300 },
-        { pos = Vector3.new(28695, 14959, -81), radius = 10000 },
-        { pos = Vector3.new(9637, -1989, 9618), radius = 10000 },
-    }
-}
-
 local function GetCombatStatus()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local mainUI = playerGui and playerGui:FindFirstChild("Main")
-    local bottomHUD = mainUI and mainUI:FindFirstChild("BottomHUDList")
-    local inCombatUI = bottomHUD and bottomHUD:FindFirstChild("InCombat")
 
     if inCombatUI and inCombatUI.Visible then
         local rawText = ""
@@ -1855,11 +1856,11 @@ local function IsInSafeZone(plr)
     local zones = {}
 
     if table.find({2753915549, 85211729168715}, placeId) then
-        zones = SafeZonePositions.World1
+        zones = _G.FTP2_SafeZonePositions.World1
     elseif table.find({4442272183, 79091703265657}, placeId) then
-        zones = SafeZonePositions.World2
+        zones = _G.FTP2_SafeZonePositions.World2
     elseif table.find({7449423635, 100117331123089}, placeId) then
-        zones = SafeZonePositions.World3
+        zones = _G.FTP2_SafeZonePositions.World3
     end
 
     local pos = hrp.Position
@@ -2002,27 +2003,29 @@ local function UpdatePositionHistory()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
             if hrp and hum and hum.Health > 0 then
-                TargetHistory[plr] = TargetHistory[plr] or {}
-                local history = TargetHistory[plr]
+                if not _G.TargetHistory[plr] then
+                    _G.TargetHistory[plr] = {}
+                end
+                local history = _G.TargetHistory[plr]
 
                 table.insert(history, { time = now, pos = hrp.Position, vel = hrp.AssemblyLinearVelocity })
 
-                while #history > 0 and (now - history[1].time) > HISTORY_WINDOW do
+                while #history > 0 and (now - history[1].time) > _G.FTP2_HistoryWindow do
                     table.remove(history, 1)
                 end
             end
         end
     end
 
-    for plr, history in pairs(TargetHistory) do
+    for plr, history in pairs(_G.TargetHistory) do
         if not activePlayers[plr] or not plr:IsDescendantOf(Players) then
-            TargetHistory[plr] = nil
+            _G.TargetHistory[plr] = nil
         elseif #history == 0 then
-            TargetHistory[plr] = nil
+            _G.TargetHistory[plr] = nil
         else
             local lastRecord = history[#history]
-            if (now - lastRecord.time) > CLEAR_TIMEOUT then
-                TargetHistory[plr] = nil
+            if (now - lastRecord.time) > _G.FTP2_ClearTimeout then
+                _G.TargetHistory[plr] = nil
             end
         end
     end
@@ -2034,7 +2037,7 @@ local function GetPredictedPosition2(plr)
     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
 
-    local history = TargetHistory and TargetHistory[plr]
+    local history = _G.TargetHistory[plr]
     local currentPos = hrp.Position
     local currentVel = hrp.AssemblyLinearVelocity
 
@@ -2104,7 +2107,7 @@ local function GetPredictedPosition2(plr)
 
     if myHRP then
         local dist = (currentPos - myHRP.Position).Magnitude
-        local flightTime = dist / FLY_SPEED
+        local flightTime = dist / _G.FTP2_FlySpeed
         predTime = math.clamp((flightTime * 0.55) + ping, 0.04, 0.45)
     end
 
@@ -2221,7 +2224,7 @@ local function FlyToTargetLogic2(plr)
     end
 
     local distToTargetCenter = (rawTargetPos - myHRP.Position).Magnitude
-    local directFlightTime = distToTargetCenter / FLY_SPEED
+    local directFlightTime = distToTargetCenter / _G.FTP2_FlySpeed
     local bestEntrance = nil
     local bestTotalTime = directFlightTime 
     local teleportPenalty = 1.5 
@@ -2229,7 +2232,7 @@ local function FlyToTargetLogic2(plr)
 
     for _, e in ipairs(pool) do
         local destDistToTarget = (e.Dest - rawTargetPos).Magnitude
-        local totalTimeViaPortal = (destDistToTarget / FLY_SPEED) + teleportPenalty
+        local totalTimeViaPortal = (destDistToTarget / _G.FTP2_FlySpeed) + teleportPenalty
         
         if totalTimeViaPortal < bestTotalTime then
             if (distToTargetCenter - destDistToTarget) > 150 then
@@ -2284,10 +2287,6 @@ local function FleeUpLogic()
     end)
 end
 
--- [新增] 目標追蹤變數
-local currentTarget = nil
-local targetLockTime = 0 
-
 local function StartFTPFlight2()
     if _G.FTP2_Enabled then return end
     _G.FTP2_Enabled = true
@@ -2295,8 +2294,8 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_Blacklist)
     _G.FTP2_TeleportPauseUntil = 0 
     _G.FTP2_HasTriggeredHop = false
-    currentTarget = nil
-    targetLockTime = os.clock() -- 初始化鎖定時間
+    _G.FTP2_CurrentTarget = nil
+    _G.FTP2_TargetLockTime = os.clock()
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
@@ -2306,10 +2305,10 @@ local function StartFTPFlight2()
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
 
     _G.FTP2_PlayerLeaveConn = Players.PlayerRemoving:Connect(function(plr)
-        TargetHistory[plr] = nil
+        _G.TargetHistory[plr] = nil
         _G.FTP2_Blacklist[plr] = nil
-        if currentTarget == plr then
-            currentTarget = nil
+        if _G.FTP2_CurrentTarget == plr then
+            _G.FTP2_CurrentTarget = nil
         end
     end)
 
@@ -2367,45 +2366,40 @@ local function StartFTPFlight2()
             end
         end)
 
-        -- [修改] 結合原有的目標驗證 + 限時跳過功能
-        if currentTarget then
-            if not IsValidTarget(currentTarget) then
-                _G.FTP2_Blacklist[currentTarget] = true
-                currentTarget = nil
+        if _G.FTP2_CurrentTarget then
+            if not IsValidTarget(_G.FTP2_CurrentTarget) then
+                _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
+                _G.FTP2_CurrentTarget = nil
             end
         end
 
-        local oldTarget = currentTarget
+        local oldTarget = _G.FTP2_CurrentTarget
         local nearest = GetNearestPlayer()
         if nearest then
-            currentTarget = nearest
+            _G.FTP2_CurrentTarget = nearest
         else
-            currentTarget = nil
+            _G.FTP2_CurrentTarget = nil
         end
 
-        -- [新增] 鎖定時間超時判斷邏輯
-        if currentTarget then
-            -- 如果目標換人了，就重置計時
-            if currentTarget ~= oldTarget then
-                targetLockTime = os.clock()
+        if _G.FTP2_CurrentTarget then
+            if _G.FTP2_CurrentTarget ~= oldTarget then
+                _G.FTP2_TargetLockTime = os.clock()
             end
             
-            -- 檢查是否超時
-            if os.clock() - targetLockTime >= _G.FTP2_TimeoutLimit then
-                _G.FTP2_Blacklist[currentTarget] = true
+            if os.clock() - _G.FTP2_TargetLockTime >= _G.FTP2_TimeoutLimit then
+                _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
                 if WindUI then
-                    WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，已跳過玩家: " .. currentTarget.Name, duration = 3 })
+                    WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，已跳過玩家: " .. _G.FTP2_CurrentTarget.Name, duration = 3 })
                 end
-                currentTarget = nil
-                targetLockTime = os.clock()
+                _G.FTP2_CurrentTarget = nil
+                _G.FTP2_TargetLockTime = os.clock()
             end
         else
-            -- 沒目標的時候保持重置計時
-            targetLockTime = os.clock()
+            _G.FTP2_TargetLockTime = os.clock()
         end
 
-        if currentTarget then
-            FlyToTargetLogic2(currentTarget)
+        if _G.FTP2_CurrentTarget then
+            FlyToTargetLogic2(_G.FTP2_CurrentTarget)
         else
             FleeUpLogic()
             CheckAndNotifyCombatStatus()
@@ -2416,7 +2410,7 @@ end
 local function StopFTPFlight2()
     _G.FTP2_Enabled = false
     _G.FTP2_TeleportPauseUntil = 0
-    currentTarget = nil
+    _G.FTP2_CurrentTarget = nil
     
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(false) end
 
@@ -2898,23 +2892,23 @@ Tabs.Skills:Toggle({
 Tabs.Skills:Slider({
     Title = "鎖定玩家限時時間",
     Value = {
-    	Min = 120,
-    	Max = 300,
-		Default = _G.FTP2_TimeoutLimit
+        Min = 120,
+        Max = 300,
+        Default = _G.FTP2_TimeoutLimit
     },
-    Callback = function(Value)
-        _G.FTP2_TimeoutLimit = Value
+    Callback = function(v)
+        _G.FTP2_TimeoutLimit = v
     end
 })
 
 Tabs.Skills:Button({
     Title = "跳過當前目標玩家",
     Callback = function()
-        if currentTarget then
-            local skippedName = currentTarget.Name
-            _G.FTP2_Blacklist[currentTarget] = true
-            currentTarget = nil
-            targetLockTime = os.clock()
+        if _G.FTP2_CurrentTarget then
+            local skippedName = _G.FTP2_CurrentTarget.Name
+            _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
+            _G.FTP2_CurrentTarget = nil
+            _G.FTP2_TargetLockTime = os.clock()
             if WindUI then
                 WindUI:Notify({ Title = "手動跳過", Content = "已跳過該名目標玩家", duration = 3 })
             end
