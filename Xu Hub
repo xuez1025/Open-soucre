@@ -65,30 +65,6 @@ if disableHook then
     end)
 end
 
-----------------------------------------
--- White List
-----------------------------------------
-local Whitelist = {
-    "powoMILOowoq",
-    "ez_",
-	"Jokerqwqp",
-}
-
-local function IsWhitelisted()
-    if not LocalPlayer then return false end
-    local playerName = LocalPlayer.Name
-    
-    for _, pattern in ipairs(Whitelist) do
-        if string.find(playerName, pattern, 1, true) then
-            return true
-        end
-    end
-    return false
-end
-
-local isWhitelisted = IsWhitelisted()
-local isLocked = not isWhitelisted
-
 --Server Hop
 local PlaceId = game.PlaceId
 local JobId = game.JobId
@@ -3503,7 +3479,7 @@ local function StopAutoSoru()
     end
 end
 
-if _G.AutoSoru and isWhitelisted then 
+if _G.AutoSoru then 
     StartAutoSoru() 
 end
 
@@ -5169,11 +5145,7 @@ Tabs["自動"]:Toggle({
     Title = "自動順步",
     Desc = "自動順步至最近玩家(龍族)",
     Value = _G.AutoSoru,
-    Locked = isLocked,
-    LockedTitle = isLocked and "非特定授權玩家（無法使用）" or nil,
     Callback = function(state)
-        if isLocked then return end
-        
         _G.AutoSoru = state
         if state then
             StartAutoSoru()
