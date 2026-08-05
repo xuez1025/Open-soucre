@@ -1,4 +1,4 @@
------v0.06
+-----v0.07
 ---------------------------------------
 --服務
 ----------------------------------------
@@ -29,8 +29,42 @@ local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 10)
 local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 10)
 local RemoteSeed = Net and Net:FindFirstChild("seed")
 
-
 getgenv().AutoBountyLoaded = true
+
+-- ==========================================
+-- 2. Hook Check (執行器檢測)
+-- ==========================================
+local executorName = (identifyexecutor and identifyexecutor()) or "Unknown"
+local lowerName = string.lower(executorName)
+
+local unsupportedList = {"xeno", "solara"}
+local isUnsupportedName = false
+
+for _, name in ipairs(unsupportedList) do
+    if string.find(lowerName, name) then
+        isUnsupportedName = true
+        break
+    end
+end
+
+local isMissingFunctions = (hookmetamethod == nil) or (getrawmetatable == nil) or (setreadonly == nil)
+local disableHook = isUnsupportedName or isMissingFunctions
+
+if disableHook then
+    warn("[Anti-Crash] Detected limited executor (" .. executorName .. "). Silent Aim hooks have been disabled to prevent freezing.")
+    
+    task.spawn(function()
+        task.wait(5)
+        pcall(function()
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "⚠️ 執行器限制",
+                Text = "檢測到不支援 Hook 的執行器 (" .. executorName .. ") 已禁用自瞄以防崩潰 其餘功能正常載入",
+                Duration = 15,
+                Icon = "rbxassetid://11419714821"
+            })
+        end)
+    end)
+end
 
 ----------------------------------------
 -- WindUI
@@ -2458,6 +2492,7 @@ end
 local function IsSilentAimEnemy(player)
     if not player or player == LocalPlayer then return false end
     if IsPlayerAlly(player) then return false end
+    
     local myTeam = LocalPlayer.Team
     local targetTeam = player.Team
     if myTeam and targetTeam and myTeam.Name == "Marines" and targetTeam.Name == "Marines" then
@@ -2512,7 +2547,9 @@ local function SilentAim_GetTargetPartAndDist()
     return closest, shortest
 end
 
--- 自瞄 Hook 邏輯
+-- ==========================================
+-- 4. 自瞄 Hook 邏輯 (支援檢測)
+-- ==========================================
 if not _G.SilentAimHooked and not disableHook then
     _G.SilentAimHooked = true
 
@@ -3607,12 +3644,10 @@ Tabs.Settings:Toggle({
 task.spawn(function()
     task.wait()
 
-    -- 等待初始化所需的函數定義完成（防止角色未加載時提前執行導致 nil 調用）
     while typeof(EnableAntiAFK) ~= "function" do
         task.wait()
     end
 
-    -- 換服後自動執行
     if _G.AutoExecute then
         if queue_on_teleport then
             if not isfile("AutoBounty.file") then
