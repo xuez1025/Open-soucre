@@ -81,22 +81,6 @@ _G.HopMaxPlayers = 10
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
 
---選擇陣營
-_G.SelectTeam = "Pirates"
-
-local function SelectTeam()
-    local lp = game:GetService("Players").LocalPlayer
-    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
-        local args = {
-            "SetTeam2",
-            _G.SelectTeam
-        }
-        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
-    end
-end
-
-SelectTeam()
-
 local FilterParagraph = nil
 
 -- Fast Attack
@@ -170,6 +154,22 @@ local lavaRemoved = false
 -- 移除鬼船傷害
 _G.RemoveGhostShipLavaEnabled = false
 local ghostShipLavaRemoved = false
+
+--選擇陣營
+_G.SelectTeam = "Pirates"
+
+local function SelectTeam()
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
+end
+
+SelectTeam()
 
 --自動列賞
 _G.FTP2_Enabled = false
