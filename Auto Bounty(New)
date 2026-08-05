@@ -18,10 +18,11 @@ local bottomHUD = mainUI and mainUI:FindFirstChild("BottomHUDList")
 local inCombatUI = bottomHUD and bottomHUD:FindFirstChild("InCombat")
 
 -- Fast Attack Serve
-local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
-local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
-local RegisterHit = Net:WaitForChild("RE/RegisterHit")
-local RemoteSeed = Net:FindFirstChild("seed")
+local Modules = ReplicatedStorage:WaitForChild("Modules", 10)
+local Net = Modules and Modules:WaitForChild("Net", 10)
+local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 10)
+local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 10)
+local RemoteSeed = Net and Net:FindFirstChild("seed")
 
 ----------------------------------------
 -- Hook Check (執行器檢測)
@@ -89,7 +90,7 @@ WindUI:SetTheme(_G.Theme)
 local Window = WindUI:CreateWindow({
     Title         = "Auto Bounty",
     Icon          = "badge-dollar-sign",
-    Author        = "by xuez1025",
+    Author        = "by Xu&Kismile",
     Folder        = "Auto Bounty",
     Size          = UDim2.fromOffset(700, 800),
     Transparent   = true,
@@ -265,29 +266,47 @@ _G.CamlockEnabled = false
 --自動放技能
 _G.AutoSkillMainEnable = false
 _G.AutoSkillWeapons = {
-    ["Melee"]      = { Enable = false, Skills = {
-        Z = { Enable = false, HoldTime = 0 },
-        X = { Enable = false, HoldTime = 0 },
-        C = { Enable = false, HoldTime = 0 },
-    }},
-    ["Blox Fruit"] = { Enable = false, Skills = {
-        Z = { Enable = false, HoldTime = 0 },
-        X = { Enable = false, HoldTime = 0 },
-        C = { Enable = false, HoldTime = 0 },
-        V = { Enable = false, HoldTime = 0 },
-        F = { Enable = false, HoldTime = 0 },
-    }},
-    ["Gun"]   = { Enable = false, Skills = {
-        Z = { Enable = false, HoldTime = 0 },
-        X = { Enable = false, HoldTime = 0 },
-    }},
-    ["Sword"] = { Enable = false, Skills = {
-        Z = { Enable = false, HoldTime = 0 },
-        X = { Enable = false, HoldTime = 0 },
-    }},
+    ["Melee"] = {
+        Enable = false,
+        Skills = {
+            Z = { Enable = false, HoldTime = 0 },
+            X = { Enable = false, HoldTime = 0 },
+            C = { Enable = false, HoldTime = 0 },
+        }
+    },
+    ["Blox Fruit"] = {
+        Enable = false,
+        Skills = {
+            Z = { Enable = false, HoldTime = 0 },
+            X = { Enable = false, HoldTime = 0 },
+            C = { Enable = false, HoldTime = 0 },
+            V = { Enable = false, HoldTime = 0 },
+            F = { Enable = false, HoldTime = 0 },
+        }
+    },
+    ["Gun"] = {
+        Enable = false,
+        Skills = {
+            Z = { Enable = false, HoldTime = 0 },
+            X = { Enable = false, HoldTime = 0 },
+        }
+    },
+    ["Sword"] = {
+        Enable = false,
+        Skills = {
+            Z = { Enable = false, HoldTime = 0 },
+            X = { Enable = false, HoldTime = 0 },
+        }
+    },
 }
 
-local SkillKeyMap = { Z=Enum.KeyCode.Z, X=Enum.KeyCode.X, C=Enum.KeyCode.C, V=Enum.KeyCode.V, F=Enum.KeyCode.F }
+local SkillKeyMap = {
+    Z = Enum.KeyCode.Z,
+    X = Enum.KeyCode.X,
+    C = Enum.KeyCode.C,
+    V = Enum.KeyCode.V,
+    F = Enum.KeyCode.F
+}
 local SkillCoolDownTrack = {}
 
 --FPS
@@ -384,7 +403,7 @@ local ConfigKeys = {
     --畫面鎖定
     "CamlockEnabled",
 	--自動放技能
-    "AutoSkillMainEnable",
+    "AutoSkillMainEnable", "AutoSkillWeapons",
 	--FPS
 	"UnlockFPS",
 	--低配模式
@@ -535,20 +554,22 @@ end)
 ----------------------------------------
 --Select Team
 LocalPlayer.CharacterAdded:Connect(function(char)
-    Update_Character()
-    
-    if DiedCon then
-        DiedCon:Disconnect()
-        DiedCon = nil
-    end
-    
-    DiedCon = HD.Died:Connect(function()
-        local teamData = TeamMap[_G.SelectTeam]
-        if teamData and LocalPlayer.Team and LocalPlayer.Team.Name == teamData.Raw then
-            Character = nil
-            HD = nil
-            HRP = nil
+    pcall(function()
+        Update_Character()
+        
+        if DiedCon then
+            DiedCon:Disconnect()
+            DiedCon = nil
         end
+        
+        DiedCon = HD.Died:Connect(function()
+            local teamData = TeamMap[_G.SelectTeam]
+            if teamData and LocalPlayer.Team and LocalPlayer.Team.Name == teamData.Raw then
+                Character = nil
+                HD = nil
+                HRP = nil
+            end
+        end)
     end)
 end)
 
@@ -563,11 +584,6 @@ local RegionValues = {
     "Brazil",
     "Singapore",
 }
-
-local FailedJobs = {}
-local TELEPORT_COOLDOWN = 15  -- 冷卻 15 秒
-local RETRY_DELAY = 30        -- 失敗後同一 job 的封鎖時間（秒）
-local isTeleporting = false   -- 避免重複傳送標記
 
 local function FormatNumber(n)
     local num = math.floor(tonumber(n) or 0)
@@ -585,12 +601,9 @@ local function ParseServerInfo(text)
         return nil
     end
 
-    -- 清除可能影響解析的 RichText 標籤
-    local cleanText = text:gsub("<[^>]->", "")
-
-    local region = cleanText:match("Region:%s*(.-)%s*%-%s*Players:") or cleanText:match("Region:%s*(.-)%s*$")
-    local currentPlayers, maxPlayers = cleanText:match("Players:%s*(%d+)%s*/%s*(%d+)")
-    local bountyText = cleanText:match("Bounty:%s*([%d,]+)")
+    local region = text:match("Region:%s*(.-)%s*%-%s*Players:") or text:match("Region:%s*(.-)%s*$")
+    local currentPlayers, maxPlayers = text:match("Players:%s*(%d+)%s*/%s*(%d+)")
+    local bountyText = text:match("Bounty:%s*([%d,]+)")
 
     if not currentPlayers or not maxPlayers or not bountyText then
         return nil
@@ -602,11 +615,11 @@ local function ParseServerInfo(text)
     end
 
     return {
-        Region = region and region:match("^%s*(.-)%s*$") or "Unknown",
-        Players = tonumber(currentPlayers) or 0,
-        MaxPlayers = tonumber(maxPlayers) or 0,
+        Region = region or "Unknown",
+        Players = tonumber(currentPlayers),
+        MaxPlayers = tonumber(maxPlayers),
         Bounty = bounty,
-        Raw = cleanText,
+        Raw = text,
     }
 end
 
@@ -691,8 +704,6 @@ end
 local function StopServerHop()
     getgenv().IsServerHopping = false
     getgenv().ShuttingDown = false
-    FailedJobs = {}
-    isTeleporting = false
 
     WindUI:Notify({
         Title = "自動跳服",
@@ -713,136 +724,117 @@ local function StartServerHop()
 
     getgenv().IsServerHopping = true
     getgenv().ShuttingDown = true
-    FailedJobs = {}
-    isTeleporting = false
 
     WindUI:Notify({
         Title = "自動跳服",
         Content = "準備跳服...\n\n" .. BuildFilterText(),
         Icon = "wind",
-        Duration = 5,
+        Duration = 8,
     })
 
-    local PlayerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-    local serverBrowser = PlayerGui:WaitForChild("ServerBrowser", 5)
+    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-    if not serverBrowser then
+    if not PlayerGui:FindFirstChild("ServerBrowser") then
         getgenv().IsServerHopping = false
         return
     end
 
-    serverBrowser.Enabled = true
-    task.wait(0.5)
+    PlayerGui.ServerBrowser.Enabled = true
+    task.wait(0.1)
 
-    local Filters = serverBrowser.Frame:FindFirstChild("Filters")
+    local Filters = PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
     local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
     local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
 
-    if TextBox then
-        TextBox.Text = tostring(_G.ServerRegion)
-    end
-
-    local ScrollingFrame = serverBrowser.Frame:FindFirstChild("ScrollingFrame")
-    local FakeScroll = serverBrowser.Frame:FindFirstChild("FakeScroll")
-    local Inside = FakeScroll and FakeScroll:FindFirstChild("Inside")
-
-    if not Inside or not ScrollingFrame then
+    if not TextBox then
         getgenv().IsServerHopping = false
         return
     end
 
-    -- 平滑滾動線程 (嘗試傳送時暫停滾動，防止 UI Template 被重用錯亂)
+    TextBox.Text = _G.ServerRegion
+
+    local Full = Filters and Filters:FindFirstChild("Full")
+    local FullCheck = Full and Full:FindFirstChild("Check")
+    if FullCheck then
+        FullCheck.Text = "✔️"
+        task.wait(0.1)
+    end
+
+    local ScrollingFrame = PlayerGui.ServerBrowser.Frame.ScrollingFrame
+    local FakeScroll = PlayerGui.ServerBrowser.Frame.FakeScroll
+    local Inside = FakeScroll.Inside
+
     task.spawn(function()
         while getgenv().IsServerHopping do
-            if not isTeleporting and ScrollingFrame then
-                ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 5000))
-            end
-            task.wait(0.6)
+            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
+            task.wait(0.3)
         end
     end)
 
-    task.wait(1)
+    task.wait()
 
     local currentJobId = game.JobId
-    local ServerBrowserRemote = game:GetService("ReplicatedStorage"):WaitForChild("__ServerBrowser")
+    local ServerBrowserRemote = ReplicatedStorage:WaitForChild("__ServerBrowser")
 
     task.spawn(function()
         while getgenv().IsServerHopping do
-            local now = os.clock()
+            local matched = 0
 
             for _, template in ipairs(Inside:GetChildren()) do
-                if not getgenv().IsServerHopping then break end
-
-                -- 關鍵修復：必須確保 Template 存在且為顯示狀態（Visible = true）
-                if template.Name == "Template" and template.Visible then
+                if template.Name == "Template" then
                     local joinButton = template:FindFirstChild("Join")
                     local textLabel = template:FindFirstChild("TextLabel")
                     local info = textLabel and ParseServerInfo(textLabel.Text)
 
-                    if joinButton and info and IsServerAllowed(info) then
-                        local job = joinButton:GetAttribute("Job")
+                    if joinButton and info then
+                        if IsServerAllowed(info) then
+                            matched = matched + 1
+                            local job = joinButton:GetAttribute("Job")
+                            if job and tostring(job):find("-", 1, true) then
+                                job = tostring(job)
 
-                        if job and tostring(job):find("-", 1, true) then
-                            job = tostring(job)
-
-                            -- 跳過當前伺服器
-                            if job == currentJobId then
-                                continue
-                            end
-
-                            -- 跳過冷卻中的失敗伺服器
-                            local failTime = FailedJobs[job]
-                            if failTime and (now - failTime) < RETRY_DELAY then
-                                continue
-                            end
-
-                            isTeleporting = true
-                            local serverText = BuildServerInfoText(info, job)
-                            
-                            WindUI:Notify({
-                                Title = "匹配到伺服器",
-                                Content = serverText,
-                                Icon = "wind",
-                                Duration = 5,
-                            })
-
-                            local success, err = pcall(function()
-                                ServerBrowserRemote:InvokeServer("teleport", job)
-                            end)
-
-                            if success then
-                                task.wait(TELEPORT_COOLDOWN)
-                            else
-                                FailedJobs[job] = os.clock()
-
-                                local errMsg = tostring(err or "未知錯誤")
-                                local is773 = errMsg:find("773") or errMsg:find("restricted") or errMsg:find("TeleportService")
-
-                                if is773 then
+                                if job ~= currentJobId then
+                                    local serverText = BuildServerInfoText(info, job)
+                                    
                                     WindUI:Notify({
-                                        Title = "傳送失敗（773）",
-                                        Content = "此伺服器傳送受限，已跳過\n將在 " .. RETRY_DELAY .. " 秒後重試其他伺服器",
+                                        Title = "匹配到服务器",
+                                        Content = serverText,
                                         Icon = "wind",
-                                        Duration = 5,
+                                        Duration = 6,
                                     })
-                                else
-                                    WindUI:Notify({
-                                        Title = "傳送失敗",
-                                        Content = "錯誤：" .. errMsg:sub(1, 80),
-                                        Icon = "wind",
-                                        Duration = 5,
-                                    })
+
+                                    local success = pcall(function()
+                                        ServerBrowserRemote:InvokeServer("teleport", job)
+                                    end)
+
+                                    if not success then
+                                        local success2 = pcall(function()
+                                            ServerBrowserRemote:InvokeServer("teleport", job)
+                                        end)
+
+                                        if not success2 then
+                                            WindUI:Notify({
+                                                Title = "自動跳服",
+                                                Content = "跳服失败\n\n请重新加入游戏",
+                                                Icon = "wind",
+                                                Duration = 10,
+                                            })
+                                        end
+                                    end
+
+                                    task.wait(0.3)
                                 end
-
-                                task.wait(5)
                             end
-                            isTeleporting = false
                         end
                     end
                 end
             end
 
-            task.wait(1)
+            if matched == 0 then
+                -- 扫描中，暂无符合条件的服务器
+            end
+
+            task.wait(3)
         end
     end)
 end
@@ -1628,6 +1620,7 @@ local function StartAutoSoru()
             pcall(SoruToClosestPlayer)
             task.wait(1)
         end
+        AutoSoruConn = nil
     end)
 end
 
@@ -1638,7 +1631,7 @@ local function StopAutoSoru()
     end
 end
 
-if _G.AutoSoru and isWhitelisted then 
+if _G.AutoSoru then 
     StartAutoSoru() 
 end
 
@@ -2692,7 +2685,7 @@ RunService.RenderStepped:Connect(function()
             if LocalPlayer.Character then
                 for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
                     if part:IsA("BasePart") then
-                        part.Transparency = 0
+                        part.LocalTransparencyModifier = 0
                     end
                 end
             end
@@ -2707,8 +2700,8 @@ RunService.RenderStepped:Connect(function()
 
     local char = LocalPlayer.Character
     for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 1 then
-            part.Transparency = 1
+        if part:IsA("BasePart") and part.LocalTransparencyModifier < 1 then
+            part.LocalTransparencyModifier = 1
         end
     end
 
@@ -2717,12 +2710,16 @@ RunService.RenderStepped:Connect(function()
     local localHead = char:FindFirstChild("Head")
 
     if targetHRP and localHead then
-        local camPos = localHead.Position + localHead.CFrame.LookVector * 0.5
+        local camPos = localHead.Position + localHead.CFrame.LookVector * 1.5
         camera.CFrame = CFrame.new(camPos, targetHRP.Position)
     end
 end)
 
 --自動放技能
+LocalPlayer.CharacterAdded:Connect(function()
+    SkillCoolDownTrack = {}
+end)
+
 local function GetMyCharacter()
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
@@ -2733,10 +2730,6 @@ local function GetMyCharacter()
     end
     return nil
 end
-
-LocalPlayer.CharacterAdded:Connect(function()
-    SkillCoolDownTrack = {}
-end)
 
 local function getToolType(tool)
     if not tool or not tool:IsA("Tool") then return nil end
@@ -2804,13 +2797,19 @@ local function GetAvailableSkills()
         if weaponData.Enable then
             local toolInstance = nil
             for _, item in ipairs(myChar:GetChildren()) do
-                if item:IsA("Tool") and getToolType(item) == weaponName then toolInstance = item break end
+                if item:IsA("Tool") and getToolType(item) == weaponName then
+                    toolInstance = item
+                    break
+                end
             end
             if not toolInstance then
                 local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
                 if backpack then
                     for _, item in ipairs(backpack:GetChildren()) do
-                        if item:IsA("Tool") and getToolType(item) == weaponName then toolInstance = item break end
+                        if item:IsA("Tool") and getToolType(item) == weaponName then
+                            toolInstance = item
+                            break
+                        end
                     end
                 end
             end
@@ -2864,6 +2863,10 @@ task.spawn(function()
         if not _G.AutoSkillMainEnable then continue end
 
         local targetPart = currentSilentAimTarget
+        if not targetPart and _G.FTP2_CurrentTarget and _G.FTP2_CurrentTarget.Character then
+            targetPart = _G.FTP2_CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+        end
+
         local dist = targetPart and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             and (targetPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude or math.huge
 
@@ -2891,6 +2894,19 @@ task.spawn(function()
         end
     end
 end)
+
+local function HandleSkillDropdown(weaponType, selectedValues)
+    for key, data in pairs(_G.AutoSkillWeapons[weaponType].Skills) do
+        data.Enable = false
+    end
+    for k, val in pairs(selectedValues) do
+        local skillKey = type(k) == "number" and val or k
+        local isEnabled = type(k) == "number" and true or val
+        if isEnabled and _G.AutoSkillWeapons[weaponType].Skills[skillKey] then
+            _G.AutoSkillWeapons[weaponType].Skills[skillKey].Enable = true
+        end
+    end
+end
 
 --低配模式
 _G.SetLowVisualState = function(state)
@@ -2996,9 +3012,9 @@ end)
 -- 分頁
 ----------------------------------------
 local Tabs = {
-    Config   = Window:Tab({ Title = "配置",  Icon = "wrench"   }),
-    Skills   = Window:Tab({ Title = "技能", Icon = "zap"      }),
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" }),
+    Config   = Window:Tab({ Title = "配置",  Icon = "wrench"}),
+    Skills   = Window:Tab({ Title = "列賞&技能", Icon = "zap"}),
+    Settings = Window:Tab({ Title = "畫質&設定", Icon = "settings"}),
 }
 
 ----------------------------------------
@@ -3017,7 +3033,6 @@ Tabs.Config:Dropdown({
         local teamData = TeamMap[_G.SelectTeam]
         if teamData then
             game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", teamData.Raw)
-            WindUI:Notify({ Title = "隊伍切換", Content = "正在加入 " .. teamData.Display .. "...", Duration = 3 })
         end
     end
 })
@@ -3212,14 +3227,10 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Config:Toggle({
-    Title = "自動順步",
-    Desc = "自動順步至最近玩家(龍族)",
+    Title = "自動順步(龍族)",
+    Desc = "自動順步至最近玩家",
     Value = _G.AutoSoru,
-    Locked = isLocked,
-    LockedTitle = isLocked and "非特定授權玩家（無法使用）" or nil,
     Callback = function(state)
-        if isLocked then return end
-        
         _G.AutoSoru = state
         if state then
             StartAutoSoru()
@@ -3382,6 +3393,15 @@ Tabs.Skills:Toggle({
 })
 
 Tabs.Skills:Toggle({
+    Title = "畫面鎖定",
+    Desc = "供無法使用自瞄的啟動器",
+    Value = _G.CamlockEnabled,
+    Callback = function(v)
+        _G.CamlockEnabled = v
+    end
+})
+
+Tabs.Skills:Toggle({
     Title = "隊伍檢測(不瞄隊友)",
     Value = _G.SilentAimTeamCheck,
     Callback = function(v)
@@ -3389,21 +3409,31 @@ Tabs.Skills:Toggle({
     end
 })
 
-Tabs.Skills:Toggle({
-    Title = "畫面鎖定",
-    Desc = "供無法使用自瞄的啟動器",
-    Value = _G.CamlockEnabled,
-    Callback = function(v)
-        _G.CamlockEnabled = v
-        if v then
-            if not _G.FTP2_CurrentTarget then
-                WindUI:Notify({ Title = "視角鎖定", Content = "提示：請先開啟自動列賞鎖定目標玩家！", Duration = 3 })
+Tabs.Skills:Section({ Title = "使用技能" })
+
+-- 从当前配置构建下拉框初始选中值
+local function GetEnabledWeaponList()
+    local list = {}
+    for weaponName, data in pairs(_G.AutoSkillWeapons) do
+        if data.Enable then
+            table.insert(list, weaponName)
+        end
+    end
+    return list
+end
+
+local function GetEnabledSkillList(weaponType)
+    local list = {}
+    local data = _G.AutoSkillWeapons[weaponType]
+    if data then
+        for skillName, skillData in pairs(data.Skills) do
+            if skillData.Enable then
+                table.insert(list, skillName)
             end
         end
     end
-})
-
-Tabs.Skills:Section({ Title = "主控制 (Main Control)" })
+    return list
+end
 
 Tabs.Skills:Toggle({
     Title = "Auto Skills",
@@ -3417,10 +3447,12 @@ Tabs.Skills:Dropdown({
     Title = "配置",
     Desc = "Melee, Blox Fruit, Sword, Gun",
     Multi = true,
-    Value = {},
+    Value = GetEnabledWeaponList(),
     Values = {"Melee", "Blox Fruit", "Sword", "Gun"},
     Callback = function(v)
-        for k, wData in pairs(_G.AutoSkillWeapons) do wData.Enable = false end
+        for k, wData in pairs(_G.AutoSkillWeapons) do 
+            wData.Enable = false 
+        end
         for k, val in pairs(v) do
             local wName = type(k) == "number" and val or k
             local isEnabled = type(k) == "number" and true or val
@@ -3431,41 +3463,50 @@ Tabs.Skills:Dropdown({
     end
 })
 
-local function HandleSkillDropdown(weaponType, selectedValues)
-    for key, data in pairs(_G.AutoSkillWeapons[weaponType].Skills) do
-        data.Enable = false
-    end
-    for k, val in pairs(selectedValues) do
-        local skillKey = type(k) == "number" and val or k
-        local isEnabled = type(k) == "number" and true or val
-        if isEnabled and _G.AutoSkillWeapons[weaponType].Skills[skillKey] then
-            _G.AutoSkillWeapons[weaponType].Skills[skillKey].Enable = true
-        end
-    end
-end
+Tabs.Skills:Space()
+
+Tabs.Skills:Divider()
+
+Tabs.Skills:Space()
 
 Tabs.Skills:Dropdown({
     Title = "拳法(Melee)",
-    Multi = true, Value = {}, Values = {"Z", "X", "C"},
-    Callback = function(v) HandleSkillDropdown("Melee", v) end
+    Multi = true,
+    Value = GetEnabledSkillList("Melee"),
+    Values = {"Z", "X", "C"},
+    Callback = function(v)
+        HandleSkillDropdown("Melee", v)
+    end
 })
 
 Tabs.Skills:Dropdown({
     Title = "果實(Blox Fruit)",
-    Multi = true, Value = {}, Values = {"Z", "X", "C", "V", "F"},
-    Callback = function(v) HandleSkillDropdown("Blox Fruit", v) end
+    Multi = true,
+    Value = GetEnabledSkillList("Blox Fruit"),
+    Values = {"Z", "X", "C", "V", "F"},
+    Callback = function(v)
+        HandleSkillDropdown("Blox Fruit", v)
+    end
 })
 
 Tabs.Skills:Dropdown({
     Title = "刀(Sword)",
-    Multi = true, Value = {}, Values = {"Z", "X"},
-    Callback = function(v) HandleSkillDropdown("Sword", v) end
+    Multi = true,
+    Value = GetEnabledSkillList("Sword"),
+    Values = {"Z", "X"},
+    Callback = function(v)
+        HandleSkillDropdown("Sword", v)
+    end
 })
 
 Tabs.Skills:Dropdown({
     Title = "槍(Gun)",
-    Multi = true, Value = {}, Values = {"Z", "X"},
-    Callback = function(v) HandleSkillDropdown("Gun", v) end
+    Multi = true,
+    Value = GetEnabledSkillList("Gun"),
+    Values = {"Z", "X"},
+    Callback = function(v)
+        HandleSkillDropdown("Gun", v)
+    end
 })
 
 Tabs.Settings:Section({ Title = "重置腳本" })
