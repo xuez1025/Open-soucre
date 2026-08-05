@@ -334,7 +334,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoBounty.file") then
     if readfile("AutoBounty.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/autobounty"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Bounty(New)"))()
     end
 end]]
 
