@@ -1,6 +1,10 @@
 ----------------------------------------
 --服務
 ----------------------------------------
+repeat
+    task.wait()
+until game:IsLoaded() and game:GetService("Players").LocalPlayer
+
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,57 +28,6 @@ local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 10)
 local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 10)
 local RemoteSeed = Net and Net:FindFirstChild("seed")
 
-----------------------------------------
--- Hook Check (執行器檢測)
-----------------------------------------
-local executorName = (identifyexecutor and identifyexecutor()) or "Unknown"
-local lowerName = string.lower(executorName)
-
-local unsupportedList = {"xeno", "solara"}
-local isUnsupportedName = false
-
-for _, name in ipairs(unsupportedList) do
-    if string.find(lowerName, name) then
-        isUnsupportedName = true
-        break
-    end
-end
-
-local isMissingFunctions = (hookmetamethod == nil) or (getrawmetatable == nil) or (setreadonly == nil)
-
--- 判斷是否需要禁用 Hook
-local disableHook = isUnsupportedName or isMissingFunctions
-
-if disableHook then
-    warn("[Anti-Crash] Detected limited executor (" .. executorName .. "). Silent Aim hooks have been disabled to prevent freezing.")
-    
-    task.spawn(function()
-        task.wait(5)
-        pcall(function()
-            game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "⚠️ 執行器限制",
-                Text = "檢測到不支援 Hook 的執行器 (" .. executorName .. ") 已禁用自瞄以防崩潰 其餘功能正常載入",
-                Duration = 15,
-                Icon = "rbxassetid://11419714821"
-            })
-        end)
-    end)
-end
-
-----------------------------------------
--- 防重複啟用
-----------------------------------------
-if getgenv().AutoBountyLoaded then
-    local StarterGui = game:GetService("StarterGui")
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "Auto Bounty",
-            Text = "腳本已在運行中，請勿重複執行！",
-            Duration = 3
-        })
-    end)
-    return
-end
 
 getgenv().AutoBountyLoaded = true
 
@@ -121,20 +74,28 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
---選擇陣營
-_G.SelectTeam = "海賊 (Pirates)"
-
-local TeamMap = { 
-    ["海賊 (Pirates)"] = { Display = "海賊", Raw = "Pirates" }, 
-    ["海軍 (Marines)"] = { Display = "海軍", Raw = "Marines" } 
-}
-
 --自動換服
 _G.ServerRegion = "Singapore"
 _G.HopMinPlayers = 8
 _G.HopMaxPlayers = 10
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
+
+--選擇陣營
+_G.SelectTeam = "Pirates"
+
+local function SelectTeam()
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
+end
+
+SelectTeam()
 
 local FilterParagraph = nil
 
@@ -364,8 +325,6 @@ local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
 local ConfigKeys = {
-	--選擇陣營
-	"SelectTeam",
 	--自動跳服
 	"ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
     --Fast Attack&Fruit M1
@@ -500,79 +459,11 @@ task.spawn(function()
     end
 end)
 
---初始化狀態
-task.spawn(function()
-    task.wait()
 
-    -- 換服後自動執行
-    if _G.AutoExecute then
-        if queue_on_teleport then
-            if not isfile("AutoBounty.file") then
-                writefile("AutoBounty.file", "true")
-            end
-            queue_on_teleport(ScriptLoadstring)
-        end
-    else
-        if queue_on_teleport and isfile("AutoBounty.file") then
-            delfile("AutoBounty.file")
-        end
-    end
-
-    -- 低畫質模式
-    if _G.LowVisualMode then
-        _G.SetLowVisualState(true)
-    end
-
-    -- 移除迷霧
-    if _G.RemoveFogEnabled then
-        _G.ApplyRemoveFog()
-    end
-
-    -- 突破 FPS 上限
-    if setfpscap then
-        if _G.UnlockFPS then
-            setfpscap(999)
-        else
-            setfpscap(0)
-        end
-    end
-
-    -- Anti AFK
-    if _G.AntiAFK_ENABLED then
-        EnableAntiAFK()
-    end
-
-    -- 自動重新連接 (Anti Kick)
-    if _G.AutoRejoinEnabled then
-
-    end
-
-end)
 
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
---Select Team
-LocalPlayer.CharacterAdded:Connect(function(char)
-    pcall(function()
-        Update_Character()
-        
-        if DiedCon then
-            DiedCon:Disconnect()
-            DiedCon = nil
-        end
-        
-        DiedCon = HD.Died:Connect(function()
-            local teamData = TeamMap[_G.SelectTeam]
-            if teamData and LocalPlayer.Team and LocalPlayer.Team.Name == teamData.Raw then
-                Character = nil
-                HD = nil
-                HRP = nil
-            end
-        end)
-    end)
-end)
-
 --自動換服
 local RegionValues = {
     "Oregon",
@@ -3020,24 +2911,9 @@ local Tabs = {
 ----------------------------------------
 -- 元件
 ----------------------------------------
-Tabs.Config:Section({ Title = "海賊&海軍" })
-
-Tabs.Config:Dropdown({
-    Title = "選擇陣營", 
-    Description = "點擊切換海賊或海軍",
-    Values = {"海賊 (Pirates)", "海軍 (Marines)"},
-    Value = _G.SelectTeam,
-    Callback = function(v)
-        _G.SelectTeam = v
-        
-        local teamData = TeamMap[_G.SelectTeam]
-        if teamData then
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", teamData.Raw)
-        end
-    end
-})
-
 Tabs.Config:Section({ Title = "自動換服" })
+
+
 
 FilterParagraph = Tabs.Config:Paragraph({
     Title = "當前篩選",
@@ -3325,7 +3201,15 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Skills:Section({ Title = "自動列賞" })
-
+Tabs.Skills:Dropdown({
+    Title = "選擇陣營",
+    Values = { "海賊", "海軍" },
+    Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
+    Callback = function(v)
+        _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
+        SelectTeam()
+    end,
+})
 Tabs.Skills:Toggle({ 
     Title = "自動列賞", 
     Value = _G.FTP2_Enabled,
@@ -3682,3 +3566,63 @@ Tabs.Settings:Toggle({
         end
     end
 })
+
+
+
+
+
+
+
+--初始化狀態
+task.spawn(function()
+    task.wait()
+
+    -- 等待初始化所需的函數定義完成（防止角色未加載時提前執行導致 nil 調用）
+    while typeof(EnableAntiAFK) ~= "function" do
+        task.wait()
+    end
+
+    -- 換服後自動執行
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("AutoBounty.file") then
+                writefile("AutoBounty.file", "true")
+            end
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("AutoBounty.file") then
+            delfile("AutoBounty.file")
+        end
+    end
+
+    -- 低畫質模式
+    if _G.LowVisualMode then
+        _G.SetLowVisualState(true)
+    end
+
+    -- 移除迷霧
+    if _G.RemoveFogEnabled then
+        _G.ApplyRemoveFog()
+    end
+
+    -- 突破 FPS 上限
+    if setfpscap then
+        if _G.UnlockFPS then
+            setfpscap(999)
+        else
+            setfpscap(0)
+        end
+    end
+
+    -- Anti AFK
+    if _G.AntiAFK_ENABLED then
+        EnableAntiAFK()
+    end
+
+    -- 自動重新連接 (Anti Kick)
+    if _G.AutoRejoinEnabled then
+
+    end
+
+end)
