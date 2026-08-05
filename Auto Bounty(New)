@@ -1,9 +1,10 @@
-----------------------------------------
+-----v0.06
+---------------------------------------
 --服務
 ----------------------------------------
-repeat
-    task.wait()
-until game:IsLoaded() and game:GetService("Players").LocalPlayer
+repeat task.wait(0.1) until game:IsLoaded() and game:GetService("Players").LocalPlayer
+
+local Settings = ...
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -76,84 +77,10 @@ end)
 ----------------------------------------
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopMinPlayers = 8
-_G.HopMaxPlayers = 10
+_G.HopMinPlayers = 6
+_G.HopMaxPlayers = 9
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
-
-local FilterParagraph = nil
-
--- Fast Attack
-_G.FastAttack = false
-_G.FastAttackMode = "模式1"
-_G.AttackDistance = 500
-
---Fruit m1
-_G.FruitsM1Enable = false
-_G.FruitsM1DelayValue = 0.05
-
---ESP Players
-_G.ESP_Master         = false
-_G.ESP_ShowName       = false
-_G.ESP_ShowHealth     = false
-_G.ESP_ShowDistance   = false
-_G.ESP_ShowTracers    = false
-_G.ESP_TeamColor      = false
-_G.ESP_ShowLevel      = false
-_G.ESP_ShowPVPStatus  = false
-_G.ESP_TracerColor    = Color3.fromRGB(255, 255, 255)
-_G.ESP_HighlightColor = Color3.fromRGB(30, 30, 30)
-_G.ESP_FontSize       = 12
-
-local Tracers = {}
-
---Auto Enabled PVP
-_G.AutoEnablePVP = false
-
---Auto Buso
-_G.AutoBusoEnabled = false
-
---Auto V3
-_G.AutoV3_Enabled = false
-
---Auto V4
-_G.AutoV4_Enabled = false
-
---Auto Ken
-_G.AutoKenEnabled = false
-
---自動順步
-_G.AutoSoru = false
-local AutoSoruConn = nil
-local LastSoruTime = 0
-local SORU_COOLDOWN = 10
-local MAX_SORU_DISTANCE = 900
-
---Hitbox
-_G.Hitbox_Enabled = false
-_G.Hitbox_Size = 1
-_G.Hitbox_Transparency = 0.5
-
---Auto Flee
-_G.AutoFlee = false
-_G.AutoFleeHP = 30
-_G.AutoFleeConn = nil
-
--- 移除動作
-_G.RemoveAnim = false
-_G.RemoveAnimCharConn = nil
-_G.RemoveAnimTrackConn = nil
-
--- Walk on water
-_G.WaterWalkEnabled = false
-
---移除岩漿傷害
-_G.RemoveLavaEnabled = false
-local lavaRemoved = false
-
--- 移除鬼船傷害
-_G.RemoveGhostShipLavaEnabled = false
-local ghostShipLavaRemoved = false
 
 --選擇陣營
 _G.SelectTeam = "Pirates"
@@ -169,7 +96,80 @@ local function SelectTeam()
     end
 end
 
-SelectTeam()
+local FilterParagraph = nil
+
+-- Fast Attack
+_G.FastAttack = true
+_G.FastAttackMode = "模式2(部分帳號失效可使用)"
+_G.AttackDistance = 500
+_G.FastAttackSpeed = 0.05
+
+--Fruit m1
+_G.FruitsM1Enable = true
+_G.FruitsM1DelayValue = 0.05
+
+--ESP Players
+_G.ESP_Master         = true
+_G.ESP_ShowName       = true
+_G.ESP_ShowHealth     = true
+_G.ESP_ShowDistance   = true
+_G.ESP_TeamColor      = true
+_G.ESP_ShowLevel      = true
+_G.ESP_ShowPVPStatus  = true
+_G.ESP_ShowTracers    = false
+_G.ESP_TracerColor    = Color3.fromRGB(255, 255, 255)
+_G.ESP_HighlightColor = Color3.fromRGB(30, 30, 30)
+_G.ESP_FontSize       = 12
+
+local Tracers = {}
+
+--Auto Enabled PVP
+_G.AutoEnablePVP = true
+
+--Auto Buso
+_G.AutoBusoEnabled = true
+
+--Auto V3
+_G.AutoV3_Enabled = true
+
+--Auto V4
+_G.AutoV4_Enabled = true
+
+--Auto Ken
+_G.AutoKenEnabled = true
+
+--自動順步
+_G.AutoSoru = false
+local AutoSoruConn = nil
+local LastSoruTime = 0
+local SORU_COOLDOWN = 10
+local MAX_SORU_DISTANCE = 900
+
+--Hitbox
+_G.Hitbox_Enabled = true
+_G.Hitbox_Size = 100
+_G.Hitbox_Transparency = 0.5
+
+--Auto Flee
+_G.AutoFlee = true
+_G.AutoFleeHP = 30
+_G.AutoFleeConn = nil
+
+-- 移除動作
+_G.RemoveAnim = true
+_G.RemoveAnimCharConn = nil
+_G.RemoveAnimTrackConn = nil
+
+-- Walk on water
+_G.WaterWalkEnabled = true
+
+--移除岩漿傷害
+_G.RemoveLavaEnabled = true
+local lavaRemoved = false
+
+-- 移除鬼船傷害
+_G.RemoveGhostShipLavaEnabled = true
+local ghostShipLavaRemoved = false
 
 --自動列賞
 _G.FTP2_Enabled = false
@@ -215,9 +215,9 @@ _G.FTP2_SafeZonePositions = {
 local StartServerHop
 
 --自瞄
-_G.SilentAimEnabled = false
+_G.SilentAimEnabled = true
 _G.SilentAimTargetMode = "目前鎖定的目標玩家"
-_G.SilentAimTeamCheck = false
+_G.SilentAimTeamCheck = true
 local currentSilentAimTarget = nil
 local currentSilentAimTargetPos = nil
 
@@ -271,14 +271,14 @@ local SkillKeyMap = {
 local SkillCoolDownTrack = {}
 
 --FPS
-_G.UnlockFPS = false
+_G.UnlockFPS = true
 
 --低配模式
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
 
 --移除迷霧
-_G.RemoveFogEnabled = false
+_G.RemoveFogEnabled = true
 
 --anti AFK
 _G.AntiAFK_ENABLED = true
@@ -294,12 +294,12 @@ if isfile and isfile("AutoBounty.file") then
     local success, content = pcall(function() return readfile("AutoBounty.file") end)
     _G.AutoExecute = (success and content == "true")
 else
-    _G.AutoExecute = false
+    _G.AutoExecute = true
 end
 
 local ScriptLoadstring = [[if isfile("AutoBounty.file") then
     if readfile("AutoBounty.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Bounty(New)"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/autobounty"))()
     end
 end]]
 
@@ -328,7 +328,7 @@ local ConfigKeys = {
 	--自動跳服
 	"ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
     --Fast Attack&Fruit M1
-	"FastAttack", "FastAttackMode", "AttackDistance", "FruitsM1Enable", "FruitsM1DelayValue",
+	"FastAttack", "FastAttackMode", "AttackDistance", "FastAttackSpeed", "FruitsM1Enable", "FruitsM1DelayValue",
 	--ESP Players
 	"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowPVPStatus", "ESP_FontSize",
 	--Auto Enabled PVP
@@ -355,6 +355,8 @@ local ConfigKeys = {
 	"RemoveLavaEnabled",
 	--移除鬼船傷害
 	"RemoveGhostShipLavaEnabled",
+	--選擇隊伍
+	"SelectTeam",
 	--自動列賞
     "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
 	--自瞄
@@ -441,7 +443,12 @@ end
 
 local InitialConfig = CollectConfig()
 LoadConfig()
+if type(Settings) == "table" then
+    ApplyConfig(Settings)
+end
 ConfigReady = true
+
+SelectTeam()
 
 task.spawn(function()
     local lastConfig = nil
@@ -519,8 +526,8 @@ local function IsServerAllowed(info)
         return false
     end
 
-    local minP = tonumber(_G.HopMinPlayers) or 8
-    local maxP = tonumber(_G.HopMaxPlayers) or 10
+    local minP = tonumber(_G.HopMinPlayers) or 6
+    local maxP = tonumber(_G.HopMaxPlayers) or 9
     local minB = tonumber(_G.HopMinBounty) or 3000000
     local maxB = tonumber(_G.HopMaxBounty) or math.huge
 
@@ -560,8 +567,8 @@ local function BuildFilterText()
     return string.format(
         "🌐 地區｜%s\n👥 人數｜%d ~ %d 人\n💰 賞金｜%s",
         tostring(_G.ServerRegion),
-        tonumber(_G.HopMinPlayers) or 8,
-        tonumber(_G.HopMaxPlayers) or 10,
+        tonumber(_G.HopMinPlayers) or 6,
+        tonumber(_G.HopMaxPlayers) or 9,
         bountyStr
     )
 end
@@ -665,11 +672,12 @@ local function StartServerHop()
     task.wait()
 
     local currentJobId = game.JobId
+    local triedJobs = {}
     local ServerBrowserRemote = ReplicatedStorage:WaitForChild("__ServerBrowser")
 
     task.spawn(function()
         while getgenv().IsServerHopping do
-            local matched = 0
+            local candidate = nil
 
             for _, template in ipairs(Inside:GetChildren()) do
                 if template.Name == "Template" then
@@ -677,55 +685,35 @@ local function StartServerHop()
                     local textLabel = template:FindFirstChild("TextLabel")
                     local info = textLabel and ParseServerInfo(textLabel.Text)
 
-                    if joinButton and info then
-                        if IsServerAllowed(info) then
-                            matched = matched + 1
-                            local job = joinButton:GetAttribute("Job")
-                            if job and tostring(job):find("-", 1, true) then
-                                job = tostring(job)
-
-                                if job ~= currentJobId then
-                                    local serverText = BuildServerInfoText(info, job)
-                                    
-                                    WindUI:Notify({
-                                        Title = "匹配到服务器",
-                                        Content = serverText,
-                                        Icon = "wind",
-                                        Duration = 6,
-                                    })
-
-                                    local success = pcall(function()
-                                        ServerBrowserRemote:InvokeServer("teleport", job)
-                                    end)
-
-                                    if not success then
-                                        local success2 = pcall(function()
-                                            ServerBrowserRemote:InvokeServer("teleport", job)
-                                        end)
-
-                                        if not success2 then
-                                            WindUI:Notify({
-                                                Title = "自動跳服",
-                                                Content = "跳服失败\n\n请重新加入游戏",
-                                                Icon = "wind",
-                                                Duration = 10,
-                                            })
-                                        end
-                                    end
-
-                                    task.wait(0.3)
-                                end
+                    if joinButton and info and IsServerAllowed(info) then
+                        local job = joinButton:GetAttribute("Job")
+                        if job and tostring(job):find("-", 1, true) then
+                            job = tostring(job)
+                            if job ~= currentJobId and not triedJobs[job] then
+                                candidate = { info = info, job = job }
+                                break
                             end
                         end
                     end
                 end
             end
 
-            if matched == 0 then
-                -- 扫描中，暂无符合条件的服务器
+            if candidate and getgenv().IsServerHopping then
+                WindUI:Notify({
+                    Title = "匹配到服务器",
+                    Content = BuildServerInfoText(candidate.info, candidate.job),
+                    Icon = "wind",
+                    Duration = 6,
+                })
+
+                pcall(function()
+                    ServerBrowserRemote:InvokeServer("teleport", candidate.job)
+                end)
+
+                triedJobs[candidate.job] = true
             end
 
-            task.wait(3)
+            task.wait(5)
         end
     end)
 end
@@ -738,7 +726,6 @@ local function IsAlive(char)
 end
 
 local Settings = {
-    AttackInterval = 0.01,
     MaxTargets = 20,
     AutoScanRemotes = true
 }
@@ -1020,13 +1007,9 @@ task.spawn(function()
             pcall(PerformAttack)
         end
         
-        if _G.FastAttackMode == "模式1" then
-            task.wait(0.3)
-        else
-            local elapsed = tick() - startTime
-            local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
-            task.wait(waitTime)
-        end
+        local elapsed = tick() - startTime
+        local waitTime = math.max((_G.FastAttackSpeed or 0.05) - elapsed, 0.001)
+        task.wait(waitTime)
     end
 end)
 
@@ -1189,104 +1172,85 @@ local function updateTracer(p, targetHRP)
 end
 
 RunService.RenderStepped:Connect(function()
-    if _G.ESP_Master then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                local char = p.Character
-                local head = char:FindFirstChild("Head")
-                local hrp2 = char:FindFirstChild("HumanoidRootPart")
-                local hum2 = char:FindFirstChildOfClass("Humanoid")
-                local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                
-                if head and hrp2 and hum2 then
-                    createESP(p)
-                    
-                    local bill = head:FindFirstChild("ESP_Billboard")
-                    local h = char:FindFirstChild("ESP_Highlight")
-                    
-                    if bill and h then
-                        local info = bill:FindFirstChild("InfoLabel")
-                        local barBG = bill:FindFirstChild("HealthBarBG")
-                        local barFG = barBG and barBG:FindFirstChild("HealthBarFG")
-                        
-                        -- 更新隊伍顏色
-                        if _G.ESP_TeamColor and p.TeamColor then
-                            h.OutlineColor = p.TeamColor.Color
-                        else
-                            h.OutlineColor = Color3.fromRGB(255, 255, 255)
-                        end
-                        
-                        -- 富文本字串構建
-                        local display = ""
-                        
-                        if _G.ESP_ShowName then 
-                            display = display .. "<b>" .. p.Name .. "</b>\n" 
-                        end
-                        
-                        if _G.ESP_ShowLevel then
-                            local lv = "???"
-                            local data = p:FindFirstChild("Data") or p:FindFirstChild("leaderstats")
-                            if data and data:FindFirstChild("Level") then lv = data.Level.Value end
-                            display = display .. '<font color="#FFFFFF">Lv. ' .. tostring(lv) .. '</font>\n'
-                        end
-                        
-                        if _G.ESP_ShowPVPStatus then
-                            local pvpActive = CheckPVP(p)
-                            if pvpActive then
-                                display = display .. '<font color="#00FF88">[ Safe PVP ]</font>\n'
-                            else
-                                display = display .. '<font color="#FF4D4D">[ Enabled PVP ]</font>\n'
-                            end
-                        end
-                        
-                        local hpText = ""
-                        if _G.ESP_ShowHealth then 
-                            hpText = '<font color="#FFFFFF">HP: ' .. math.floor(hum2.Health) .. "/" .. math.floor(hum2.MaxHealth) .. '</font> '
-                        end
-                        
-                        local distText = ""
-                        if _G.ESP_ShowDistance and myHRP then 
-                            distText = '<font color="#FFFFFF">[' .. math.floor((myHRP.Position - hrp2.Position).Magnitude) .. 'm]</font>' 
-                        end
-                        
-                        if _G.ESP_ShowHealth or _G.ESP_ShowDistance then
-                            display = display .. hpText .. distText .. "\n"
-                        end
-                        
-                        if info then 
-                            info.Text = display 
-                            info.TextSize = _G.ESP_FontSize
-                        end
-                        
-                        -- 血條更新
-                        if barBG and barFG then
-                            if _G.ESP_ShowHealth then
-                                barBG.Visible = true
-                                local hpPercent = math.clamp(hum2.Health / hum2.MaxHealth, 0, 1)
-                                barFG.Size = UDim2.fromScale(hpPercent, 1)
-                                
-                                if hpPercent > 0.5 then
-                                    barFG.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent) * 2, 255, 50)
-                                else
-                                    barFG.BackgroundColor3 = Color3.fromRGB(255, 255 * hpPercent * 2, 50)
-                                end
-                            else
-                                barBG.Visible = false
-                            end
-                        end
-                    end
-                    
-                    updateTracer(p, hrp2)
+    if not _G.ESP_Master then return end
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        local char = p.Character
+        if not char then removeESP(p) continue end
+        local head = char:FindFirstChild("Head")
+        local hrp2 = char:FindFirstChild("HumanoidRootPart")
+        local hum2 = char:FindFirstChildOfClass("Humanoid")
+        if not (head and hrp2 and hum2) then removeESP(p) continue end
+
+        createESP(p)
+
+        if _G.ESP_ShowTracers then
+            updateTracer(p, hrp2)
+        else
+            removeTracer(p)
+        end
+
+        local bill = head:FindFirstChild("ESP_Billboard")
+        local h = char:FindFirstChild("ESP_Highlight")
+        if not (bill and h) then continue end
+
+        if _G.ESP_TeamColor and p.TeamColor then
+            h.OutlineColor = p.TeamColor.Color
+        else
+            h.OutlineColor = Color3.fromRGB(255, 255, 255)
+        end
+
+        local info = bill:FindFirstChild("InfoLabel")
+        local barBG = bill:FindFirstChild("HealthBarBG")
+        local barFG = barBG and barBG:FindFirstChild("HealthBarFG")
+
+        if info then
+            local display = ""
+            if _G.ESP_ShowName then
+                display = display .. "<b>" .. p.Name .. "</b>\n"
+            end
+            if _G.ESP_ShowLevel then
+                local lv = "???"
+                local data = p:FindFirstChild("Data") or p:FindFirstChild("leaderstats")
+                if data and data:FindFirstChild("Level") then lv = data.Level.Value end
+                display = display .. '<font color="#FFFFFF">Lv. ' .. tostring(lv) .. '</font>\n'
+            end
+            if _G.ESP_ShowPVPStatus then
+                if CheckPVP(p) then
+                    display = display .. '<font color="#00FF88">[ Safe PVP ]</font>\n'
                 else
-                    removeESP(p)
+                    display = display .. '<font color="#FF4D4D">[ Enabled PVP ]</font>\n'
+                end
+            end
+            local hpText = ""
+            if _G.ESP_ShowHealth then
+                hpText = '<font color="#FFFFFF">HP: ' .. math.floor(hum2.Health) .. "/" .. math.floor(hum2.MaxHealth) .. '</font> '
+            end
+            local distText = ""
+            if _G.ESP_ShowDistance and myHRP then
+                distText = '<font color="#FFFFFF">[' .. math.floor((myHRP.Position - hrp2.Position).Magnitude) .. 'm]</font>'
+            end
+            if _G.ESP_ShowHealth or _G.ESP_ShowDistance then
+                display = display .. hpText .. distText .. "\n"
+            end
+            info.Text = display
+            info.TextSize = _G.ESP_FontSize
+        end
+
+        if barBG and barFG then
+            if _G.ESP_ShowHealth then
+                barBG.Visible = true
+                local hpPercent = math.clamp(hum2.Health / hum2.MaxHealth, 0, 1)
+                barFG.Size = UDim2.fromScale(hpPercent, 1)
+                if hpPercent > 0.5 then
+                    barFG.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent) * 2, 255, 50)
+                else
+                    barFG.BackgroundColor3 = Color3.fromRGB(255, 255 * hpPercent * 2, 50)
                 end
             else
-                removeESP(p)
+                barBG.Visible = false
             end
-        end
-    else
-        for _, p in ipairs(Players:GetPlayers()) do
-            removeESP(p)
         end
     end
 end)
@@ -1580,9 +1544,11 @@ Players.PlayerRemoving:Connect(function(plr)
     task.defer(applyHitboxAll)
 end)
 
+local hitboxTick = 0
 RunService.Heartbeat:Connect(function()
     if not _G.Hitbox_Enabled then return end
-
+    hitboxTick = hitboxTick + 1
+    if hitboxTick % 30 ~= 0 then return end
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             applyHitboxToPlayer(plr)
@@ -1595,7 +1561,7 @@ local function StartAutoFlee()
     if _G.AutoFleeConn then return end
     _G.AutoFleeConn = task.spawn(function()
         while _G.AutoFlee do
-            task.wait(0.01)
+            task.wait(0.1)
             pcall(function()
                 if _G.FTP2_Enabled then return end
 
@@ -1676,17 +1642,16 @@ end
 
 --walk on water
 task.spawn(function()
-    while task.wait() do
-        pcall(function()
-            local waterPlane = Workspace.Map:FindFirstChild("WaterBase-Plane")
-            if waterPlane then
-                if _G.WaterWalkEnabled then
-                    waterPlane.Size = Vector3.new(1000, 112, 1000)
-                else
-                    waterPlane.Size = Vector3.new(1000, 80, 1000)
-                end
+    local lastWaterSize = -1
+    while task.wait(0.5) do
+        local waterPlane = Workspace.Map and Workspace.Map:FindFirstChild("WaterBase-Plane")
+        if waterPlane then
+            local targetSize = _G.WaterWalkEnabled and 112 or 80
+            if targetSize ~= lastWaterSize then
+                lastWaterSize = targetSize
+                waterPlane.Size = Vector3.new(1000, targetSize, 1000)
             end
-        end)
+        end
     end
 end)
 
@@ -1929,6 +1894,20 @@ local function IsValidTarget(plr)
     return true
 end
 
+local ValidTargetCache = {}
+local ValidTargetCacheTime = 0
+local function IsValidTargetFast(plr)
+    local now = os.clock()
+    if now - ValidTargetCacheTime > 0.15 then
+        ValidTargetCacheTime = now
+        table.clear(ValidTargetCache)
+    end
+    if ValidTargetCache[plr] ~= nil then return ValidTargetCache[plr] end
+    local v = IsValidTarget(plr)
+    ValidTargetCache[plr] = v
+    return v
+end
+
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
@@ -2101,7 +2080,7 @@ local function GetNearestPlayer()
     if not myHRP then return nil end
 
     for _, plr in ipairs(Players:GetPlayers()) do
-        if IsValidTarget(plr) then
+        if IsValidTargetFast(plr) then
             local tgHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
             if tgHRP then
                 local dist = (tgHRP.Position - myHRP.Position).Magnitude
@@ -2296,6 +2275,11 @@ local function StartFTPFlight2()
         end
     end)
 
+    local lastHistoryUpdate = 0
+    local lastNoclipScan = 0
+    local cachedChar = nil
+    local cachedParts = nil
+
     _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
 
@@ -2313,11 +2297,15 @@ local function StartFTPFlight2()
                 return
             end
         end
-        
-        UpdatePositionHistory()
-        
+
+        local now = os.clock()
+        if now - lastHistoryUpdate >= 0.1 then
+            lastHistoryUpdate = now
+            UpdatePositionHistory()
+        end
+
         if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
-        
+
         pcall(function()
             local myChar = LocalPlayer.Character
             if myChar then
@@ -2328,7 +2316,7 @@ local function StartFTPFlight2()
                     myHum.Sit = false
                     myHum.Jump = true
                     myHum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                    
+
                     if myHRP then
                         for _, child in ipairs(myHRP:GetChildren()) do
                             if child:IsA("Weld") and (child.Name == "SeatWeld" or child.Name:find("Seat")) then
@@ -2338,12 +2326,22 @@ local function StartFTPFlight2()
                     end
                 end
 
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") and part.CanCollide then
+                if myChar ~= cachedChar or not cachedParts or now - lastNoclipScan >= 1 then
+                    lastNoclipScan = now
+                    cachedChar = myChar
+                    cachedParts = {}
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            table.insert(cachedParts, part)
+                        end
+                    end
+                end
+                for _, part in ipairs(cachedParts) do
+                    if part.CanCollide then
                         part.CanCollide = false
                     end
                 end
-                
+
                 if myHum and not myHum.PlatformStand then
                     myHum.PlatformStand = true
                 end
@@ -2351,7 +2349,7 @@ local function StartFTPFlight2()
         end)
 
         if _G.FTP2_CurrentTarget then
-            if not IsValidTarget(_G.FTP2_CurrentTarget) then
+            if not IsValidTargetFast(_G.FTP2_CurrentTarget) then
                 _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
                 _G.FTP2_CurrentTarget = nil
             end
@@ -2750,7 +2748,7 @@ end
 
 task.spawn(function()
     while true do
-        task.wait(0.05)
+        task.wait(0.1)
         if not _G.AutoSkillMainEnable then continue end
 
         local targetPart = currentSilentAimTarget
@@ -2913,8 +2911,6 @@ local Tabs = {
 ----------------------------------------
 Tabs.Config:Section({ Title = "自動換服" })
 
-
-
 FilterParagraph = Tabs.Config:Paragraph({
     Title = "當前篩選",
     Desc = BuildFilterText(),
@@ -2980,6 +2976,20 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.AttackDistance = v
+    end
+})
+
+Tabs.Config:Slider({
+    Title = "攻擊速度",
+    Desc = "調整攻擊間隔 (秒)",
+    Step = 0.05,
+    Value = {
+        Min = 0.05,
+        Max = 2,
+        Default = _G.FastAttackSpeed
+    },
+    Callback = function(v)
+        _G.FastAttackSpeed = v
     end
 })
 
@@ -3201,7 +3211,6 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Skills:Section({ Title = "自動列賞" })
-
 Tabs.Skills:Dropdown({
     Title = "選擇陣營",
     Values = { "海賊", "海軍" },
@@ -3236,7 +3245,7 @@ Tabs.Skills:Toggle({
 Tabs.Skills:Slider({
     Title = "鎖定玩家限時時間",
     Value = {
-        Min = 120,
+        Min = 60,
         Max = 300,
         Default = _G.FTP2_TimeoutLimit
     },
@@ -3330,7 +3339,7 @@ Tabs.Skills:Toggle({
 
 Tabs.Skills:Dropdown({
     Title = "配置",
-    Desc = "Melee, Blox Fruit, Sword, Gun",
+    Desc = "Melee,Fruit,Sword,Gun",
     Multi = true,
     Value = GetEnabledWeaponList(),
     Values = {"Melee", "Blox Fruit", "Sword", "Gun"},
