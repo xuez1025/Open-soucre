@@ -1,6 +1,14 @@
 ----------------------------------------
 --服務
 ----------------------------------------
+repeat
+    task.wait()
+until game:IsLoaded() and game:GetService("Players").LocalPlayer
+
+if _G.xuhubLoaded then
+    return
+end
+_G.xuhubLoaded = true
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -121,13 +129,10 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
---選擇陣營
-_G.SelectTeam = "海賊 (Pirates)"
-
-local TeamMap = { 
-    ["海賊 (Pirates)"] = { Display = "海賊", Raw = "Pirates" }, 
-    ["海軍 (Marines)"] = { Display = "海軍", Raw = "Marines" } 
-}
+--自動選隊
+_G.Config = _G.Config or {}
+_G.Config.Setting = _G.Config.Setting or {}
+_G.Config.Setting.SelectTeam = _G.Config.Setting.SelectTeam or "Marines"
 
 --自動換服
 _G.ServerRegion = "Singapore"
@@ -364,8 +369,6 @@ local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
 local ConfigKeys = {
-	--選擇陣營
-	"SelectTeam",
 	--自動跳服
 	"ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
     --Fast Attack&Fruit M1
@@ -552,25 +555,42 @@ end)
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
---Select Team
+--Select Team (from farm_main.lua 1:1)
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HD = Character:FindFirstChild("Humanoid") or Character:WaitForChild("Humanoid")
+local HRP = Character:FindFirstChild("HumanoidRootPart") or Character:WaitForChild("HumanoidRootPart")
+local DiedCon = nil
+
+local function Update_Character()
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    HD = Character:FindFirstChild("Humanoid") or Character:WaitForChild("Humanoid")
+    HRP = Character:FindFirstChild("HumanoidRootPart") or Character:WaitForChild("HumanoidRootPart")
+end
+
 LocalPlayer.CharacterAdded:Connect(function(char)
-    pcall(function()
-        Update_Character()
-        
-        if DiedCon then
-            DiedCon:Disconnect()
-            DiedCon = nil
+    Update_Character()
+    if DiedCon then
+        DiedCon:Disconnect()
+        DiedCon = nil
+    end
+    DiedCon = HD.Died:Connect(function()
+        if LocalPlayer.Team.Name == _G.Config.Setting.SelectTeam then
+            Character = nil
+            HD = nil
+            HRP = nil
+       -- else
+           -- local args = {"SetTeam", _G.Config.Setting.SelectTeam}
+           -- CommF:InvokeServer(unpack(args))
         end
-        
-        DiedCon = HD.Died:Connect(function()
-            local teamData = TeamMap[_G.SelectTeam]
-            if teamData and LocalPlayer.Team and LocalPlayer.Team.Name == teamData.Raw then
-                Character = nil
-                HD = nil
-                HRP = nil
-            end
-        end)
     end)
+end)
+
+DiedCon = HD.Died:Connect(function()
+    if LocalPlayer.Team.Name == _G.Config.Setting.SelectTeam then
+        Character = nil
+        HD = nil
+        HRP = nil
+    end
 end)
 
 --自動換服
@@ -3020,20 +3040,20 @@ local Tabs = {
 ----------------------------------------
 -- 元件
 ----------------------------------------
-Tabs.Config:Section({ Title = "海賊&海軍" })
+Tabs.Config:Section({ Title = "Select Team" })
 
 Tabs.Config:Dropdown({
-    Title = "選擇陣營", 
-    Description = "點擊切換海賊或海軍",
-    Values = {"海賊 (Pirates)", "海軍 (Marines)"},
-    Value = _G.SelectTeam,
-    Callback = function(v)
-        _G.SelectTeam = v
-        
-        local teamData = TeamMap[_G.SelectTeam]
-        if teamData then
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam", teamData.Raw)
-        end
+    Title = "选择团队",
+    Values = {"Pirates", "Marines"},
+    Value = _G.Config.Setting.SelectTeam,
+    Callback = function(Value)
+        _G.Config.Setting.SelectTeam = Value
+        WindUI:Notify({
+            Title = "Setting System",
+            Content = "Will Apply Next Spawn",
+            Icon = "solar:bell-bold",
+            Duration = 3
+        })
     end
 })
 
