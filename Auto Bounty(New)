@@ -126,8 +126,8 @@ end)
 ----------------------------------------
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopMinPlayers = 6
-_G.HopMaxPlayers = 9
+_G.HopMinPlayers = 5
+_G.HopMaxPlayers = 8
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
 
