@@ -29,6 +29,21 @@ local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 10)
 local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 10)
 local RemoteSeed = Net and Net:FindFirstChild("seed")
 
+----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if getgenv().AutoBountyLoaded then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Auto Bounty",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
 getgenv().AutoBountyLoaded = true
 
 -- ==========================================
