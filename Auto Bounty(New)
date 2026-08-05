@@ -362,6 +362,9 @@ for themeName, _ in pairs(availableThemes) do
     table.insert(themeList, themeName)
 end
 
+--自動隱藏UI
+_G.AutoHideEnabled = false
+
 --快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
@@ -427,6 +430,8 @@ local ConfigKeys = {
 	"AutoExecute",
     --主題
     "Theme",
+	--自動隱藏UI
+	"AutoHideEnabled",
 	--快捷鍵
     "CurrentKey", "KeyDisabled",
 }
@@ -2969,6 +2974,24 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
 
+--自動隱藏UI
+local function startAutoHideTimer()
+    task.delay(3, function()
+        if _G.AutoHideEnabled then
+            Window:Toggle(false)
+            WindUI:Notify({ 
+                Title = "系統通知", 
+                Content = "介面已自動隱藏，可按快捷鍵重新開啟", 
+                Duration = 5 
+            })
+        end
+    end)
+end
+
+if _G.AutoHideEnabled then
+    startAutoHideTimer()
+end
+
 ----------------------------------------
 -- 分頁
 ----------------------------------------
@@ -3615,6 +3638,18 @@ Tabs.Settings:Dropdown({
     end
 })
 
+Tabs.Settings:Toggle({
+    Title = "自動隱藏 UI",
+    Desc = "開啟時將在 3 秒後自動隱藏介面",
+    Value = _G.AutoHideEnabled,
+    Callback = function(v)
+        _G.AutoHideEnabled = v
+        if v then
+            startAutoHideTimer()
+        end
+    end
+})
+
 Tabs.Settings:Keybind({ 
     Title = "快捷鍵", 
     Desc = "可更改", 
@@ -3648,12 +3683,6 @@ Tabs.Settings:Toggle({
         end
     end
 })
-
-
-
-
-
-
 
 --初始化狀態
 task.spawn(function()
