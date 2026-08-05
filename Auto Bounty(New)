@@ -187,6 +187,7 @@ _G.FTP2_TimeoutLimit = 120
 _G.FTP2_HistoryWindow = 0.35
 _G.FTP2_ClearTimeout = 10
 _G.FTP2_FlySpeed = 300
+_G.FTP2_HeightOffset = 30
 _G.FTP2_CurrentTarget = nil
 _G.FTP2_TargetLockTime = 0
 _G.TargetHistory = {}
@@ -358,7 +359,7 @@ local ConfigKeys = {
 	--選擇隊伍
 	"SelectTeam",
 	--自動列賞
-    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
+    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_HeightOffset", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
 	--自瞄
 	"SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
     --畫面鎖定
@@ -2152,7 +2153,7 @@ local function FlyToTargetLogic2(plr)
     end
 
     local rawTargetPos = GetPredictedPosition2(plr) or tgHRP.Position
-    local HeightOffset = 15
+    local HeightOffset = _G.FTP2_HeightOffset or 30
     local targetPos = rawTargetPos + Vector3.new(0, HeightOffset, 0)
 
     local dir = targetPos - myHRP.Position
@@ -2233,6 +2234,36 @@ local function FleeUpLogic()
     end)
 end
 
+-- 偵測坐到座位時強制起身 (每個動作各自 pcall，避免單一錯誤中斷整個流程)
+local function ForceStandUp()
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    local myHum = myChar:FindFirstChildOfClass("Humanoid")
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHum or myHum.Health <= 0 then return end
+
+    if myHum.Sit then
+        myHum.Sit = false
+        pcall(function() myHum.Jump = true end)
+        pcall(function() myHum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        pcall(function() myHum:ChangeState(Enum.HumanoidStateType.Physics) end)
+    end
+
+    -- 破壞與座位之間的焊接，防止被綁住
+    if myHRP then
+        for _, child in ipairs(myHRP:GetChildren()) do
+            if child:IsA("Weld") then
+                pcall(function() child:Destroy() end)
+            elseif child:IsA("Motor6D") then
+                local n = string.lower(child.Name)
+                if n:find("seat") or n:find("sit") or n:find("vehicle") then
+                    pcall(function() child:Destroy() end)
+                end
+            end
+        end
+    end
+end
+
 local function StartFTPFlight2()
     if _G.FTP2_FlightConn ~= nil then return end 
 
@@ -2286,6 +2317,9 @@ local function StartFTPFlight2()
         local currentChar = LocalPlayer.Character
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
 
+        -- 坐到座位時強制起身
+        ForceStandUp()
+
         if _G.AutoFlee and currentHum and currentHum.Health > 0 then
             local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
             local fleeHP = _G.AutoFleeHP or 30
@@ -2311,20 +2345,6 @@ local function StartFTPFlight2()
             if myChar then
                 local myHum = myChar:FindFirstChildOfClass("Humanoid")
                 local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-
-                if myHum and myHum.Sit then
-                    myHum.Sit = false
-                    myHum.Jump = true
-                    myHum:ChangeState(Enum.HumanoidStateType.GettingUp)
-
-                    if myHRP then
-                        for _, child in ipairs(myHRP:GetChildren()) do
-                            if child:IsA("Weld") and (child.Name == "SeatWeld" or child.Name:find("Seat")) then
-                                child:Destroy()
-                            end
-                        end
-                    end
-                end
 
                 if myChar ~= cachedChar or not cachedParts or now - lastNoclipScan >= 1 then
                     lastNoclipScan = now
