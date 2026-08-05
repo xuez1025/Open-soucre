@@ -5142,8 +5142,8 @@ Tabs["自動"]:Toggle({
 })
 
 Tabs["自動"]:Toggle({
-    Title = "自動順步",
-    Desc = "自動順步至最近玩家(龍族)",
+    Title = "自動順步(龍族)",
+    Desc = "自動順步至最近玩家",
     Value = _G.AutoSoru,
     Callback = function(state)
         _G.AutoSoru = state
