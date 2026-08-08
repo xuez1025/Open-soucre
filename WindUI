@@ -1,4 +1,6 @@
+--------------------------
 -- WindUI 載入
+--------------------------
 local WindUI = loadstring(request({
     Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 }).Body)()
@@ -38,69 +40,28 @@ local Window = WindUI:CreateWindow({
     }
 })
 
--- ==================== 變數區域 ====================
-_G.CurrentKey = "G"
-_G.KeyDisabled = false
+--------------------------
+--功能變數
+--------------------------
+--快捷鍵
+local CurrentKey = "G"
+local KeyDisabled = false
 
-_G.TestToggleValue = false
-_G.TestSliderValue = 50
-_G.TestDropdownValue = "選項1"
-
+--自動執行
 _G.AutoExecute = false
 local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()'
 
--- ==================== 建立分頁 ====================
+--------------------------
+-- 建立分頁
+--------------------------
 local Tabs = {
-    Components = Window:Tab({ Title = "元件測試", Icon = "box" }),
-    Settings   = Window:Tab({ Title = "設定", Icon = "settings" })
+    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
--- ==================== 元件測試分頁 ====================
-Tabs.Components:Section({ Title = "全域變數元件測試 (示範)" })
-
-Tabs.Components:Button({
-    Title = "測試按鈕",
-    Callback = function()
-        WindUI:Notify({ 
-            Title = "系統提示", 
-            Content = "當前綁定的快捷鍵為: " .. _G.CurrentKey, 
-            Duration = 3 
-        })
-    end
-})
-
-Tabs.Components:Toggle({
-    Title = "測試開關",
-    Value = _G.TestToggleValue,
-    Callback = function(state)
-        _G.TestToggleValue = state
-    end
-})
-
-Tabs.Components:Slider({
-    Title = "測試滑塊",
-    Step = 1,
-    Value = {
-        Min = 0,
-        Max = 100,
-        Default = _G.TestSliderValue
-    },
-    Callback = function(value)
-        _G.TestSliderValue = value
-    end
-})
-
-Tabs.Components:Dropdown({
-    Title = "測試下拉選單",
-    Value = _G.TestDropdownValue,
-    Values = {"選項1", "選項2", "選項3"},
-    Callback = function(value)
-        _G.TestDropdownValue = value
-    end
-})
-
--- ==================== 設定分頁 ====================
-Tabs.Settings:Section({ Title = "系統設定" })
+--------------------------
+--元件
+--------------------------
+Tabs.Settings:Section({ Title = "設定" })
 
 Tabs.Settings:Toggle({
     Title = "換服後自動執行",
@@ -126,16 +87,14 @@ Tabs.Settings:Toggle({
     end
 })
 
-Tabs.Settings:Section({ Title = "快捷鍵設定" })
-
 Tabs.Settings:Keybind({ 
     Title = "快捷鍵", 
     Desc = "可更改", 
-    Value = _G.CurrentKey,
+    Value = CurrentKey,
     Callback = function(v)
-        _G.CurrentKey = v
+        CurrentKey = v
         
-        if not _G.KeyDisabled then
+        if not KeyDisabled then
             Window:SetToggleKey(Enum.KeyCode[v])
         end
     end
@@ -144,14 +103,14 @@ Tabs.Settings:Keybind({
 Tabs.Settings:Toggle({
     Title = "停用快捷鍵",
     Desc = "開啟後將禁用快捷鍵",
-    Value = _G.KeyDisabled,
+    Value = false,
     Callback = function(state)
-        _G.KeyDisabled = state
+        KeyDisabled = state
         
         if state then
             Window:SetToggleKey(nil)
         else
-            Window:SetToggleKey(Enum.KeyCode[_G.CurrentKey])
+            Window:SetToggleKey(Enum.KeyCode[CurrentKey])
         end
     end
 })
