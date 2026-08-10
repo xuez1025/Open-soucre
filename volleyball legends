@@ -1,0 +1,989 @@
+-- ============================================================
+-- Xu-Hub Script
+-- 結構：Services → 核心邏輯模組 → UI
+-- ============================================================
+
+-- ==========================================
+-- [SECTION 1] Services & 全域變數
+-- ==========================================
+local WindUI = loadstring(request({
+    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+}).Body)()
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- UI 快捷鍵狀態
+local CurrentKey  = "G"
+local KeyDisabled = false
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- 儲存狀態與數值的變數
+local isJumpEnabled = false
+local customJumpValue = 10   -- 對應 Slider 的預設值
+local defaultJumpValue = nil -- 用來記錄玩家最初的原始高度
+local heartbeatConnection = nil -- 用來儲存循環監聽的連線
+
+-- 取得並記錄原始跳躍高度的函數
+local function getAndRecordDefaultJump(humanoid)
+    if not defaultJumpValue then
+        if humanoid.UseJumpPower then
+            defaultJumpValue = humanoid.JumpPower
+        else
+            defaultJumpValue = humanoid.JumpHeight
+        end
+    end
+end
+
+-- 更新玩家跳躍高度的核心函數
+local function updateJump()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    -- 確保有紀錄到初始值
+    getAndRecordDefaultJump(humanoid)
+
+    -- 根據 Toggle 狀態決定要給予自訂值還是恢復初始值
+    local targetValue = isJumpEnabled and customJumpValue or defaultJumpValue
+
+    if humanoid.UseJumpPower then
+        humanoid.JumpPower = targetValue
+    else
+        humanoid.JumpHeight = targetValue
+    end
+end
+
+-- 啟動或停止不斷刷新的循環
+local function toggleLoop(enable)
+    if enable then
+        if not heartbeatConnection then
+            heartbeatConnection = RunService.Heartbeat:Connect(function()
+                updateJump()
+            end)
+        end
+    else
+        if heartbeatConnection then
+            heartbeatConnection:Disconnect()
+            heartbeatConnection = nil
+        end
+        updateJump() -- 關閉時再執行一次，確保恢復成預設值
+    end
+end
+
+-- 監聽角色重生
+LocalPlayer.CharacterAdded:Connect(function(character)
+    defaultJumpValue = nil -- 重置初始值紀錄
+    local humanoid = character:WaitForChild("Humanoid")
+    task.wait(0.5) -- 稍微等待確保 Humanoid 完全載入
+    
+    -- 如果原本就是開啟狀態，重生後自動繼續循環
+    if isJumpEnabled then
+        updateJump()
+    end
+end)
+
+-- [[ 核心服務 ]]
+local Camera = workspace.CurrentCamera
+
+-- [[ ESP 變數與清理機制 ]]
+local espEnabled = false
+local linesPool  = {}
+
+local function removePlayerLine(player)
+    if linesPool[player] then
+        linesPool[player]:Remove()
+        linesPool[player] = nil
+    end
+end
+
+local function createLine(isLocalPlayer)
+    local line           = Drawing.new("Line")
+    line.Thickness       = 2.5
+    line.Transparency    = 1
+    line.Visible         = false
+    line.Color           = isLocalPlayer
+                            and Color3.fromRGB(50, 255, 50)   -- 自己：綠色
+                            or  Color3.fromRGB(255, 50, 50)   -- 他人：紅色
+    return line
+end
+
+RunService.RenderStepped:Connect(function()
+    if not espEnabled then return end
+    for _, player in pairs(Players:GetPlayers()) do
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+            local rootPart = char.HumanoidRootPart
+            local head     = char.Head
+            if not linesPool[player] then
+                linesPool[player] = createLine(player == LocalPlayer)
+            end
+            local line            = linesPool[player]
+            local lineStartPos    = head.Position + Vector3.new(0, 1.5, 0)
+            local bodyLook        = rootPart.CFrame.LookVector
+            local horizontalLook  = Vector3.new(bodyLook.X, 0, bodyLook.Z).Unit
+            local lineEndPos      = lineStartPos + (horizontalLook * 15)
+            local startSP, startV = Camera:WorldToViewportPoint(lineStartPos)
+            local endSP,   endV   = Camera:WorldToViewportPoint(lineEndPos)
+            if startV and endV
+                and char:FindFirstChild("Humanoid")
+                and char.Humanoid.Health > 0 then
+                line.From    = Vector2.new(startSP.X, startSP.Y)
+                line.To      = Vector2.new(endSP.X,   endSP.Y)
+                line.Visible = true
+            else
+                line.Visible = false
+            end
+        else
+            if linesPool[player] then
+                linesPool[player].Visible = false
+            end
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(removePlayerLine)
+
+-- ============================================================
+-- [SECTION 1.5] 核心模組：動態碰撞箱 (Hitbox)
+-- ============================================================
+local Hitbox = (function()
+    local enabled      = false
+    local currentSize  = 3.0 -- 統一調整的尺寸
+    local lastUpdate   = 0
+    local interval     = 5
+    local updateThread = nil
+
+    -- 移除 getRandomSize 函數，改為直接對球體套用 currentSize
+    local function applyToBall(model)
+        if not model:IsA("Model") then return end
+        if not model.Name:match("^CLIENT_BALL_%d+$") then return end
+        local basePart
+        for _, child in ipairs(model:GetDescendants()) do
+            if child:IsA("BasePart") then basePart = child; break end
+        end
+        if not basePart then return end
+        local hitbox = model:FindFirstChild("DYNAMIC_HITBOX")
+        if not hitbox then
+            hitbox = Instance.new("Part")
+            hitbox.Name         = "DYNAMIC_HITBOX"
+            hitbox.Shape        = Enum.PartType.Ball
+            hitbox.Size         = Vector3.new(2, 2, 2) * currentSize
+            hitbox.CFrame       = basePart.CFrame
+            hitbox.Anchored     = true
+            hitbox.CanCollide   = false
+            hitbox.Transparency = 0.9
+            hitbox.Material     = Enum.Material.Neon
+            hitbox.Color        = Color3.fromRGB(255, 0, 0)
+            hitbox.Parent       = model
+        else
+            hitbox.Size = Vector3.new(2, 2, 2) * currentSize
+        end
+    end
+
+    local function updateAll()
+        if not enabled then return end
+        -- 取消隨機，直接拿目前的統一尺寸更新所有球體
+        for _, model in ipairs(workspace:GetChildren()) do
+            if model:IsA("Model") and model.Name:match("^CLIENT_BALL_%d+$") then
+                applyToBall(model)
+            end
+        end
+    end
+
+    local function cleanup()
+        for _, model in ipairs(workspace:GetChildren()) do
+            if model:IsA("Model") and model.Name:match("^CLIENT_BALL_%d+$") then
+                local hitbox = model:FindFirstChild("DYNAMIC_HITBOX")
+                if hitbox then hitbox:Destroy() end
+            end
+        end
+        if updateThread then
+            updateThread:Disconnect()
+            updateThread = nil
+        end
+    end
+
+    local function startAutoUpdate()
+        if updateThread then updateThread:Disconnect() end
+        updateThread = RunService.Heartbeat:Connect(function()
+            if tick() - lastUpdate >= interval then
+                updateAll()
+                lastUpdate = tick()
+            end
+        end)
+    end
+
+    -- 監聽新球體加入場景
+    workspace.ChildAdded:Connect(function(child)
+        if child:IsA("Model") and child.Name:match("^CLIENT_BALL_%d+$") then
+            task.wait(0.1)
+            if enabled then applyToBall(child) end
+        end
+    end)
+
+    return {
+        setEnabled = function(state)
+            enabled = state
+            if state then
+                startAutoUpdate()
+                updateAll()
+            else
+                cleanup()
+            end
+        end,
+        setSize = function(v) -- 改為單一設定尺寸的介面
+            currentSize = v
+            if enabled then updateAll() end
+        end,
+    }
+end)()
+
+-- ============================================================
+-- [SECTION 2] 核心模組：速度控制
+-- ============================================================
+local Speed = (function()
+    local initialChar     = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local initialHumanoid = initialChar:WaitForChild("Humanoid")
+    local DefaultSpeed    = initialHumanoid.WalkSpeed
+
+    local enabled     = false
+    local targetSpeed = DefaultSpeed
+    local connection  = nil
+
+    local function applySpeed()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = targetSpeed
+        end
+    end
+    local function restoreSpeed()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = DefaultSpeed
+        end
+    end
+    local function setEnabled(state)
+        enabled = state
+        if connection then connection:Disconnect(); connection = nil end
+        if enabled then
+            connection = RunService.Heartbeat:Connect(applySpeed)
+        else
+            restoreSpeed()
+        end
+    end
+    local function setTarget(value) targetSpeed = value end
+
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        local hum = char:WaitForChild("Humanoid")
+        if enabled then hum.WalkSpeed = targetSpeed
+        else DefaultSpeed = hum.WalkSpeed end
+    end)
+
+    return {
+        setEnabled = setEnabled,
+        setTarget  = setTarget,
+        getDefault = function() return DefaultSpeed end,
+    }
+end)()
+
+-- ============================================================
+-- [SECTION 3] 核心模組：跳躍轉向 (Shift Lock)
+-- ============================================================
+local ShiftLock = (function()
+    local enabled    = false
+    local connection = nil
+
+    local function setEnabled(state)
+        enabled = state
+        if connection then connection:Disconnect(); connection = nil end
+        if enabled then
+            connection = RunService.RenderStepped:Connect(function()
+                local char   = LocalPlayer.Character
+                local camera = workspace.CurrentCamera
+                if not (char
+                    and char:FindFirstChild("HumanoidRootPart")
+                    and char:FindFirstChild("Humanoid")) then return end
+                local hrp      = char.HumanoidRootPart
+                local humanoid = char.Humanoid
+                if humanoid.FloorMaterial == Enum.Material.Air then
+                    humanoid.AutoRotate = false
+                    local look = camera.CFrame.LookVector
+                    local dir  = Vector3.new(look.X, 0, look.Z).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + dir)
+                else
+                    humanoid.AutoRotate = true
+                end
+            end)
+        else
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("Humanoid") then
+                char.Humanoid.AutoRotate = true
+            end
+        end
+    end
+
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        local hum = char:WaitForChild("Humanoid")
+        if enabled then hum.AutoRotate = true end
+    end)
+
+    return { setEnabled = setEnabled }
+end)()
+
+-- ============================================================
+-- [SECTION 4] 核心模組：軌跡預測 & 射線（終極效能穩定版）
+-- ============================================================
+local Trajectory = (function()
+
+    -- 物理模擬常數
+    local SUB_STEPS          = 3        -- 稍微調低子步長，在精準度與效能間取得完美平衡
+    local BASE_STEP          = 0.016
+    local DRAG_COEFF         = 0.0006
+    local BOUNCE_RESTITUTION = 0.55
+    local BOUNCE_FRICTION    = 0.82
+    local MAX_BOUNCES        = 3
+    local POST_BOUNCE_POINTS = 30       -- 減少反彈後的點數，縮短迴圈
+    local MAX_POINTS         = 400       -- 將最大點數從 500 降至 400（視覺上長度幾乎無異，但效能大幅提升）
+    local MIN_SPEED          = 3.0
+    
+    -- 防震與冷卻（防卡頓核心）
+    local RECOMPUTE_COOLDOWN = 0.35     -- 提高冷卻至 0.35 秒，大幅降低物理射線計算頻率
+    local DISTANCE_THRESHOLD = 4.5      -- 球體移動超過 4.5 格才刷新軌跡
+    local VEL_SMOOTH_ALPHA   = 0.20     -- 線性插值濾波
+
+    local MAX_PLAYERS        = 12
+
+    local featureTrajectory = false
+    local featureLocalBeam  = false
+    local featureOtherBeam  = false
+    local scriptRunning     = true
+
+    -- 初始化物件池
+    local folder = Instance.new("Folder")
+    folder.Name   = "TrajectoryPool"
+    folder.Parent = workspace
+
+    local pool = table.create(MAX_POINTS)
+    local hiddenCFrame = CFrame.new(0, 10000, 0) -- 用於快速隱藏 Part 的座標
+
+    for i = 1, MAX_POINTS do
+        local p            = Instance.new("Part")
+        p.Shape            = Enum.PartType.Ball
+        p.Size             = Vector3.new(0.3, 0.3, 0.3)
+        p.Color            = Color3.fromRGB(0, 255, 128)
+        p.Material         = Enum.Material.Neon -- 利用 Neon 原生發光，完全捨棄極度吃效能的 Highlight
+        p.Anchored         = true
+        p.CanCollide       = false
+        p.CanQuery         = false
+        p.CanTouch         = false
+        p.CastShadow       = false
+        p.Transparency     = 0.1
+        p.CFrame           = hiddenCFrame
+        p.Parent           = folder
+        pool[i]            = p
+    end
+
+    local landingAttachment      = Instance.new("Attachment")
+    landingAttachment.Name       = "RayAttachmentLanding"
+    landingAttachment.Parent     = folder
+
+    local localStartAtt          = Instance.new("Attachment")
+    localStartAtt.Name           = "LocalPlayerStartAttachment"
+    localStartAtt.Parent         = folder
+
+    local localBeam              = Instance.new("Beam")
+    localBeam.Name               = "LocalPlayerPredictionBeam"
+    localBeam.Attachment0        = localStartAtt
+    localBeam.Attachment1        = landingAttachment
+    localBeam.Width0             = 0.16
+    localBeam.Width1             = 0.16
+    localBeam.Color              = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+    localBeam.FaceCamera         = true
+    localBeam.LightEmission      = 1
+    localBeam.LightInfluence     = 0
+    localBeam.Enabled            = false
+    localBeam.Parent             = folder
+
+    local otherBeams = table.create(MAX_PLAYERS)
+    for i = 1, MAX_PLAYERS do
+        local att        = Instance.new("Attachment")
+        att.Name         = "OtherPlayerStartAttachment_" .. i
+        att.Parent       = folder
+        local beam       = Instance.new("Beam")
+        beam.Name        = "OtherPlayerBeam_" .. i
+        beam.Attachment0 = att
+        beam.Attachment1 = landingAttachment
+        beam.Width0      = 0.08
+        beam.Width1      = 0.08
+        beam.Color       = ColorSequence.new(Color3.fromRGB(255, 50, 50))
+        beam.FaceCamera  = true
+        beam.LightEmission  = 0.8
+        beam.LightInfluence = 0
+        beam.Enabled        = false
+        beam.Parent         = folder
+        otherBeams[i] = { beam = beam, startAtt = att }
+    end
+
+    local cachedBall    = nil
+    local heartbeatConn = nil
+
+    local function extractBasePart(obj)
+        if obj:IsA("BasePart") then return obj end
+        for _, child in ipairs(obj:GetDescendants()) do
+            if child:IsA("BasePart") then return child end
+        end
+        return nil
+    end
+
+    local function isBallObject(obj)
+        return string.match(obj.Name, "^CLIENT_BALL_") ~= nil
+    end
+
+    local function pauseHeartbeat()
+        if heartbeatConn then
+            heartbeatConn:Disconnect()
+            heartbeatConn = nil
+        end
+    end
+
+    local function getBall()
+        if cachedBall and cachedBall:IsDescendantOf(workspace) then return cachedBall end
+        cachedBall = nil
+        return nil
+    end
+
+    local function getGrounds()
+        local list = {}
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.CanCollide then
+                local n = string.lower(obj.Name)
+                if string.find(n,"floor") or string.find(n,"ground") or string.find(n,"court") then
+                    table.insert(list, obj)
+                end
+            end
+        end
+        if #list == 0 then
+            local bp = workspace:FindFirstChildOfClass("SpawnLocation") or workspace:FindFirstChild("Baseplate")
+            if bp then table.insert(list, bp) end
+        end
+        return list
+    end
+    local targetGrounds = getGrounds()
+
+    local function getHeadPos(player)
+        if player.Character then
+            local head = player.Character:FindFirstChild("Head")
+            if head and head:IsA("BasePart") then return head.Position end
+        end
+        return nil
+    end
+
+    local function getBallRadius(ball)
+        if ball and ball:IsA("BasePart") then
+            return math.min(ball.Size.X, ball.Size.Y, ball.Size.Z) * 0.5
+        end
+        return 0.4
+    end
+
+    local function clearParts()
+        -- 大量移動至高空隱藏，比修改 Transparency 快數十倍
+        local cframes = table.create(MAX_POINTS, hiddenCFrame)
+        workspace:BulkMoveTo(pool, cframes, Enum.BulkMoveMode.FireCFrameChanged)
+    end
+
+    local function clearAll()
+        clearParts()
+        localBeam.Enabled = false
+        for _, bd in ipairs(otherBeams) do bd.beam.Enabled = false end
+    end
+
+    -- 渲染射線（修正多玩家卡頓）
+    local function updateBeams(landingPos)
+        if not landingPos then 
+            localBeam.Enabled = false
+            for _, bd in ipairs(otherBeams) do bd.beam.Enabled = false end
+            return 
+        end
+        
+        landingAttachment.Position = landingPos
+
+        if featureLocalBeam then
+            local hp = getHeadPos(Players.LocalPlayer)
+            if hp then 
+                localStartAtt.Position = hp
+                localBeam.Enabled = true
+            else 
+                localBeam.Enabled = false 
+            end
+        else
+            localBeam.Enabled = false
+        end
+
+        if featureOtherBeam then
+            local players = Players:GetPlayers()
+            local otherIdx = 1
+            for i = 1, #players do
+                local p = players[i]
+                if p ~= Players.LocalPlayer and otherIdx <= MAX_PLAYERS then
+                    local bd = otherBeams[otherIdx]
+                    local hp = getHeadPos(p)
+                    if hp then
+                        bd.startAtt.Position = hp
+                        bd.beam.Enabled = true
+                    else
+                        bd.beam.Enabled = false
+                    end
+                    otherIdx = otherIdx + 1
+                end
+            end
+            -- 關閉多餘的 Beam
+            for i = otherIdx, MAX_PLAYERS do
+                otherBeams[i].beam.Enabled = false
+            end
+        else
+            for i = 1, MAX_PLAYERS do otherBeams[i].beam.Enabled = false end
+        end
+    end
+
+    local function physicsStep(pos, vel, dt, gravity, dragCoeff)
+        local speed   = vel.Magnitude
+        local dragAcc = Vector3.zero
+        if speed > 0.01 then
+            dragAcc = -vel.Unit * (dragCoeff * speed * speed)
+        end
+        local newVel = vel + (Vector3.new(0, -gravity, 0) + dragAcc) * dt
+        local newPos = pos + newVel * dt
+        return newPos, newVel
+    end
+
+    -- 核心模擬：高度優化演算法
+    local function simulate(startPos, startVel, ballRadius, gravity, rayParams)
+        local segments        = {}
+        local landingPositions = {}
+        local bounceCount     = 0
+
+        local simPos  = startPos
+        local simVel  = startVel
+        local subDt   = BASE_STEP / SUB_STEPS
+        local speed   = startVel.Magnitude
+
+        local stepScale = 1
+        if speed > 60 then stepScale = 0.45
+        elseif speed > 35 then stepScale = 0.65
+        elseif speed > 20 then stepScale = 0.85 end
+        subDt = subDt * stepScale
+
+        local postBounceCount = 0
+        local inPostBounce    = false
+        local pointIdx        = 0
+
+        local RADIUS_OFFSET = math.max(ballRadius, 0.15)
+
+        for _ = 1, MAX_POINTS * SUB_STEPS do
+            local subPos, subVel = simPos, simVel
+            local hit = nil
+            for _ = 1, SUB_STEPS do
+                local nextPos, nextVel = physicsStep(subPos, subVel, subDt, gravity, DRAG_COEFF)
+                local delta   = nextPos - subPos
+                local castFrom = subPos - Vector3.new(0, RADIUS_OFFSET, 0)
+                hit = workspace:Raycast(castFrom, delta + Vector3.new(0, -RADIUS_OFFSET, 0), rayParams)
+                if hit then
+                    nextPos = hit.Position + hit.Normal * RADIUS_OFFSET
+                    local normalVel    = hit.Normal  * subVel:Dot(hit.Normal)
+                    local tangentVel   = subVel - normalVel
+                    nextVel = tangentVel * BOUNCE_FRICTION - normalVel * BOUNCE_RESTITUTION
+                    subPos = nextPos; subVel = nextVel
+                    break
+                end
+                subPos = nextPos; subVel = nextVel
+            end
+
+            simPos = subPos; simVel = subVel
+
+            if hit and bounceCount < MAX_BOUNCES then
+                bounceCount = bounceCount + 1
+                table.insert(landingPositions, hit.Position)
+
+                pointIdx = pointIdx + 1
+                if pointIdx <= MAX_POINTS then
+                    segments[pointIdx] = {
+                        pos   = hit.Position + Vector3.new(0, 0.05, 0),
+                        color = bounceCount == 1 and Color3.fromRGB(255, 30, 30) or Color3.fromRGB(255, 140, 0),
+                        size  = Vector3.new(1.2, 1.2, 1.2) -- 加大落點標記，不使用 Cylinder 以免計算旋轉
+                    }
+                end
+
+                inPostBounce    = true
+                postBounceCount = 0
+
+                if simVel.Magnitude < MIN_SPEED then break end
+            else
+                pointIdx = pointIdx + 1
+                if pointIdx > MAX_POINTS then break end
+
+                local scaleFactor = math.clamp(0.32 - speed * 0.0005, 0.18, 0.32)
+                local col
+
+                if inPostBounce then
+                    postBounceCount = postBounceCount + 1
+                    if postBounceCount > POST_BOUNCE_POINTS then break end
+                    col = Color3.fromRGB(255, 235, 50)
+                else
+                    col = Color3.fromRGB(0, 255, 128)
+                end
+
+                segments[pointIdx] = {
+                    pos   = simPos,
+                    color = col,
+                    size  = Vector3.new(scaleFactor, scaleFactor, scaleFactor)
+                }
+            end
+
+            if simVel.Magnitude < MIN_SPEED then break end
+        end
+
+        return segments, landingPositions
+    end
+
+    -- 快照暫存
+    local cachedSegments      = {}
+    local cachedLandingPos    = nil
+    local lastSimulateBallPos = Vector3.zero
+    local lastSimulateTime    = 0
+
+    local lastBallPos         = nil
+    local smoothedVel         = Vector3.new(0, 0, 0)
+    
+    -- 專門存放 CFrame 陣列給 BulkMoveTo 使用
+    local cframeArray = table.create(MAX_POINTS, hiddenCFrame)
+
+    -- 【終極優化渲染器】：使用 BulkMoveTo 實現 0 卡頓
+    local function drawCached()
+        if featureTrajectory then
+            local count = #cachedSegments
+            
+            for i = 1, MAX_POINTS do
+                local data = cachedSegments[i]
+                local p = pool[i]
+                if data and i <= count then
+                    cframeArray[i] = CFrame.new(data.pos)
+                    p.Color = data.color
+                    p.Size = data.size
+                else
+                    cframeArray[i] = hiddenCFrame
+                end
+            end
+            -- 核心底層優化：打包一次性移動所有軌跡點
+            workspace:BulkMoveTo(pool, cframeArray, Enum.BulkMoveMode.FireCFrameChanged)
+        else
+            clearParts()
+        end
+        updateBeams(cachedLandingPos)
+    end
+
+    local function startHeartbeat()
+        if heartbeatConn then return end
+        heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+            if not (featureTrajectory or featureLocalBeam or featureOtherBeam) then return end
+
+            local ball = getBall()
+            if not ball then
+                clearAll()
+                lastBallPos = nil
+                smoothedVel = Vector3.new(0, 0, 0)
+                cachedLandingPos = nil
+                table.clear(cachedSegments)
+                pauseHeartbeat()
+                return
+            end
+
+            local pos    = ball.Position
+            local rawVel = ball.AssemblyLinearVelocity
+
+            if lastBallPos and dt > 0 then
+                local frameDelta = (pos - lastBallPos) / dt
+                local blendFactor = (frameDelta - rawVel).Magnitude > 8 and 0.65 or VEL_SMOOTH_ALPHA
+                smoothedVel = smoothedVel:Lerp(rawVel:Lerp(frameDelta, blendFactor), 0.5)
+            else
+                smoothedVel = rawVel
+            end
+            lastBallPos = pos
+
+            local speed = smoothedVel.Magnitude
+
+            if speed < MIN_SPEED then
+                if #cachedSegments > 0 then
+                    drawCached()
+                else
+                    clearAll()
+                    cachedLandingPos = nil
+                end
+                return
+            end
+
+            local now = os.clock()
+            local timePassed = now - lastSimulateTime
+            local distMoved  = (pos - lastSimulateBallPos).Magnitude
+
+            -- 如果球沒跑遠，或者冷卻時間沒到，直接跳過拋物線計算，沿用上一次的軌跡快照
+            if timePassed >= RECOMPUTE_COOLDOWN or distMoved >= DISTANCE_THRESHOLD or not cachedLandingPos then
+                local gravity    = workspace.Gravity
+                local ballRadius = getBallRadius(ball)
+
+                local rayParams  = RaycastParams.new()
+                rayParams.FilterType               = Enum.RaycastFilterType.Include
+                rayParams.FilterDescendantsInstances = targetGrounds
+
+                local segs, landings = simulate(pos, smoothedVel, ballRadius, gravity, rayParams)
+                
+                cachedSegments      = segs
+                cachedLandingPos    = landings[1]
+                lastSimulateBallPos = pos
+                lastSimulateTime    = now
+            end
+
+            -- 每幀渲染：僅同步位置（不重新計算物理），此時極度流暢
+            drawCached()
+        end)
+    end
+
+    -- 事件接線
+    workspace.DescendantAdded:Connect(function(obj)
+        if not isBallObject(obj) then return end
+        task.defer(function()
+            if cachedBall then return end
+            local bp = extractBasePart(obj)
+            if bp then
+                cachedBall = bp
+                if featureTrajectory or featureLocalBeam or featureOtherBeam then
+                    startHeartbeat()
+                end
+            end
+        end)
+    end)
+
+    workspace.DescendantRemoving:Connect(function(obj)
+        if not isBallObject(obj) then return end
+        if cachedBall == obj or (cachedBall and cachedBall:IsDescendantOf(obj)) then
+            cachedBall = nil
+            pauseHeartbeat()
+            clearAll()
+            table.clear(cachedSegments)
+            cachedLandingPos = nil
+            lastBallPos = nil
+            smoothedVel = Vector3.new(0, 0, 0)
+        end
+    end)
+
+    task.defer(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isBallObject(obj) then
+                local bp = extractBasePart(obj)
+                if bp then cachedBall = bp; startHeartbeat(); break end
+            end
+        end
+    end)
+
+    task.spawn(function()
+        while scriptRunning do
+            task.wait(5)
+            if featureTrajectory or featureLocalBeam or featureOtherBeam then
+                targetGrounds = getGrounds()
+            end
+        end
+    end)
+
+    local function anyFeatureOn()
+        return featureTrajectory or featureLocalBeam or featureOtherBeam
+    end
+
+    return {
+        setTrajectory = function(v)
+            featureTrajectory = v
+            if not v then clearParts() end
+            if anyFeatureOn() and cachedBall then startHeartbeat()
+            elseif not anyFeatureOn() then pauseHeartbeat(); clearAll() end
+        end,
+        setLocalBeam = function(v)
+            featureLocalBeam = v
+            if not v then localBeam.Enabled = false end
+            if anyFeatureOn() and cachedBall then startHeartbeat()
+            elseif not anyFeatureOn() then pauseHeartbeat(); clearAll() end
+        end,
+        setOtherBeam = function(v)
+            featureOtherBeam = v
+            if not v then for i = 1, MAX_PLAYERS do otherBeams[i].beam.Enabled = false end end
+            if anyFeatureOn() and cachedBall then startHeartbeat()
+            elseif not anyFeatureOn() then pauseHeartbeat(); clearAll() end
+        end,
+        stop = function()
+            scriptRunning = false
+            pauseHeartbeat()
+            clearAll()
+        end,
+    }
+end)()
+
+-- ============================================================
+-- [SECTION 5] UI
+-- ============================================================
+local Window = WindUI:CreateWindow({
+    Title         = "Xu-hub",
+    Icon          = "user-check",
+    Author        = "by xuez1025",
+    Folder        = "Xu-Hub",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            WindUI:Notify({
+                Title    = LocalPlayer.Name,
+                Content  = "ID: " .. LocalPlayer.UserId,
+                Duration = 3
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Xu-hub",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        OnlyIcon        = false,
+        Draggable       = true,
+        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+    }
+})
+
+local Tabs = {
+    Main     = Window:Tab({ Title = "功能", Icon = "ellipsis" }),
+    Settings = Window:Tab({ Title = "設定", Icon = "settings" }),
+}
+
+-- ── 功能分頁 ──────────────────────────────────────────────
+Tabs.Main:Section({ Title = "角色控制" })
+
+Tabs.Main:Toggle({
+    Title    = "跳躍轉向",
+    Value    = false,
+    Callback = function(v) ShiftLock.setEnabled(v) end,
+})
+
+Tabs.Main:Toggle({
+    Title    = "修改移動速度",
+    Value    = false,
+    Callback = function(v) Speed.setEnabled(v) end,
+})
+
+Tabs.Main:Slider({
+    Title    = "調整移動速度",
+    Desc     = "改變角色速度",
+    Value    = { Min = 16, Max = 30, Default = math.clamp(Speed.getDefault(), 16, 30) },
+    Callback = function(v) Speed.setTarget(v) end,
+})
+
+Tabs.Main:Toggle({
+    Title = "修改跳躍高度",
+    Value = false,
+    Callback = function(state)
+        isJumpEnabled = state
+        toggleLoop(state) -- 根據開關狀態決定是否開啟無限刷新
+    end
+})
+
+Tabs.Main:Slider({
+    Title = "調整跳躍高度",
+    Desc = "改變角色高度",
+    Value = {
+        Min = 0,
+        Max = 20,
+        Default = 10
+    },
+    Callback = function(value)
+        customJumpValue = value
+        -- 如果功能開著，數值會透過 Heartbeat 自動更新，這裡不強制呼叫也行
+    end
+})
+
+Tabs.Main:Section({ Title = "軌跡 & 射線" })
+
+Tabs.Main:Toggle({
+    Title    = "排球軌跡",
+    Desc     = "預測排球最後的落地點",
+    Value    = false,
+    Callback = function(v) Trajectory.setTrajectory(v) end,
+})
+
+Tabs.Main:Toggle({
+    Title    = "瞄準落地點的射線",
+    Value    = false,
+    Callback = function(v) Trajectory.setLocalBeam(v) end,
+})
+
+Tabs.Main:Toggle({
+    Title    = "其他玩家對落地點的射線",
+    Value    = false,
+    Callback = function(v) Trajectory.setOtherBeam(v) end,
+})
+
+Tabs.Main:Toggle({
+    Title    = "顯示玩家的面向",
+    Value    = false,
+    Callback = function(state)
+        espEnabled = state
+        if not espEnabled then
+            for _, line in pairs(linesPool) do
+                line.Visible = false
+            end
+        end
+    end
+})
+
+-- ── 碰撞箱 Section（新增）─────────────────────────────────
+Tabs.Main:Section({ Title = "碰撞箱" })
+
+Tabs.Main:Toggle({
+    Title    = "修改碰撞箱",
+    Value    = false,
+    Callback = function(v) Hitbox.setEnabled(v) end,
+})
+
+Tabs.Main:Slider({
+    Title    = "碰撞箱尺寸",
+    Desc     = "調整碰撞箱的大小",
+    Value    = { Min = 0.5, Max = 15, Default = 3.0 },
+    Callback = function(v) Hitbox.setSize(v) end,
+})
+
+-- ── 設定分頁 ──────────────────────────────────────────────
+Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Keybind({
+    Title    = "快捷鍵",
+    Desc     = "可更改",
+    Value    = CurrentKey,
+    Callback = function(v)
+        CurrentKey = v
+        if not KeyDisabled then Window:SetToggleKey(Enum.KeyCode[v]) end
+    end,
+})
+
+Tabs.Settings:Toggle({
+    Title    = "停用快捷鍵",
+    Desc     = "開啟後將禁用快捷鍵",
+    Value    = false,
+    Callback = function(v)
+        KeyDisabled = v
+        Window:SetToggleKey(v and nil or Enum.KeyCode[CurrentKey])
+    end,
+})
