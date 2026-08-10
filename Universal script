@@ -1,0 +1,2743 @@
+-- ═══════════════════════════════════════════
+--              Xu-Hub v2.0
+--              by xuez1025
+-- ═══════════════════════════════════════════
+
+-- ═══════════ 服務 ═══════════
+local Players            = game:GetService("Players")
+local RunService         = game:GetService("RunService")
+local UserInputService   = game:GetService("UserInputService")
+local TweenService       = game:GetService("TweenService")
+local Workspace          = game:GetService("Workspace")
+local Lighting           = game:GetService("Lighting")
+local HttpService        = game:GetService("HttpService")
+local TeleportService    = game:GetService("TeleportService")
+local StarterGui         = game:GetService("StarterGui")
+local PathfindingService = game:GetService("PathfindingService")
+local SoundService       = game:GetService("SoundService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local TextChatService    = game:GetService("TextChatService")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+
+local LocalPlayer  = Players.LocalPlayer
+local Camera       = Workspace.CurrentCamera
+local Terrain      = Workspace:FindFirstChildWhichIsA("Terrain")
+local PlaceId      = game.PlaceId
+local JobId        = game.JobId
+local mouse        = LocalPlayer:GetMouse()
+local isLegacyChat = TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService
+
+-- ═══════════ 核心狀態變數 ═══════════
+local character, root, humanoid
+local lastDeathPos    = nil
+local CamlockEnabled  = false
+local TargetPlayer    = nil
+local TargetJobID     = ""
+local viewing         = nil
+local viewDied, viewChanged = nil, nil
+local AntiAFK_ENABLED   = false
+local AntiAFK_Connection= nil
+
+-- 速度 / 滑動
+local SLIDE_MAGNITUDE = 100
+local ACCELERATION    = 12
+local DECELERATION    = 18
+local moving          = false
+local moveConn        = nil
+local moveKeys        = { W=false, A=false, S=false, D=false }
+local currentVelocity = Vector3.zero
+local wasMoving       = false
+local slideLocked     = false
+local ACTIVE_SEAT     = nil
+local currentSpeed    = 16
+local isSpeedEnabled  = false
+
+-- 跳躍
+local JumpSettings       = { Enabled=false, JumpPower=50 }
+local flyjumpConnection  = nil
+
+-- 飛行
+local FLYING          = false
+local iyflyspeed      = 10
+local vehicleflyspeed = 10
+local QEfly           = true
+local flyKeyDown, flyKeyUp = nil, nil
+local CFspeed         = 50
+local CFloop          = nil
+
+-- FTP / FTC
+local FTP = { Enabled=false, Speed=100,  Conn=nil, NoclipConn=nil }
+local FTC = { Enabled=false, Speed=350,  Target=nil, Conn=nil, NoclipConn=nil }
+
+-- Noclip
+local noclipConn     = nil
+local NOCLIP_ENABLED = false
+
+-- ESP
+local ESP_SETTINGS = {
+    Master=false, ShowName=false, ShowHealth=false,
+    ShowDistance=false, ShowTracers=false, TeamColor=false,
+    TracerColor=Color3.fromRGB(255,255,255),
+    HighlightColor=Color3.fromRGB(30,30,30)
+}
+local Tracers = {}
+
+-- Hitbox
+local hitboxConns      = {}
+local isHitboxEnabled  = false
+
+-- TP
+local tpEnabled    = false
+local TPConnection = nil
+
+-- 其他
+local HiddenUIs              = {}
+local OriginalCharacterParts = {}
+local CurrentKey             = "G"
+local KeyDisabled            = false
+local isSpectating           = false
+local tweenSpeed             = 1
+local spamming               = false
+local spamspeed              = 0.5
+local loopFriendship         = false
+local loopbringTargets       = {}
+local orbitLoop1, orbitLoop2 = nil, nil
+local stareLoop              = nil
+local danceTrack             = nil
+local antiflingConn          = nil
+local flinging               = false
+local walkflinging           = false
+local antivoidloop           = nil
+local OrgDestroyHeight       = Workspace.FallenPartsDestroyHeight
+local partNameConn           = nil
+local brightLoop             = nil
+local walltpTouch            = nil
+local listentoChar           = nil
+local spinInst               = nil
+local staffwatchjoin         = nil
+local rolemonitorConn        = nil
+local autorejoinConn         = nil
+local replicationLagEnabled  = false
+local currentLagValue        = 0
+local headSitLoop            = nil
+local lightInst              = nil
+local ctrlLockEnabled        = false
+local dayloopConn            = nil
+local nightloopConn          = nil
+local gravEnabled            = false
+local origGrav               = Workspace.Gravity
+local currentGravValue       = 200
+local hipEnabled             = false
+local swimming               = false
+local swimbeat               = nil
+local flingDied, flingLoop   = nil, nil
+local grabtoolsFunc          = nil
+local frameCount             = 0
+local lastUpdate             = tick()
+local currentFps             = 0
+
+-- WindUI
+local WindUI
+
+-- ═══════════════════════════════════════════
+--            工具函數
+-- ═══════════════════════════════════════════
+local function notify(title, content, duration)
+    if WindUI then
+        WindUI:Notify({ Title=title, Content=tostring(content), Duration=duration or 4 })
+    end
+end
+
+local function getRoot(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function r15(plr)
+    local char = plr and plr.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    return hum and hum.RigType == Enum.HumanoidRigType.R15
+end
+
+local function setPlatformStand(state)
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = state end
+end
+
+local function resetCharPhysics()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = true
+            part.Velocity   = Vector3.zero
+        end
+    end
+end
+
+local function breakVelocity()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.Velocity    = Vector3.zero
+            v.RotVelocity = Vector3.zero
+        end
+    end
+end
+
+local function respawn(plr)
+    local char = plr.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
+    char:ClearAllChildren()
+    local newChar = Instance.new("Model")
+    newChar.Parent = Workspace
+    plr.Character  = newChar
+    task.wait()
+    plr.Character  = char
+    newChar:Destroy()
+end
+
+local function chatMessage(str)
+    if not isLegacyChat then
+        pcall(function() TextChatService.TextChannels.RBXGeneral:SendAsync(str) end)
+    else
+        pcall(function() ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(str,"All") end)
+    end
+end
+
+local function toClipboard(txt)
+    if setclipboard then
+        setclipboard(tostring(txt))
+        notify("剪貼簿","已複製：" .. tostring(txt), 3)
+    else
+        notify("剪貼簿","您的執行器不支援剪貼簿功能", 3)
+    end
+end
+
+local function GetPlayerList()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then table.insert(list, plr.Name) end
+    end
+    return list
+end
+
+-- ═══════════════════════════════════════════
+--          外觀複製 / 恢復
+-- ═══════════════════════════════════════════
+local function SaveOriginalAppearance()
+    local char = LocalPlayer.Character
+    if not char or #OriginalCharacterParts > 0 then return end
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants")
+        or v:IsA("ShirtGraphic") or v:IsA("BodyColors") then
+            table.insert(OriginalCharacterParts, v:Clone())
+        end
+    end
+    local face = char:FindFirstChild("Head") and char.Head:FindFirstChild("face")
+    if face and face:IsA("Decal") then
+        table.insert(OriginalCharacterParts, face:Clone())
+    end
+end
+
+local function ClearCurrentAppearance(char)
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants")
+        or v:IsA("ShirtGraphic") or v:IsA("BodyColors") then v:Destroy() end
+    end
+    local face = char:FindFirstChild("Head") and char.Head:FindFirstChild("face")
+    if face then face:Destroy() end
+end
+
+local function ApplyAppearance()
+    if not TargetPlayer then notify("變身","請先選擇玩家",3); return end
+    local char  = LocalPlayer.Character
+    local tchar = TargetPlayer.Character
+    if not char or not tchar then notify("變身","目標角色不存在",3); return end
+    SaveOriginalAppearance()
+    ClearCurrentAppearance(char)
+    for _, v in ipairs(tchar:GetChildren()) do
+        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") then
+            v:Clone().Parent = char
+        end
+    end
+    local tbc = tchar:FindFirstChildWhichIsA("BodyColors")
+    if tbc then
+        local bc = Instance.new("BodyColors")
+        bc.HeadColor3      = tbc.HeadColor3
+        bc.LeftArmColor3   = tbc.LeftArmColor3
+        bc.LeftLegColor3   = tbc.LeftLegColor3
+        bc.RightArmColor3  = tbc.RightArmColor3
+        bc.RightLegColor3  = tbc.RightLegColor3
+        bc.TorsoColor3     = tbc.TorsoColor3
+        bc.Parent          = char
+    end
+    local thead = tchar:FindFirstChild("Head")
+    if thead then
+        local tf   = thead:FindFirstChild("face")
+        local head = char:FindFirstChild("Head")
+        if tf and head then tf:Clone().Parent = head end
+    end
+    notify("變身","已套用 " .. TargetPlayer.Name .. " 的外觀", 3)
+end
+
+local function RestoreOriginalAppearance()
+    local char = LocalPlayer.Character
+    if not char or #OriginalCharacterParts == 0 then
+        notify("恢復外觀","沒有儲存的外觀資料",3); return
+    end
+    ClearCurrentAppearance(char)
+    for _, item in ipairs(OriginalCharacterParts) do
+        local newItem = item:Clone()
+        if newItem:IsA("BodyColors") or newItem:IsA("Accessory")
+        or newItem:IsA("Shirt") or newItem:IsA("Pants") or newItem:IsA("ShirtGraphic") then
+            newItem.Parent = char
+        elseif newItem:IsA("Decal") and newItem.Name == "face" then
+            local head = char:FindFirstChild("Head")
+            if head then newItem.Parent = head end
+        end
+    end
+    notify("恢復外觀","已恢復原本外觀",3)
+end
+
+-- ═══════════════════════════════════════════
+--          UI 隱藏
+-- ═══════════════════════════════════════════
+local function ToggleGameUI(state)
+    local pg = LocalPlayer:WaitForChild("PlayerGui")
+    if state then
+        for _, gui in pairs(pg:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                table.insert(HiddenUIs, gui)
+                gui.Enabled = false
+            end
+        end
+    else
+        for _, gui in pairs(HiddenUIs) do
+            if gui and gui.Parent then gui.Enabled = true end
+        end
+        table.clear(HiddenUIs)
+    end
+end
+
+-- ═══════════════════════════════════════════
+--          觀戰
+-- ═══════════════════════════════════════════
+local function StopSpectate()
+    if viewDied    then viewDied:Disconnect();    viewDied    = nil end
+    if viewChanged then viewChanged:Disconnect(); viewChanged = nil end
+    Camera.CameraSubject = LocalPlayer.Character
+    viewing = nil
+end
+
+local function SpectatePlayer(plr)
+    StopSpectate()
+    if not plr or not plr.Character then return end
+    viewing = plr
+    Camera.CameraSubject = viewing.Character
+    viewDied = plr.CharacterAdded:Connect(function()
+        repeat task.wait() until plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+        Camera.CameraSubject = plr.Character
+    end)
+    viewChanged = Camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+        if viewing and viewing.Character then
+            Camera.CameraSubject = viewing.Character
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--          飛行系統
+-- ═══════════════════════════════════════════
+local function NOFLY()
+    FLYING = false
+    if flyKeyDown then flyKeyDown:Disconnect(); flyKeyDown = nil end
+    if flyKeyUp   then flyKeyUp:Disconnect();   flyKeyUp   = nil end
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
+    pcall(function() Camera.CameraType = Enum.CameraType.Custom end)
+end
+
+local function sFLY(vfly)
+    NOFLY(); task.wait(0.05)
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local T    = getRoot(char)
+    if not T then return end
+    local CONTROL  = {F=0,B=0,L=0,R=0,Q=0,E=0}
+    local lCONTROL = {F=0,B=0,L=0,R=0,Q=0,E=0}
+    FLYING = true
+    local BG = Instance.new("BodyGyro")
+    local BV = Instance.new("BodyVelocity")
+    BG.P = 9e4; BG.MaxTorque = Vector3.new(9e9,9e9,9e9); BG.CFrame = T.CFrame; BG.Parent = T
+    BV.MaxForce = Vector3.new(9e9,9e9,9e9); BV.Velocity = Vector3.zero; BV.Parent = T
+    task.spawn(function()
+        repeat task.wait()
+            local cam = Workspace.CurrentCamera
+            if not vfly and hum then hum.PlatformStand = true end
+            local moving2 = CONTROL.L+CONTROL.R ~= 0 or CONTROL.F+CONTROL.B ~= 0 or CONTROL.Q+CONTROL.E ~= 0
+            local SPEED = moving2 and 50 or 0
+            if moving2 then
+                BV.Velocity = ((cam.CFrame.LookVector*(CONTROL.F+CONTROL.B))
+                    +((cam.CFrame*CFrame.new(CONTROL.L+CONTROL.R,(CONTROL.F+CONTROL.B+CONTROL.Q+CONTROL.E)*0.2,0)).p
+                    - cam.CFrame.p))*SPEED
+                lCONTROL = {F=CONTROL.F,B=CONTROL.B,L=CONTROL.L,R=CONTROL.R}
+            elseif SPEED ~= 0 then
+                BV.Velocity = ((cam.CFrame.LookVector*(lCONTROL.F+lCONTROL.B))
+                    +((cam.CFrame*CFrame.new(lCONTROL.L+lCONTROL.R,(lCONTROL.F+lCONTROL.B+CONTROL.Q+CONTROL.E)*0.2,0)).p
+                    - cam.CFrame.p))*SPEED
+            else
+                BV.Velocity = Vector3.zero
+            end
+            BG.CFrame = cam.CFrame
+        until not FLYING
+        BG:Destroy(); BV:Destroy()
+        if hum then hum.PlatformStand = false end
+        pcall(function() Camera.CameraType = Enum.CameraType.Custom end)
+    end)
+    flyKeyDown = UserInputService.InputBegan:Connect(function(inp, proc)
+        if proc then return end
+        local sp = vfly and vehicleflyspeed or iyflyspeed
+        if     inp.KeyCode == Enum.KeyCode.W then CONTROL.F =  sp
+        elseif inp.KeyCode == Enum.KeyCode.S then CONTROL.B = -sp
+        elseif inp.KeyCode == Enum.KeyCode.A then CONTROL.L = -sp
+        elseif inp.KeyCode == Enum.KeyCode.D then CONTROL.R =  sp
+        elseif inp.KeyCode == Enum.KeyCode.E and QEfly then CONTROL.Q =  sp*2
+        elseif inp.KeyCode == Enum.KeyCode.Q and QEfly then CONTROL.E = -sp*2
+        end
+    end)
+    flyKeyUp = UserInputService.InputEnded:Connect(function(inp)
+        if     inp.KeyCode == Enum.KeyCode.W then CONTROL.F = 0
+        elseif inp.KeyCode == Enum.KeyCode.S then CONTROL.B = 0
+        elseif inp.KeyCode == Enum.KeyCode.A then CONTROL.L = 0
+        elseif inp.KeyCode == Enum.KeyCode.D then CONTROL.R = 0
+        elseif inp.KeyCode == Enum.KeyCode.E then CONTROL.Q = 0
+        elseif inp.KeyCode == Enum.KeyCode.Q then CONTROL.E = 0
+        end
+    end)
+end
+
+-- CFrame Fly
+local function startCFly()
+    if CFloop then CFloop:Disconnect() end
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    hum.PlatformStand = true
+    local Head = char:WaitForChild("Head")
+    Head.Anchored = true
+    CFloop = RunService.Heartbeat:Connect(function(dt)
+        local move  = hum.MoveDirection * (CFspeed * dt)
+        local hcf   = Head.CFrame
+        local camcf = Camera.CFrame
+        local offset = hcf:ToObjectSpace(camcf).Position
+        camcf = camcf * CFrame.new(-offset.X, -offset.Y, -offset.Z + 1)
+        local objVel = CFrame.new(camcf.Position, Vector3.new(hcf.Position.X, camcf.Position.Y, hcf.Position.Z))
+                           :VectorToObjectSpace(move)
+        Head.CFrame = CFrame.new(hcf.Position) * (camcf - camcf.Position) * CFrame.new(objVel)
+    end)
+end
+
+local function stopCFly()
+    if CFloop then CFloop:Disconnect(); CFloop = nil end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local head = char:FindFirstChild("Head")
+    if hum  then hum.PlatformStand = false end
+    if head then head.Anchored = false end
+end
+
+-- ═══════════════════════════════════════════
+--          FTP / FTC
+-- ═══════════════════════════════════════════
+local function FTP_Enable()
+    if FTP.Enabled then return end
+    FTP.Enabled = true; setPlatformStand(true)
+    FTP.Conn = RunService.RenderStepped:Connect(function()
+        if not FTP.Enabled or not TargetPlayer or not TargetPlayer.Character then return end
+        local pHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local tHRP = TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not pHRP or not tHRP then return end
+        local dir = tHRP.Position - pHRP.Position
+        if dir.Magnitude > 0 then pHRP.Velocity = dir.Unit * FTP.Speed end
+    end)
+    FTP.NoclipConn = RunService.Stepped:Connect(function()
+        if not FTP.Enabled then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end)
+end
+
+local function FTP_Disable()
+    FTP.Enabled = false
+    if FTP.Conn      then FTP.Conn:Disconnect();      FTP.Conn      = nil end
+    if FTP.NoclipConn then FTP.NoclipConn:Disconnect(); FTP.NoclipConn = nil end
+    setPlatformStand(false); resetCharPhysics()
+end
+
+-- ═══════════════════════════════════════════
+--          跳躍
+-- ═══════════════════════════════════════════
+local function updateJumpPower()
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if hum.UseJumpPower then
+        hum.JumpPower  = JumpSettings.Enabled and JumpSettings.JumpPower or 50
+    else
+        hum.JumpHeight = JumpSettings.Enabled and JumpSettings.JumpPower or 7.2
+    end
+end
+
+-- ═══════════════════════════════════════════
+--          滑動移動
+-- ═══════════════════════════════════════════
+local function startMove()
+    if moving or not root or slideLocked then return end
+    moving = true
+    moveConn = RunService.RenderStepped:Connect(function(dt)
+        if not root or ACTIVE_SEAT or slideLocked then return end
+        local cam   = Camera
+        local look  = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+        local right = Vector3.new(cam.CFrame.RightVector.X, 0, cam.CFrame.RightVector.Z)
+        local dir   = Vector3.zero
+        if moveKeys.W then dir += look  end
+        if moveKeys.S then dir -= look  end
+        if moveKeys.A then dir -= right end
+        if moveKeys.D then dir += right end
+        if dir.Magnitude > 0 then dir = dir.Unit end
+        local targetVel = dir * SLIDE_MAGNITUDE
+        local lerpSpd   = dir.Magnitude > 0 and ACCELERATION or DECELERATION
+        currentVelocity = currentVelocity:Lerp(targetVel, math.clamp(lerpSpd * dt, 0, 1))
+        root.CFrame += Vector3.new(currentVelocity.X, 0, currentVelocity.Z) * dt
+    end)
+end
+
+local function stopMove()
+    moving = false
+    if moveConn then moveConn:Disconnect(); moveConn = nil end
+end
+
+local function toggleMove(state)
+    if slideLocked and state then return end
+    if state then
+        startMove()
+    else
+        stopMove(); wasMoving = false; currentVelocity = Vector3.zero
+    end
+end
+
+-- ═══════════════════════════════════════════
+--          Anti AFK
+-- ═══════════════════════════════════════════
+local function EnableAntiAFK()
+    if AntiAFK_ENABLED then return end
+    AntiAFK_ENABLED = true
+    if getconnections then
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            if conn.Disable then conn:Disable() elseif conn.Disconnect then conn:Disconnect() end
+        end
+    else
+        AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+            game:GetService("VirtualUser"):CaptureController()
+            game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+        end)
+    end
+end
+
+local function DisableAntiAFK()
+    if not AntiAFK_ENABLED then return end
+    AntiAFK_ENABLED = false
+    if AntiAFK_Connection then AntiAFK_Connection:Disconnect(); AntiAFK_Connection = nil end
+end
+
+-- ═══════════════════════════════════════════
+--          圖形設定
+-- ═══════════════════════════════════════════
+local function ApplyLowGraphics()
+    Terrain.WaterWaveSize    = 0; Terrain.WaterWaveSpeed  = 0
+    Terrain.WaterReflectance = 0; Terrain.WaterTransparency = 1
+    Lighting.GlobalShadows   = false; Lighting.FogEnd = 9e9; Lighting.FogStart = 9e9
+    settings().Rendering.QualityLevel = 1
+    for _, v in pairs(game:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CastShadow = false; v.Material = Enum.Material.Plastic; v.Reflectance = 0
+        elseif v:IsA("Decal") then
+            v.Transparency = 1; v.Texture = ""
+        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            v.Lifetime = NumberRange.new(0)
+        end
+    end
+    for _, v in pairs(Lighting:GetDescendants()) do
+        if v:IsA("PostEffect") then v.Enabled = false end
+    end
+end
+
+local function RemoveFog()
+    Lighting.FogEnd = 9e9; Lighting.FogStart = 9e9
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA("Atmosphere") then v:Destroy() end
+    end
+end
+
+-- ═══════════════════════════════════════════
+--          Noclip
+-- ═══════════════════════════════════════════
+local function setNoclipState(state)
+    NOCLIP_ENABLED = state
+    if state then
+        if noclipConn then return end
+        noclipConn = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if not char then return end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end)
+    else
+        if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = true end
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════
+--          ESP
+-- ═══════════════════════════════════════════
+local function removeTracer(p)
+    if Tracers[p] then Tracers[p]:Remove(); Tracers[p] = nil end
+end
+
+local function removeESP(p)
+    removeTracer(p)
+    if p.Character then
+        local h = p.Character:FindFirstChild("ESP_Highlight")
+        if h then h:Destroy() end
+        local head = p.Character:FindFirstChild("Head")
+        if head then
+            local bill = head:FindFirstChild("ESP_Billboard")
+            if bill then bill:Destroy() end
+        end
+    end
+end
+
+local function createESP(p)
+    if p == LocalPlayer or not ESP_SETTINGS.Master then return end
+    local char = p.Character
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+    if not char:FindFirstChild("ESP_Highlight") then
+        local h = Instance.new("Highlight")
+        h.Name              = "ESP_Highlight"
+        h.FillColor         = ESP_SETTINGS.HighlightColor
+        h.OutlineColor      = Color3.fromRGB(255,255,255)
+        h.FillTransparency  = 0.4
+        h.Parent            = char
+    end
+    if not head:FindFirstChild("ESP_Billboard") then
+        local bill = Instance.new("BillboardGui")
+        bill.Name          = "ESP_Billboard"
+        bill.Size          = UDim2.fromOffset(160,60)
+        bill.StudsOffset   = Vector3.new(0,3,0)
+        bill.AlwaysOnTop   = true
+        bill.Parent        = head
+        local text = Instance.new("TextLabel", bill)
+        text.Name                  = "Info"
+        text.BackgroundTransparency = 1
+        text.TextColor3            = Color3.fromRGB(255,255,255)
+        text.TextStrokeTransparency = 0
+        text.Font                  = Enum.Font.SourceSansBold
+        text.TextScaled            = true
+        text.Size                  = UDim2.new(1,0,0.65,0)
+        local barBG = Instance.new("Frame", bill)
+        barBG.Name                = "HP_Background"
+        barBG.Size                = UDim2.new(0.8,0,0.1,0)
+        barBG.Position            = UDim2.new(0.1,0,0.85,0)
+        barBG.BackgroundColor3    = Color3.fromRGB(50,50,50)
+        barBG.BorderSizePixel     = 0
+        local barFG = Instance.new("Frame", barBG)
+        barFG.Name             = "HP_Fill"
+        barFG.Size             = UDim2.new(1,0,1,0)
+        barFG.BackgroundColor3 = Color3.fromRGB(0,255,0)
+        barFG.BorderSizePixel  = 0
+    end
+end
+
+local function updateTracer(p, targetHRP)
+    if not ESP_SETTINGS.ShowTracers or not ESP_SETTINGS.Master then removeTracer(p); return end
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if myHRP and targetHRP then
+        local startPos = Camera:WorldToViewportPoint(myHRP.Position)
+        local endPos, ev = Camera:WorldToViewportPoint(targetHRP.Position)
+        if ev then
+            local tr = Tracers[p] or Drawing.new("Line")
+            tr.Visible      = true
+            tr.From         = Vector2.new(startPos.X, startPos.Y)
+            tr.To           = Vector2.new(endPos.X, endPos.Y)
+            tr.Color        = ESP_SETTINGS.TracerColor
+            tr.Thickness    = 1
+            tr.Transparency = 0.8
+            Tracers[p]      = tr
+        else removeTracer(p) end
+    else removeTracer(p) end
+end
+
+-- ═══════════════════════════════════════════
+--          Hitbox
+-- ═══════════════════════════════════════════
+_G.hitboxSize  = _G.hitboxSize or 5
+_G.hitboxTrans = _G.hitboxTrans or 0.5
+
+local function applyHitbox(plr)
+    if plr == LocalPlayer then return end
+    local r = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+    if not r then return end
+    r.CanCollide = false
+    if isHitboxEnabled then
+        r.Size        = Vector3.new(_G.hitboxSize, _G.hitboxSize, _G.hitboxSize)
+        r.Transparency = _G.hitboxTrans
+    else
+        r.Size        = Vector3.new(2, 2, 1)
+        r.Transparency = 1
+    end
+end
+
+local function updateAllHitboxes()
+    for _, p in ipairs(Players:GetPlayers()) do applyHitbox(p) end
+end
+
+local function clearHitboxConnections()
+    for _, conn in ipairs(hitboxConns) do if conn then conn:Disconnect() end end
+    table.clear(hitboxConns)
+end
+
+-- ═══════════════════════════════════════════
+--          Server 功能
+-- ═══════════════════════════════════════════
+local ServerCore = {}
+function ServerCore:TeleportToServer(jobId)
+    if not jobId or jobId == "" then return end
+    task.spawn(function()
+        pcall(function() TeleportService:TeleportToPlaceInstance(PlaceId, jobId, LocalPlayer) end)
+    end)
+end
+
+function ServerCore:FindAndHop(mode)
+    task.spawn(function()
+        local url  = "https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=Asc&limit=100"
+        local ok, resp = pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
+        if not (ok and resp and resp.data) then notify("伺服器跳轉","找不到其他伺服器",3); return end
+        local valid = {}
+        for _, s in ipairs(resp.data) do
+            if s.id ~= JobId and s.playing < s.maxPlayers then
+                table.insert(valid, {id=s.id, count=s.playing})
+            end
+        end
+        if #valid == 0 then notify("伺服器跳轉","沒有可用的伺服器",3); return end
+        local targetId
+        if mode == "small" then
+            table.sort(valid, function(a,b) return a.count < b.count end)
+            targetId = valid[1].id
+        else
+            targetId = valid[math.random(1,#valid)].id
+        end
+        self:TeleportToServer(targetId)
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--          角色初始化
+-- ═══════════════════════════════════════════
+local function setupCharacter(char)
+    character = char
+    root      = char:WaitForChild("HumanoidRootPart")
+    humanoid  = char:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        if root then lastDeathPos = root.CFrame end
+    end)
+end
+
+setupCharacter(LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait())
+LocalPlayer.CharacterAdded:Connect(setupCharacter)
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(2)
+    SaveOriginalAppearance()
+    updateJumpPower()
+end)
+if LocalPlayer.Character then
+    task.spawn(function() task.wait(2); SaveOriginalAppearance() end)
+end
+
+-- ═══════════════════════════════════════════
+--          Input 監聽
+-- ═══════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(inp, gpe)
+    if gpe then return end
+    if inp.KeyCode == Enum.KeyCode.W then moveKeys.W = true end
+    if inp.KeyCode == Enum.KeyCode.A then moveKeys.A = true end
+    if inp.KeyCode == Enum.KeyCode.S then moveKeys.S = true end
+    if inp.KeyCode == Enum.KeyCode.D then moveKeys.D = true end
+end)
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.KeyCode == Enum.KeyCode.W then moveKeys.W = false end
+    if inp.KeyCode == Enum.KeyCode.A then moveKeys.A = false end
+    if inp.KeyCode == Enum.KeyCode.S then moveKeys.S = false end
+    if inp.KeyCode == Enum.KeyCode.D then moveKeys.D = false end
+end)
+
+mouse.Button1Down:Connect(function()
+    if tpEnabled then
+        local char2 = LocalPlayer.Character
+        local hrp   = char2 and char2:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = CFrame.new(mouse.Hit.p + Vector3.new(0,5,0)) end
+    end
+end)
+
+-- ═══════════════════════════════════════════
+--          RenderStepped Loop
+-- ═══════════════════════════════════════════
+RunService.RenderStepped:Connect(function()
+    frameCount += 1
+    -- Camlock
+    if CamlockEnabled and TargetPlayer and TargetPlayer.Character then
+        local tHRP = TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if tHRP then Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHRP.Position) end
+    end
+    -- ESP 更新
+    if ESP_SETTINGS.Master then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                local hum2  = p.Character:FindFirstChildOfClass("Humanoid")
+                local hrp2  = p.Character:FindFirstChild("HumanoidRootPart")
+                local head2 = p.Character:FindFirstChild("Head")
+                if hum2 and hrp2 and head2 then
+                    local bill = head2:FindFirstChild("ESP_Billboard")
+                    if bill then
+                        local info  = bill:FindFirstChild("Info")
+                        local barBG = bill:FindFirstChild("HP_Background")
+                        local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        local display = ""
+                        if ESP_SETTINGS.ShowName     then display = p.Name.."\n" end
+                        if ESP_SETTINGS.ShowHealth   then display = display.."HP:"..math.floor(hum2.Health).." " end
+                        if ESP_SETTINGS.ShowDistance and myHRP then
+                            display = display..math.floor((myHRP.Position - hrp2.Position).Magnitude).."m"
+                        end
+                        if info  then info.Text = display end
+                        if barBG then
+                            barBG.Visible = ESP_SETTINGS.ShowHealth
+                            local fill = barBG:FindFirstChild("HP_Fill")
+                            if fill then
+                                local ratio = math.clamp(hum2.Health / hum2.MaxHealth, 0, 1)
+                                fill.Size = UDim2.new(ratio, 0, 1, 0)
+                                fill.BackgroundColor3 = ratio > 0.6 and Color3.fromRGB(0,255,0)
+                                    or ratio > 0.3 and Color3.fromRGB(255,255,0)
+                                    or Color3.fromRGB(255,0,0)
+                            end
+                        end
+                        if ESP_SETTINGS.TeamColor then
+                            local hl = p.Character:FindFirstChild("ESP_Highlight")
+                            if hl then
+                                hl.OutlineColor = p.TeamColor.Color
+                                hl.FillColor    = p.TeamColor.Color
+                            end
+                        end
+                    else
+                        createESP(p)
+                    end
+                    updateTracer(p, hrp2)
+                end
+            end
+        end
+    end
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        if ESP_SETTINGS.Master then task.wait(0.5); createESP(p) end
+    end)
+end)
+
+-- ═══════════════════════════════════════════
+--            WIND UI 主介面
+-- ═══════════════════════════════════════════
+WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+WindUI:Popup({
+    Title   = "Xu-Hub",
+    Icon    = "shield-check",
+    Content = "歡迎使用 Xu-Hub！點擊執行以啟動完整介面",
+    Buttons = {
+        { Title="取消", Callback=function() end, Variant="Tertiary" },
+        { Title="執行", Icon="play", Variant="Primary",
+          Callback=function()
+
+local Window = WindUI:CreateWindow({
+    Title        = "Xu-Hub",
+    Icon         = "user-check",
+    Author       = "by xuez1025",
+    Folder       = "Xu-Hub",
+    Size         = UDim2.fromOffset(680,420),
+    Transparent  = true,
+    Theme        = "Dark",
+    Acrylic      = false,
+    HideSearchBar = false,
+    SideBarWidth = 200,
+    User = {
+        Enabled   = true, Anonymous = false,
+        Callback  = function() notify(LocalPlayer.Name, "ID: "..LocalPlayer.UserId, 3) end
+    },
+    OpenButton = {
+        Title         = "Xu-Hub",
+        CornerRadius  = UDim.new(1,0),
+        StrokeThickness = 3,
+        Enabled       = true,
+        OnlyMobile    = false,
+        Draggable     = true,
+        OnlyIcon      = false,
+        Color         = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+    }
+})
+
+local Tabs = {
+    Announcement = Window:Tab({ Title="公告說明",  Icon="megaphone"      }),
+    Status       = Window:Tab({ Title="狀態",      Icon="activity"       }),
+    General      = Window:Tab({ Title="通用",      Icon="house"          }),
+    Self         = Window:Tab({ Title="自己",      Icon="crosshair"      }),
+    Player       = Window:Tab({ Title="玩家",      Icon="user"           }),
+    Combat       = Window:Tab({ Title="戰鬥",      Icon="sword"          }),
+    Chat         = Window:Tab({ Title="聊天",      Icon="message-circle" }),
+    Visual       = Window:Tab({ Title="視覺&娛樂", Icon="smile"          }),
+    Teleport     = Window:Tab({ Title="傳送",      Icon="map-pin"        }),
+    Server       = Window:Tab({ Title="伺服器",    Icon="server"         }),
+    Settings     = Window:Tab({ Title="設定",      Icon="settings"       }),
+    Other        = Window:Tab({ Title="其他",      Icon="ellipsis"       }),
+}
+
+-- ─────────────────────────────────────
+-- 公告
+-- ─────────────────────────────────────
+Tabs.Announcement:Section({ Title="功能說明" })
+Tabs.Announcement:Paragraph({ Title="🛡️ 安全使用須知", Desc="小心使用，以免被封號。" })
+Tabs.Announcement:Section({ Title="系統通知" })
+Tabs.Announcement:Button({
+    Title="獲取最新公告", Desc="顯示當前腳本版本資訊",
+    Callback=function() notify("Xu-Hub","當前版本：v2.0",5) end
+})
+Tabs.Announcement:Section({ Title="Discord" })
+Tabs.Announcement:Button({
+    Title="Discord 邀請", Desc="複製Discord伺服器連結",
+    Callback=function()
+        if setclipboard then
+            setclipboard("https://discord.gg/ptec6vhQtf")
+            notify("Discord","已複製連結：discord.gg/ptec6vhQtf",5)
+        else
+            notify("Discord","連結：discord.gg/ptec6vhQtf",8)
+        end
+    end
+})
+
+-- ─────────────────────────────────────
+-- 狀態
+-- ─────────────────────────────────────
+Tabs.Status:Section({ Title="狀態" })
+local PlayerSection   = Tabs.Status:Section({ Title="Players: ...",    TextSize=18, TextTransparency=0.35, FontWeight=Enum.FontWeight.Medium })
+local TimeSection     = Tabs.Status:Section({ Title="Local Time: ...", TextSize=18, TextTransparency=0.35, FontWeight=Enum.FontWeight.Medium })
+local PingSection     = Tabs.Status:Section({ Title="Ping: ...",       TextSize=18, TextTransparency=0.35, FontWeight=Enum.FontWeight.Medium })
+local FPSSection      = Tabs.Status:Section({ Title="FPS: ...",        TextSize=18, TextTransparency=0.35, FontWeight=Enum.FontWeight.Medium })
+local GameTimeSection = Tabs.Status:Section({ Title="Game Time: ...",  TextSize=18, TextTransparency=0.35, FontWeight=Enum.FontWeight.Medium })
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        local now = tick()
+        local dt  = now - lastUpdate
+        if dt >= 1 then currentFps = frameCount / dt; frameCount = 0; lastUpdate = now end
+        if FPSSection      then FPSSection:SetTitle(("FPS: %.0f/s"):format(currentFps)) end
+        if PlayerSection   then PlayerSection:SetTitle(("Players: %d/%d"):format(#Players:GetPlayers(), Players.MaxPlayers or 20)) end
+        local t = os.date("*t")
+        if TimeSection     then TimeSection:SetTitle(("Local Time: %04d-%02d-%02d %02d:%02d:%02d"):format(t.year,t.month,t.day,t.hour,t.min,t.sec)) end
+        if PingSection     then PingSection:SetTitle(("Ping: %.0f ms"):format(LocalPlayer:GetNetworkPing()*1000)) end
+        local gt = math.floor(Workspace.DistributedGameTime + 0.5)
+        if GameTimeSection then GameTimeSection:SetTitle(("Game Time: %02d:%02d:%02d"):format(math.floor(gt/3600), math.floor(gt/60)%60, gt%60)) end
+    end
+end)
+
+-- ─────────────────────────────────────
+-- 通用
+-- ─────────────────────────────────────
+Tabs.General:Section({ Title="飛行" })
+Tabs.General:Toggle({
+    Title="一般飛行 (Fly)", Desc="WASD控制，QE升降", Value=false,
+    Callback=function(state) if state then sFLY(false) else NOFLY() end end
+})
+Tabs.General:Slider({
+    Title="飛行速度", Desc="調整飛行速度",
+    Value={Min=1, Max=100, Default=10},
+    Callback=function(v) iyflyspeed = v end
+})
+Tabs.General:Toggle({
+    Title="車輛飛行 (VFly)", Desc="在車輛中飛行", Value=false,
+    Callback=function(state) if state then sFLY(true) else NOFLY() end end
+})
+Tabs.General:Slider({
+    Title="車輛飛行速度", Desc="調整車輛飛行速度",
+    Value={Min=1, Max=100, Default=10},
+    Callback=function(v) vehicleflyspeed = v end
+})
+Tabs.General:Toggle({
+    Title="CFrame 飛行 (CFly)", Desc="CFrame方式飛行，可繞過部分反作弊", Value=false,
+    Callback=function(state) if state then startCFly() else stopCFly() end end
+})
+Tabs.General:Slider({
+    Title="CFrame 飛行速度", Desc="調整CFrame飛行速度",
+    Value={Min=1, Max=500, Default=50},
+    Callback=function(v) CFspeed = v end
+})
+Tabs.General:Section({ Title="角色控制" })
+Tabs.General:Toggle({
+    Title="離地面高度", Desc="啟用自訂高度", Value=false,
+    Callback=function(state)
+        hipEnabled = state
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and not state then hum.HipHeight = r15(LocalPlayer) and 2.1 or 0 end
+    end
+})
+Tabs.General:Slider({
+    Title="高度數值", Desc="調整高度(上限300)",
+    Value={Min=0, Max=300, Default=0},
+    Callback=function(v)
+        if not hipEnabled then return end
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.HipHeight = v end
+    end
+})
+Tabs.General:Toggle({
+    Title="Noclip", Desc="角色能夠穿牆", Value=false,
+    Callback=function(state) setNoclipState(state) end
+})
+Tabs.General:Button({
+    Title="坐下 (Sit)", Desc="讓角色坐下",
+    Callback=function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = true end
+    end
+})
+Tabs.General:Button({
+    Title="躺下 (Lay)", Desc="讓角色躺下",
+    Callback=function()
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        hum.Sit = true
+        task.wait(0.1)
+        hum.RootPart.CFrame = hum.RootPart.CFrame * CFrame.Angles(math.pi * 0.5, 0, 0)
+        for _, tr in ipairs(hum:GetPlayingAnimationTracks()) do tr:Stop() end
+    end
+})
+Tabs.General:Toggle({
+    Title="游泳 (Swim)", Desc="允許在空中游泳", Value=false,
+    Callback=function(state)
+        if state then
+            if swimming then return end
+            origGrav = Workspace.Gravity
+            Workspace.Gravity = 0
+            swimming = true
+            local char = LocalPlayer.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                for _, e in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
+                    if e ~= Enum.HumanoidStateType.None then hum:SetStateEnabled(e, false) end
+                end
+                hum:ChangeState(Enum.HumanoidStateType.Swimming)
+                swimbeat = RunService.Heartbeat:Connect(function()
+                    pcall(function()
+                        local rt2 = getRoot(char)
+                        if rt2 and hum.MoveDirection == Vector3.zero
+                           and not UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                            rt2.Velocity = Vector3.zero
+                        end
+                    end)
+                end)
+            end
+        else
+            swimming = false
+            Workspace.Gravity = origGrav
+            if swimbeat then swimbeat:Disconnect(); swimbeat = nil end
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                for _, e in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
+                    if e ~= Enum.HumanoidStateType.None then hum:SetStateEnabled(e, true) end
+                end
+            end
+        end
+    end
+})
+Tabs.General:Toggle({
+    Title="自動跳躍 (AutoJump)", Desc="碰到障礙物時自動跳躍", Value=false,
+    Callback=function(state)
+        if _G.autoJumpConn then _G.autoJumpConn:Disconnect(); _G.autoJumpConn = nil end
+        if not state then return end
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        _G.autoJumpConn = RunService.RenderStepped:Connect(function()
+            if not char or not hum then return end
+            local check1 = Workspace:FindPartOnRay(Ray.new(hum.RootPart.Position - Vector3.new(0,1.5,0), hum.RootPart.CFrame.lookVector*3), char)
+            local check2 = Workspace:FindPartOnRay(Ray.new(hum.RootPart.Position + Vector3.new(0,1.5,0), hum.RootPart.CFrame.lookVector*3), char)
+            if check1 or check2 then hum.Jump = true end
+        end)
+    end
+})
+Tabs.General:Toggle({
+    Title="穿牆傳送 (WallTP)", Desc="碰到牆時自動傳送到牆上方", Value=false,
+    Callback=function(state)
+        if walltpTouch then walltpTouch:Disconnect(); walltpTouch = nil end
+        if not state then return end
+        local char  = LocalPlayer.Character
+        local torso = char and (r15(LocalPlayer) and char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
+        if not torso then return end
+        walltpTouch = torso.Touched:Connect(function(hit)
+            local rt = getRoot(char)
+            if not rt then return end
+            if hit:IsA("BasePart") and hit.Position.Y > rt.Position.Y - 3 then
+                local ph = getRoot(hit.Parent)
+                if ph then rt.CFrame = hit.CFrame * CFrame.new(rt.CFrame.lookVector.X, ph.Size.Z/2+3, rt.CFrame.lookVector.Z)
+                else rt.CFrame = hit.CFrame * CFrame.new(rt.CFrame.lookVector.X, hit.Size.Y/2+3, rt.CFrame.lookVector.Z) end
+            end
+        end)
+    end
+})
+Tabs.General:Button({
+    Title="重置角色 (Reset)", Desc="正常重置角色",
+    Callback=function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
+    end
+})
+
+-- ─────────────────────────────────────
+-- 自己
+-- ─────────────────────────────────────
+Tabs.Self:Section({ Title="數值修改" })
+Tabs.Self:Toggle({
+    Title="走路速度", Desc="啟用自訂走路速度", Value=false,
+    Callback=function(state)
+        isSpeedEnabled = state
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = state and currentSpeed or 16 end
+    end
+})
+Tabs.Self:Slider({
+    Title="走路速度值", Desc="調整角色移動速度",
+    Value={Min=16, Max=1000, Default=16},
+    Callback=function(v)
+        currentSpeed = v
+        if not isSpeedEnabled then return end
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = v end
+    end
+})
+Tabs.Self:Toggle({
+    Title="滑動速度", Desc="啟用滑動移動", Value=false,
+    Callback=function(state) toggleMove(state) end
+})
+Tabs.Self:Slider({
+    Title="滑動速度值", Desc="調整滑動力度",
+    Value={Min=0, Max=1000, Default=100},
+    Callback=function(v) SLIDE_MAGNITUDE = v end
+})
+Tabs.Self:Toggle({
+    Title="跳躍力量", Desc="啟用自訂跳躍力量", Value=false,
+    Callback=function(state) JumpSettings.Enabled = state; updateJumpPower() end
+})
+Tabs.Self:Slider({
+    Title="跳躍高度值", Desc="調整跳躍高度(上限1000)",
+    Value={Min=0, Max=1000, Default=50},
+    Callback=function(v) JumpSettings.JumpPower = v; updateJumpPower() end
+})
+Tabs.Self:Toggle({
+    Title="重力調整", Desc="啟用自訂重力", Value=false,
+    Callback=function(state)
+        gravEnabled = state
+        Workspace.Gravity = state and currentGravValue or origGrav
+    end
+})
+Tabs.Self:Slider({
+    Title="重力值", Desc="數值條越低越輕",
+    Value={Min=1, Max=200, Default=200},
+    Callback=function(v)
+        currentGravValue = v
+        if gravEnabled then Workspace.Gravity = v end
+    end
+})
+Tabs.Self:Toggle({
+    Title="旋轉角色 (Spin)", Default=false,
+    Callback=function(state)
+        if spinInst then spinInst:Destroy(); spinInst = nil end
+        if not state then return end
+        local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+        if not rt then return end
+        spinInst = Instance.new("BodyAngularVelocity")
+        spinInst.Name            = "IY_Spin"
+        spinInst.MaxTorque       = Vector3.new(0, math.huge, 0)
+        spinInst.AngularVelocity = Vector3.new(0, _G.spinSpeed or 20, 0)
+        spinInst.Parent          = rt
+    end
+})
+Tabs.Self:Slider({
+    Title="旋轉速度",
+    Value={Min=5, Max=200, Default=20},
+    Callback=function(v)
+        _G.spinSpeed = v
+        if spinInst then spinInst.AngularVelocity = Vector3.new(0, v, 0) end
+    end
+})
+Tabs.Self:Toggle({
+    Title="飛行跳躍 (FlyJump)", Desc="按住空白鍵持續上升", Value=false,
+    Callback=function(state)
+        if flyjumpConnection then flyjumpConnection:Disconnect(); flyjumpConnection = nil end
+        if not state then return end
+        flyjumpConnection = UserInputService.JumpRequest:Connect(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end)
+    end
+})
+Tabs.Self:Slider({
+    Title="視角縮放上限", Desc="調整最大縮放距離",
+    Value={Min=100, Max=5000, Default=LocalPlayer.CameraMaxZoomDistance},
+    Callback=function(v)
+        LocalPlayer.CameraMaxZoomDistance = v
+        LocalPlayer.CameraMinZoomDistance = 0.5
+    end
+})
+Tabs.Self:Slider({
+    Title="視野 (FOV)", Desc="調整視野角度(預設70)",
+    Value={Min=10, Max=170, Default=70},
+    Callback=function(v) Camera.FieldOfView = v end
+})
+
+-- ─────────────────────────────────────
+-- 玩家
+-- ─────────────────────────────────────
+Tabs.Player:Section({ Title="目標玩家選擇" })
+local playerDropdown = Tabs.Player:Dropdown({
+    Title="選擇玩家", Values=GetPlayerList(), Value=nil,
+    Callback=function(opt)
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Name == opt then TargetPlayer = p; break end
+        end
+        if isSpectating and TargetPlayer then SpectatePlayer(TargetPlayer) end
+    end
+})
+Players.PlayerAdded:Connect(function()    playerDropdown:Refresh(GetPlayerList()) end)
+Players.PlayerRemoving:Connect(function() playerDropdown:Refresh(GetPlayerList()) end)
+
+Tabs.Player:Toggle({
+    Title="Fly-to-Player", Desc="飛向選定玩家", Value=false,
+    Callback=function(state)
+        if state then
+            if not TargetPlayer then notify("飛向玩家","請先在玩家頁面選擇玩家",3); return end
+            FTP_Enable()
+        else FTP_Disable() end
+    end
+})
+Tabs.Player:Slider({
+    Title="Fly-to-Player 速度", Desc="調整飛行速度",
+    Value={Min=50, Max=2000, Default=100},
+    Callback=function(v) FTP.Speed = v end
+})
+Tabs.Player:Toggle({
+    Title="傳送到玩家 (TP)", Desc="持續傳送到目標玩家", Value=false,
+    Callback=function(state)
+        if TPConnection then TPConnection:Disconnect(); TPConnection = nil end
+        if not state then return end
+        if not TargetPlayer then notify("傳送","請先選擇玩家",3); return end
+        TPConnection = RunService.Heartbeat:Connect(function()
+            local tc = TargetPlayer and TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local lc = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if tc and lc then lc.CFrame = tc.CFrame end
+        end)
+    end
+})
+Tabs.Player:Button({
+    Title="傳送到玩家 (TP)", Desc="單次傳送到目標玩家的位置",
+    Callback=function()
+        if not TargetPlayer then notify("傳送","請先選擇玩家",3); return end
+        local tc = TargetPlayer.Character and TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local lc = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if tc and lc then
+            lc.CFrame = tc.CFrame
+            notify("傳送","已成功傳送到 " .. TargetPlayer.Name, 2)
+        else
+            notify("傳送","傳送失敗，找不到玩家實體",3)
+        end
+    end
+})
+Tabs.Player:Button({
+    Title="脈衝傳送 (PulseTP)", Desc="短暫傳送到玩家旁後返回",
+    Callback=function()
+        if not TargetPlayer then notify("PulseTP","請先選擇玩家",3); return end
+        task.spawn(function()
+            local lc = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            local tc = TargetPlayer.Character and getRoot(TargetPlayer.Character)
+            if not lc or not tc then return end
+            local oldPos = lc.CFrame
+            lc.CFrame = tc.CFrame + Vector3.new(3,1,0)
+            task.wait(_G.pulseTPSecs or 2)
+            lc.CFrame = oldPos
+        end)
+    end
+})
+Tabs.Player:Slider({
+    Title="脈衝傳送秒數", Desc="停留在目標旁的時間",
+    Value={Min=0, Max=10, Default=2},
+    Callback=function(v) _G.pulseTPSecs = v end
+})
+Tabs.Player:Toggle({
+    Title="步行跟隨 (WalkTo)", Desc="跟隨目標玩家移動", Value=false,
+    Callback=function(state)
+        if not state then walkto = false; return end
+        if not TargetPlayer then notify("WalkTo","請先選擇玩家",3); return end
+        walkto = true
+        task.spawn(function()
+            local char = LocalPlayer.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            while walkto do
+                if TargetPlayer and TargetPlayer.Character and hum then
+                    local tc = getRoot(TargetPlayer.Character)
+                    if tc then hum:MoveTo(tc.Position) end
+                end
+                task.wait()
+            end
+        end)
+    end
+})
+Tabs.Player:Toggle({
+    Title="路徑跟隨 (PathfindFollow)", Desc="使用路徑尋找跟隨玩家", Value=false,
+    Callback=function(state)
+        if not state then walkto = false; return end
+        if not TargetPlayer then notify("PathfindFollow","請先選擇玩家",3); return end
+        walkto = true
+        task.spawn(function()
+            local char = LocalPlayer.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            local path = PathfindingService:CreatePath()
+            while walkto do
+                if TargetPlayer and TargetPlayer.Character and hum then
+                    local tc = getRoot(TargetPlayer.Character)
+                    if tc then
+                        local ok = pcall(function()
+                            path:ComputeAsync(getRoot(char).Position, tc.Position)
+                            for _, wp in ipairs(path:GetWaypoints()) do
+                                hum:MoveTo(wp.Position)
+                                hum.MoveToFinished:Wait()
+                            end
+                        end)
+                        if not ok then hum:MoveTo(tc.Position) end
+                    end
+                end
+                task.wait(0.1)
+            end
+        end)
+    end
+})
+Tabs.Player:Toggle({
+    Title="循環帶走 (LoopBring)", Desc="持續將目標玩家帶到自己身邊", Value=false,
+    Callback=function(state)
+        if not state then loopbringTargets = {}; return end
+        if not TargetPlayer then notify("LoopBring","請先選擇玩家",3); return end
+        local pn = TargetPlayer.Name
+        if not table.find(loopbringTargets, pn) then table.insert(loopbringTargets, pn) end
+        task.spawn(function()
+            while table.find(loopbringTargets, pn) do
+                local lc = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+                local tp = Players:FindFirstChild(pn)
+                local tc = tp and tp.Character and getRoot(tp.Character)
+                if lc and tc then tc.CFrame = lc.CFrame end
+                task.wait(_G.loopbringDelay or 0)
+            end
+        end)
+    end
+})
+Tabs.Player:Toggle({
+    Title="繞行玩家 (Orbit)", Desc="讓角色繞著玩家旋轉", Value=false,
+    Callback=function(state)
+        if orbitLoop1 then orbitLoop1:Disconnect(); orbitLoop1 = nil end
+        if orbitLoop2 then orbitLoop2:Disconnect(); orbitLoop2 = nil end
+        if not state then return end
+        if not TargetPlayer then notify("Orbit","請先選擇玩家",3); return end
+        local rotation = 0
+        orbitLoop1 = RunService.Heartbeat:Connect(function()
+            pcall(function()
+                local spd  = _G.orbitSpeed or 0.5
+                local dist = _G.orbitDist  or 6
+                rotation = rotation + spd
+                local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+                local tc = TargetPlayer.Character and getRoot(TargetPlayer.Character)
+                if rt and tc then
+                    rt.CFrame = CFrame.new(tc.Position) * CFrame.Angles(0, math.rad(rotation), 0) * CFrame.new(dist, 0, 0)
+                end
+            end)
+        end)
+        orbitLoop2 = RunService.RenderStepped:Connect(function()
+            pcall(function()
+                local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+                local tc = TargetPlayer.Character and getRoot(TargetPlayer.Character)
+                if rt and tc then rt.CFrame = CFrame.new(rt.Position, tc.Position) end
+            end)
+        end)
+    end
+})
+Tabs.Player:Slider({
+    Title="繞行速度", Desc="軌道旋轉速度",
+    Value={Min=1, Max=20, Default=5},
+    Callback=function(v) _G.orbitSpeed = v / 10 end
+})
+Tabs.Player:Slider({
+    Title="繞行距離", Desc="與目標的距離",
+    Value={Min=1, Max=30, Default=6},
+    Callback=function(v) _G.orbitDist = v end
+})
+Tabs.Player:Toggle({
+    Title="注視玩家 (Stareat)", Desc="持續面向目標玩家", Value=false,
+    Callback=function(state)
+        if stareLoop then stareLoop:Disconnect(); stareLoop = nil end
+        if not state then return end
+        if not TargetPlayer then notify("Stareat","請先選擇玩家",3); return end
+        stareLoop = RunService.RenderStepped:Connect(function()
+            pcall(function()
+                local char = LocalPlayer.Character
+                local tc   = TargetPlayer.Character and getRoot(TargetPlayer.Character)
+                if char and char.PrimaryPart and tc then
+                    local cp  = char.PrimaryPart.Position
+                    local tp2 = Vector3.new(tc.Position.X, cp.Y, tc.Position.Z)
+                    char:SetPrimaryPartCFrame(CFrame.new(cp, tp2))
+                end
+            end)
+        end)
+    end
+})
+Tabs.Player:Toggle({
+    Title="監聽玩家 (ListenTo)", Desc="監聽玩家周圍聲音", Value=false,
+    Callback=function(state)
+        if state then
+            if not TargetPlayer then notify("ListenTo","請先選擇玩家",3); return end
+            local tc = TargetPlayer.Character and getRoot(TargetPlayer.Character)
+            if tc then
+                SoundService:SetListener(Enum.ListenerType.ObjectPosition, tc)
+                listentoChar = TargetPlayer.CharacterAdded:Connect(function()
+                    repeat task.wait() until TargetPlayer.Character and getRoot(TargetPlayer.Character)
+                    SoundService:SetListener(Enum.ListenerType.ObjectPosition, getRoot(TargetPlayer.Character))
+                end)
+            end
+        else
+            SoundService:SetListener(Enum.ListenerType.Camera)
+            if listentoChar then listentoChar:Disconnect(); listentoChar = nil end
+        end
+    end
+})
+Tabs.Player:Toggle({
+    Title="坐在玩家頭上 (HeadSit)", Default=false,
+    Callback=function(Value)
+        if Value then
+            if not TargetPlayer or not TargetPlayer.Character then
+                notify("HeadSit","請先選擇有效的玩家",3); return
+            end
+            if headSitLoop then headSitLoop:Disconnect(); headSitLoop = nil end
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Sit = true end
+            headSitLoop = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    if not TargetPlayer or not TargetPlayer.Character then
+                        if headSitLoop then headSitLoop:Disconnect(); headSitLoop = nil end; return
+                    end
+                    local tc = getRoot(TargetPlayer.Character)
+                    local lc = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+                    if tc and lc then
+                        lc.CFrame = tc.CFrame * CFrame.new(0, 1.6, 0.4)
+                    end
+                end)
+            end)
+        else
+            if headSitLoop then headSitLoop:Disconnect(); headSitLoop = nil end
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Sit = false end
+        end
+    end
+})
+Tabs.Player:Button({
+    Title="恐嚇玩家 (Scare)", Desc="短暫出現在玩家面前並持續鎖定",
+    Callback=function()
+        if not TargetPlayer then notify("Scare","請先選擇玩家",3); return end
+        task.spawn(function()
+            local lc = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            local tc = TargetPlayer.Character and getRoot(TargetPlayer.Character)
+            if not lc or not tc then return end
+            local old       = lc.CFrame
+            local duration  = 0.5
+            local startTime = os.clock()
+            local connection
+            connection = RunService.Heartbeat:Connect(function()
+                if lc and tc and lc.Parent and tc.Parent and (os.clock() - startTime) < duration then
+                    lc.CFrame = CFrame.new((tc.CFrame + tc.CFrame.LookVector * 2).Position, tc.Position)
+                else
+                    connection:Disconnect()
+                end
+            end)
+            task.wait(duration)
+            if connection.Connected then connection:Disconnect() end
+            if lc and lc.Parent then lc.CFrame = old end
+        end)
+    end
+})
+Tabs.Player:Button({
+    Title="複製玩家工具 (CopyTools)", Desc="複製選定玩家的工具",
+    Callback=function()
+        if not TargetPlayer then notify("CopyTools","請先選擇玩家",3); return end
+        local bp  = LocalPlayer:FindFirstChildOfClass("Backpack")
+        local tbp = TargetPlayer:FindFirstChildOfClass("Backpack")
+        if tbp and bp then
+            for _, v in ipairs(tbp:GetChildren()) do
+                if v:IsA("Tool") or v:IsA("HopperBin") then v:Clone().Parent = bp end
+            end
+            notify("CopyTools","已複製工具",3)
+        end
+    end
+})
+Tabs.Player:Toggle({
+    Title="凍結玩家 (Freeze)", Desc="凍結選定玩家", Value=false,
+    Callback=function(state)
+        if not TargetPlayer or not TargetPlayer.Character then return end
+        for _, p in ipairs(TargetPlayer.Character:GetDescendants()) do
+            if p:IsA("BasePart") then p.Anchored = state end
+        end
+    end
+})
+Tabs.Player:Button({
+    Title="變身(視覺化)", Desc="套用目標玩家外觀",
+    Callback=function() ApplyAppearance() end
+})
+Tabs.Player:Button({
+    Title="恢復外觀", Desc="恢復原本外觀",
+    Callback=function() RestoreOriginalAppearance() end
+})
+Tabs.Player:Toggle({
+    Title="觀察玩家 (Spectate)", Desc="觀察目標玩家視角", Value=false,
+    Callback=function(state)
+        isSpectating = state
+        if state and TargetPlayer then SpectatePlayer(TargetPlayer) else StopSpectate() end
+    end
+})
+Tabs.Player:Toggle({
+    Title="視角鎖定 (Camlock)", Desc="鎖定攝影機朝向目標", Value=false,
+    Callback=function(state) CamlockEnabled = state end
+})
+Tabs.Player:Button({
+    Title="加朋友 (Friend)", Desc="向選定玩家發送好友請求",
+    Callback=function()
+        if TargetPlayer then LocalPlayer:RequestFriendship(TargetPlayer); notify("朋友","已發送好友請求",3) end
+    end
+})
+Tabs.Player:Button({
+    Title="刪朋友 (Unfriend)", Desc="刪除與選定玩家的好友關係",
+    Callback=function()
+        if TargetPlayer then LocalPlayer:RevokeFriendship(TargetPlayer); notify("朋友","已刪除好友關係",3) end
+    end
+})
+Tabs.Player:Toggle({
+    Title="循環加刪朋友 (Loop Friend/Unfriend)", Desc="持續向選定玩家發送並刪除好友請求", Default=false,
+    Callback=function(Value)
+        loopFriendship = Value
+        if not loopFriendship then notify("朋友","已停止循環操作",3); return end
+        task.spawn(function()
+            while loopFriendship do
+                if TargetPlayer then
+                    LocalPlayer:RequestFriendship(TargetPlayer)
+                    notify("朋友","已發送好友請求",1)
+                    task.wait(0.5)
+                    if not loopFriendship then break end
+                    LocalPlayer:RevokeFriendship(TargetPlayer)
+                    notify("朋友","已刪除好友關係",1)
+                    task.wait(0.5)
+                else
+                    task.wait(1)
+                end
+            end
+        end)
+    end
+})
+Tabs.Player:Button({
+    Title="查詢玩家 ID", Desc="通知目標玩家的 User ID",
+    Callback=function()
+        if TargetPlayer then notify("玩家 ID", TargetPlayer.Name.." = "..TargetPlayer.UserId, 5) end
+    end
+})
+Tabs.Player:Button({
+    Title="複製玩家名稱", Desc="複製目標玩家用戶名",
+    Callback=function() if TargetPlayer then toClipboard(TargetPlayer.Name) end end
+})
+Tabs.Player:Button({
+    Title="複製玩家 ID", Desc="複製目標玩家 ID 到剪貼簿",
+    Callback=function() if TargetPlayer then toClipboard(TargetPlayer.UserId) end end
+})
+Tabs.Player:Button({
+    Title="查詢帳號年齡", Desc="通知目標玩家帳號年齡",
+    Callback=function()
+        if TargetPlayer then notify("帳號年齡", TargetPlayer.Name.." = "..TargetPlayer.AccountAge.." 天", 5) end
+    end
+})
+Tabs.Player:Button({
+    Title="查詢加入日期", Desc="通知目標玩家加入Roblox的日期",
+    Callback=function()
+        if TargetPlayer then
+            local joinTime = os.time() - TargetPlayer.AccountAge * 86400
+            notify("加入日期", TargetPlayer.Name.." 加入於 "..os.date("%m/%d/%Y", joinTime), 5)
+        end
+    end
+})
+Tabs.Player:Toggle({
+    Title="擴大命中框 (Hitbox Player)", Desc="擴大目標玩家HumanoidRootPart", Value=false,
+    Callback=function(state)
+        isHitboxEnabled = state
+        clearHitboxConnections()
+        updateAllHitboxes()
+        if not state then return end
+        table.insert(hitboxConns, Players.PlayerAdded:Connect(function(p)
+            table.insert(hitboxConns, p.CharacterAdded:Connect(function()
+                task.wait(1)
+                if isHitboxEnabled then applyHitbox(p) end
+            end))
+        end))
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                table.insert(hitboxConns, p.CharacterAdded:Connect(function()
+                    task.wait(1)
+                    if isHitboxEnabled then applyHitbox(p) end
+                end))
+            end
+        end
+    end
+})
+Tabs.Player:Slider({
+    Title="玩家命中框大小",
+    Value={Min=1, Max=100, Default=5},
+    Callback=function(v)
+        _G.hitboxSize = v
+        if isHitboxEnabled then updateAllHitboxes() end
+    end
+})
+
+Tabs.Player:Section({ Title="ESP" })
+Tabs.Player:Toggle({
+    Title="ESP 主開關", Desc="顯示玩家輪廓", Value=false,
+    Callback=function(state)
+        ESP_SETTINGS.Master = state
+        for _, p in ipairs(Players:GetPlayers()) do
+            if state then createESP(p) else removeESP(p) end
+        end
+    end
+})
+Tabs.Player:Toggle({
+    Title="顯示名稱", Value=false,
+    Callback=function(state) ESP_SETTINGS.ShowName = state end
+})
+Tabs.Player:Toggle({
+    Title="顯示血量和血條", Value=false,
+    Callback=function(state) ESP_SETTINGS.ShowHealth = state end
+})
+Tabs.Player:Toggle({
+    Title="顯示距離", Value=false,
+    Callback=function(state) ESP_SETTINGS.ShowDistance = state end
+})
+Tabs.Player:Toggle({
+    Title="顯示射線", Value=false,
+    Callback=function(state)
+        ESP_SETTINGS.ShowTracers = state
+        if not state then for _, p in ipairs(Players:GetPlayers()) do removeTracer(p) end end
+    end
+})
+Tabs.Player:Toggle({
+    Title="ESP 隊伍顏色", Desc="根據隊伍顏色顯示高亮", Value=false,
+    Callback=function(state) ESP_SETTINGS.TeamColor = state end
+})
+
+-- ─────────────────────────────────────
+-- 戰鬥
+-- ─────────────────────────────────────
+Tabs.Combat:Section({ Title="防虛空" })
+Tabs.Combat:Toggle({
+    Title="防虛空 (AntiVoid)", Desc="落入虛空時安全傳回上方並重置速度", Value=false,
+    Callback=function(state)
+        if antivoidloop then antivoidloop:Disconnect(); antivoidloop = nil end
+        if not state then return end
+        antivoidloop = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp and hrp.Position.Y <= (OrgDestroyHeight + 50) then
+                hrp.Velocity        = Vector3.zero
+                hrp.RotVelocity     = Vector3.zero
+                hrp.CFrame          = hrp.CFrame + Vector3.new(0, 100, 0)
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
+            end
+        end)
+    end
+})
+Tabs.Combat:Button({
+    Title="假墜落 (Fakeout)", Desc="短暫傳送到虛空再返回",
+    Callback=function()
+        local char = LocalPlayer.Character
+        local rt   = char and getRoot(char)
+        if not rt then return end
+        local oldpos = rt.CFrame
+        local wasAV  = antivoidloop ~= nil
+        if antivoidloop then antivoidloop:Disconnect(); antivoidloop = nil end
+        Workspace.FallenPartsDestroyHeight = 0/1/0
+        rt.CFrame = CFrame.new(Vector3.new(0, OrgDestroyHeight - 25, 0))
+        task.wait(1)
+        rt.CFrame = oldpos
+        Workspace.FallenPartsDestroyHeight = OrgDestroyHeight
+        if wasAV then
+            antivoidloop = RunService.Stepped:Connect(function()
+                local c = LocalPlayer.Character
+                local h = c and c:FindFirstChild("HumanoidRootPart")
+                if h and h.Position.Y <= OrgDestroyHeight + 25 then
+                    h.Velocity = h.Velocity + Vector3.new(0, 250, 0)
+                end
+            end)
+        end
+        notify("Fakeout","已完成",2)
+    end
+})
+Tabs.Combat:Section({ Title="甩飛" })
+Tabs.Combat:Toggle({
+    Title="甩飛 (Fling)", Desc="對碰到的玩家施加旋轉力", Value=false,
+    Callback=function(state)
+        if state then
+            if flinging then return end
+            local char = LocalPlayer.Character
+            if not char or not getRoot(char) then return end
+            flinging = true
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5) end
+            end
+            setNoclipState(true); task.wait(0.1)
+            local bambam = Instance.new("BodyAngularVelocity")
+            bambam.Name            = "IY_Fling"
+            bambam.AngularVelocity = Vector3.new(0, 99999, 0)
+            bambam.MaxTorque       = Vector3.new(0, math.huge, 0)
+            bambam.P               = math.huge
+            bambam.Parent          = getRoot(char)
+            for _, v in ipairs(char:GetChildren()) do
+                if v:IsA("BasePart") then
+                    v.CanCollide = false; v.Massless = true; v.Velocity = Vector3.zero
+                end
+            end
+            local hum2 = char:FindFirstChildOfClass("Humanoid")
+            if hum2 then
+                flingDied = hum2.Died:Connect(function()
+                    flinging = false; setNoclipState(false)
+                    if flingDied then flingDied:Disconnect(); flingDied = nil end
+                end)
+            end
+            flingLoop = task.spawn(function()
+                while flinging and char and getRoot(char) do
+                    bambam.AngularVelocity = Vector3.new(0, 99999, 0)
+                    task.wait(0.2)
+                    bambam.AngularVelocity = Vector3.zero
+                    task.wait(0.1)
+                end
+            end)
+        else
+            flinging = false; setNoclipState(false)
+            if flingDied then flingDied:Disconnect(); flingDied = nil end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local rt = getRoot(char)
+            if rt then
+                for _, v in ipairs(rt:GetChildren()) do
+                    if v.Name == "IY_Fling" then v:Destroy() end
+                end
+            end
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.CustomPhysicalProperties = PhysicalProperties.new(0.7, 0.3, 0.5)
+                    p.CanCollide = true; p.Massless = false
+                end
+            end
+        end
+    end
+})
+Tabs.Combat:Toggle({
+    Title="步行甩飛 (WalkFling)", Desc="行走時甩飛其他玩家", Value=false,
+    Callback=function(state)
+        if state then
+            if walkflinging then return end
+            walkflinging = true; setNoclipState(true)
+            task.spawn(function()
+                while walkflinging do
+                    local char = LocalPlayer.Character
+                    local rt   = char and getRoot(char)
+                    if rt then
+                        local vel = rt.Velocity
+                        rt.Velocity = vel * 10000 + Vector3.new(0, 10000, 0)
+                        RunService.RenderStepped:Wait()
+                        if rt.Parent then rt.Velocity = vel end
+                        RunService.Stepped:Wait()
+                        if rt.Parent then rt.Velocity = vel + Vector3.new(0, 0.1, 0) end
+                    end
+                    RunService.Heartbeat:Wait()
+                end
+            end)
+        else
+            walkflinging = false; setNoclipState(false)
+        end
+    end
+})
+Tabs.Combat:Button({
+    Title="隱形甩飛 (InvisFling)", Desc="啟用隱形甩飛",
+    Callback=function()
+        local char = LocalPlayer.Character
+        char:FindFirstChildOfClass("Humanoid"):SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        local prt = Instance.new("Model"); prt.Parent = char
+        local z1  = Instance.new("Part"); z1.Name = "Torso"; z1.CanCollide = false; z1.Anchored = true
+        local z2  = Instance.new("Part"); z2.Name = "Head";  z2.Parent = prt; z2.Anchored = true; z2.CanCollide = false
+        local z3  = Instance.new("Humanoid"); z3.Name = "Humanoid"; z3.Parent = prt
+        z1.Position = Vector3.new(0, 9999, 0)
+        LocalPlayer.Character = prt
+        task.wait(3)
+        LocalPlayer.Character = char
+        task.wait(3)
+        Instance.new("Humanoid").Parent = char
+        local rt2 = getRoot(char)
+        for _, v in ipairs(char:GetChildren()) do
+            if v ~= rt2 and v.Name ~= "Humanoid" then v:Destroy() end
+        end
+        rt2.Transparency = 0
+        sFLY()
+        Camera.CameraSubject = rt2
+        local bambam = Instance.new("BodyThrust"); bambam.Parent = rt2
+        bambam.Force    = Vector3.new(99999, 999990, 99999)
+        bambam.Location = rt2.Position
+        notify("InvisFling","已啟動",5)
+        notify("提示","角色重製 (Reset) 可恢復正常",5)
+    end
+})
+Tabs.Combat:Toggle({
+    Title="防甩飛 (AntiFling)", Desc="完全免受其他玩家的物理碰撞影響", Value=false,
+    Callback=function(state)
+        if antiflingConn then antiflingConn:Disconnect(); antiflingConn = nil end
+        if not state then return end
+        antiflingConn = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if not char then return end
+            for _, part in ipairs(char:GetChildren()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.CanCollide = false
+                end
+            end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                if hrp.AssemblyLinearVelocity.Magnitude > 100 then
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+})
+
+-- ─────────────────────────────────────
+-- 聊天
+-- ─────────────────────────────────────
+Tabs.Chat:Section({ Title="發送訊息" })
+local chatInput = ""
+Tabs.Chat:Input({
+    Title="訊息內容", Placeholder="輸入要發送的訊息...",
+    Callback=function(text) chatInput = text end
+})
+Tabs.Chat:Button({
+    Title="發送訊息 (Chat)", Desc="讓角色在聊天中發送訊息",
+    Callback=function() if chatInput ~= "" then chatMessage(chatInput) end end
+})
+Tabs.Chat:Toggle({
+    Title="垃圾訊息 (Spam)", Desc="持續在聊天中發送訊息", Value=false,
+    Callback=function(state)
+        spamming = state
+        if not state then return end
+        task.spawn(function()
+            while spamming do chatMessage(chatInput); task.wait(spamspeed) end
+        end)
+    end
+})
+Tabs.Chat:Section({ Title="監視" })
+local groupInput, roleInput = "", ""
+Tabs.Chat:Input({
+    Title="群組 ID", Placeholder="輸入群組ID...",
+    Callback=function(text) groupInput = text end
+})
+Tabs.Chat:Input({
+    Title="身分組名稱", Placeholder="輸入身分組名稱...",
+    Callback=function(text) roleInput = text end
+})
+Tabs.Chat:Toggle({
+    Title="身分組監視 (Rolewatch)", Desc="有指定群組身分組玩家加入時通知", Value=false,
+    Callback=function(state)
+        if rolemonitorConn then rolemonitorConn:Disconnect(); rolemonitorConn = nil end
+        if not state then return end
+        local gid = tonumber(groupInput)
+        if not gid or roleInput == "" then notify("Rolewatch","請先填寫群組ID和身分組名稱",3); return end
+        rolemonitorConn = Players.PlayerAdded:Connect(function(plr)
+            if plr:IsInGroup(gid) and plr:GetRoleInGroup(gid):lower() == roleInput:lower() then
+                notify("Rolewatch", plr.Name.." 加入，身分組："..roleInput, 8)
+            end
+        end)
+        notify("Rolewatch","已開始監視群組 "..gid.." 的 "..roleInput, 3)
+    end
+})
+Tabs.Chat:Toggle({
+    Title="工作人員監視 (StaffWatch)", Desc="有遊戲工作人員加入時通知", Value=false,
+    Callback=function(state)
+        if staffwatchjoin then staffwatchjoin:Disconnect(); staffwatchjoin = nil end
+        if not state then return end
+        local staffRoles = {"mod","admin","staff","dev","founder","owner","supervis","manager","executive","president","director"}
+        staffwatchjoin = Players.PlayerAdded:Connect(function(plr)
+            if game.CreatorType == Enum.CreatorType.Group then
+                local role = pcall(function() return plr:GetRoleInGroup(game.CreatorId) end)
+                             and plr:GetRoleInGroup(game.CreatorId) or ""
+                for _, sr in ipairs(staffRoles) do
+                    if role:lower():find(sr) then
+                        notify("StaffWatch", plr.Name.." 加入，身份："..role, 8); break
+                    end
+                end
+            end
+        end)
+        notify("StaffWatch","已開始監視工作人員",3)
+    end
+})
+
+-- ─────────────────────────────────────
+-- 視覺&娛樂
+-- ─────────────────────────────────────
+Tabs.Visual:Section({ Title="角色" })
+Tabs.Visual:Button({
+    Title="跳舞 (Dance)", Desc="播放隨機舞蹈動畫 (支援 R6 / R15)",
+    Callback=function()
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        local dances = r15(LocalPlayer) and
+            {"3333432454","4555808220","4049037604","4555782893","10214311282","10714010337","10713981723","10714372526","10714076981","10714392151","11444443576"} or
+            {"27789359","30196114","248263260","45834924","33796059","28488254","52155728"}
+        if danceTrack then danceTrack:Stop(); danceTrack:Destroy(); danceTrack = nil end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. dances[math.random(1, #dances)]
+        danceTrack = hum:LoadAnimation(anim)
+        danceTrack.Looped = true; danceTrack:Play()
+        notify("Dance","正在跳舞！",3)
+    end
+})
+Tabs.Visual:Button({
+    Title="停止跳舞 (Undance)", Desc="停止並清除當前的舞蹈動畫",
+    Callback=function()
+        if danceTrack then
+            danceTrack:Stop(); danceTrack:Destroy(); danceTrack = nil
+            notify("Dance","已停止跳舞。",3)
+        else notify("Dance","你目前沒有在跳舞喔！",3) end
+    end
+})
+Tabs.Visual:Button({
+    Title="分裂角色 (Split)", Desc="讓R15角色在腰部分裂",
+    Callback=function()
+        if not r15(LocalPlayer) then notify("Split","需要R15角色",3); return end
+        local char  = LocalPlayer.Character
+        local waist = char and char:FindFirstChild("UpperTorso") and char.UpperTorso:FindFirstChild("Waist")
+        if waist then waist:Destroy(); notify("Split","角色已分裂",3)
+        else notify("Split","找不到Waist關節",3) end
+    end
+})
+Tabs.Visual:Button({
+    Title="扭腰動作 (Jerk)", Desc="播放一個特定搞笑動畫",
+    Callback=function()
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = r15(LocalPlayer) and "rbxassetid://698251653" or "rbxassetid://72042024"
+        local tr = hum:LoadAnimation(anim)
+        tr:Play(); tr:AdjustSpeed(r15(LocalPlayer) and 0.7 or 0.65)
+        notify("Jerk","正在做動作",3)
+    end
+})
+Tabs.Visual:Section({ Title="角色外觀" })
+
+-- 輔助：移除四肢共用邏輯
+local function removeLimbs(names)
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, n in ipairs(names) do local p = char:FindFirstChild(n); if p then p:Destroy() end end
+end
+
+Tabs.Visual:Button({
+    Title="移除手臂 (NoArms)", Desc="移除角色手臂",
+    Callback=function()
+        removeLimbs(r15(LocalPlayer) and {"RightUpperArm","LeftUpperArm"} or {"Right Arm","Left Arm"})
+    end
+})
+Tabs.Visual:Button({
+    Title="移除腿 (NoLegs)", Desc="移除角色的腿",
+    Callback=function()
+        removeLimbs(r15(LocalPlayer) and {"RightUpperLeg","LeftUpperLeg"} or {"Right Leg","Left Leg"})
+    end
+})
+Tabs.Visual:Button({
+    Title="移除四肢 (NoLimbs)", Desc="移除角色四肢",
+    Callback=function()
+        removeLimbs(r15(LocalPlayer)
+            and {"RightUpperArm","LeftUpperArm","RightUpperLeg","LeftUpperLeg"}
+            or  {"Right Arm","Left Arm","Right Leg","Left Leg"})
+    end
+})
+Tabs.Visual:Button({
+    Title="移除衣物 (Naked)", Desc="移除角色衣服",
+    Callback=function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, v in ipairs(char:GetDescendants()) do
+            if v:IsA("Clothing") or v:IsA("ShirtGraphic") then v:Destroy() end
+        end
+    end
+})
+Tabs.Visual:Button({
+    Title="移除臉部 (NoFace)", Desc="移除角色臉部貼圖",
+    Callback=function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, v in ipairs(char:GetDescendants()) do
+            if v:IsA("Decal") and v.Name == "face" then v:Destroy() end
+        end
+    end
+})
+Tabs.Visual:Button({
+    Title="苦力怕外觀 (Creeper)", Desc="讓角色看起來像苦力怕",
+    Callback=function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local mesh = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("SpecialMesh")
+        if mesh then mesh:Destroy() end
+        removeLimbs(r15(LocalPlayer) and {"LeftUpperArm","RightUpperArm"} or {"Left Arm","Right Arm"})
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum:RemoveAccessories() end
+    end
+})
+Tabs.Visual:Button({
+    Title="清除角色外觀 (ClearChar)", Desc="移除所有配件、衣服",
+    Callback=function()
+        if LocalPlayer.Character then LocalPlayer:ClearCharacterAppearance() end
+    end
+})
+Tabs.Visual:Button({
+    Title="移除帽子 (NoHats)", Desc="刪除所有配件",
+    Callback=function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:RemoveAccessories() end
+    end
+})
+Tabs.Visual:Section({ Title="隊伍切換" })
+local teamInput = ""
+Tabs.Visual:Input({
+    Title="隊伍名稱", Placeholder="輸入隊伍名稱...",
+    Callback=function(text) teamInput = text end
+})
+Tabs.Visual:Button({
+    Title="切換隊伍 (Team)", Desc="切換到指定隊伍",
+    Callback=function()
+        if teamInput == "" then return end
+        for _, t in ipairs(game:GetService("Teams"):GetChildren()) do
+            if t.Name:lower():match(teamInput:lower()) then
+                LocalPlayer.Team = t; notify("隊伍","已切換到 "..t.Name,3); return
+            end
+        end
+        notify("隊伍","找不到隊伍："..teamInput, 3)
+    end
+})
+Tabs.Visual:Section({ Title="光源" })
+Tabs.Visual:Toggle({
+    Title="動態光源 (Light)", Desc="在角色身上新增點光源", Value=false,
+    Callback=function(state)
+        if lightInst then lightInst:Destroy(); lightInst = nil end
+        if not state then return end
+        local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+        if rt then
+            lightInst = Instance.new("PointLight")
+            lightInst.Range      = _G.lightRange  or 30
+            lightInst.Brightness = _G.lightBright or 1
+            lightInst.Parent     = rt
+        end
+    end
+})
+Tabs.Visual:Slider({
+    Title="光源範圍", Desc="調整光源半徑",
+    Value={Min=1, Max=1000, Default=50},
+    Callback=function(v) _G.lightRange = v; if lightInst then lightInst.Range = v end end
+})
+Tabs.Visual:Slider({
+    Title="光源亮度", Desc="調整光源亮度",
+    Value={Min=1, Max=5, Default=1},
+    Callback=function(v) _G.lightBright = v; if lightInst then lightInst.Brightness = v end end
+})
+Tabs.Visual:Section({ Title="工具" })
+Tabs.Visual:Button({
+    Title="獲取工具 (Tools)", Desc="從ReplicatedStorage和Lighting複製工具",
+    Callback=function()
+        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+        local function copyTools(inst)
+            for _, c in ipairs(inst:GetChildren()) do
+                if c:IsA("Tool") or c:IsA("HopperBin") then c:Clone().Parent = bp end
+                copyTools(c)
+            end
+        end
+        copyTools(Lighting); copyTools(ReplicatedStorage)
+        notify("工具","已複製工具",3)
+    end
+})
+Tabs.Visual:Button({
+    Title="移除工具 (NoTools)", Desc="點擊立即移除所有工具",
+    Callback=function()
+        local char = LocalPlayer.Character
+        local bp   = LocalPlayer:FindFirstChildOfClass("Backpack")
+        for _, container in ipairs({char, bp}) do
+            if container then
+                for _, v in ipairs(container:GetDescendants()) do
+                    if v:IsA("Tool") or v:IsA("HopperBin") then v:Destroy() end
+                end
+            end
+        end
+    end
+})
+Tabs.Visual:Button({
+    Title="裝備所有工具 (EquipTools)", Desc="同時裝備所有工具",
+    Callback=function()
+        local bp   = LocalPlayer:FindFirstChildOfClass("Backpack")
+        local char = LocalPlayer.Character
+        if bp and char then
+            for _, v in ipairs(bp:GetChildren()) do
+                if v:IsA("Tool") or v:IsA("HopperBin") then v.Parent = char end
+            end
+        end
+    end
+})
+Tabs.Visual:Button({
+    Title="卸下所有工具 (UnequipTools)", Desc="同時卸下所有工具",
+    Callback=function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:UnequipTools() end
+    end
+})
+Tabs.Visual:Toggle({
+    Title="讓工具可拋棄 (DroppableTools)", Desc="讓工具可以被丟棄", Value=false,
+    Callback=function(state)
+        if not state then return end
+        local char = LocalPlayer.Character
+        local bp   = LocalPlayer:FindFirstChildOfClass("Backpack")
+        for _, container in ipairs({char, bp}) do
+            if container then
+                for _, v in ipairs(container:GetChildren()) do
+                    if v:IsA("Tool") then v.CanBeDropped = true end
+                end
+            end
+        end
+    end
+})
+Tabs.Visual:Toggle({
+    Title="自動撿取工具 (GrabTools)", Desc="自動撿取掉落的工具", Value=false,
+    Callback=function(state)
+        if grabtoolsFunc then grabtoolsFunc:Disconnect(); grabtoolsFunc = nil end
+        if not state then return end
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        grabtoolsFunc = Workspace.ChildAdded:Connect(function(child)
+            if char and child:IsA("BackpackItem") and child:FindFirstChild("Handle") then
+                hum:EquipTool(child)
+            end
+        end)
+    end
+})
+Tabs.Visual:Toggle({
+    Title="刪除手持工具 (DST)", Desc="移除當前手持工具", Value=false,
+    Callback=function(state)
+        if not state then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, v in ipairs(char:GetDescendants()) do
+            if v:IsA("Tool") or v:IsA("HopperBin") then v:Destroy() end
+        end
+    end
+})
+Tabs.Visual:Section({ Title="F3X工具" })
+Tabs.Visual:Button({
+    Title="F3X 建築工具", Desc="給予F3X建築工具",
+    Callback=function()
+        notify("F3X","正在載入...",3)
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/refs/heads/main/f3x.lua"))()
+    end
+})
+
+-- ─────────────────────────────────────
+-- 傳送
+-- ─────────────────────────────────────
+Tabs.Teleport:Section({ Title="傳送" })
+Tabs.Teleport:Toggle({
+    Title="點擊傳送", Desc="點擊地面傳送到該位置", Value=false,
+    Callback=function(state) tpEnabled = state end
+})
+-- 變數設置
+local SavedLocations = {} -- 儲存座標的表
+local LocationCount = 0   -- 座標計數器
+local SelectedLocation = nil -- 當前下拉選單選中的座標名稱
+Tabs.Teleport:Dropdown({
+    Title = "選擇儲存的座標",
+    Desc = "選擇座標後將自動傳送",
+    Values = {},
+    Value = nil,
+    Callback = function(value)
+        SelectedLocation = value
+        
+        -- 直接執行傳送邏輯
+        if SelectedLocation and SavedLocations[SelectedLocation] then
+            local player = game.Players.LocalPlayer
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local targetCFrame = SavedLocations[SelectedLocation]
+                player.Character.HumanoidRootPart.CFrame = targetCFrame
+                
+                -- 取得目標座標資訊
+                local targetPos = targetCFrame.Position
+                local posX = string.format("%.1f", targetPos.X)
+                local posY = string.format("%.1f", targetPos.Y)
+                local posZ = string.format("%.1f", targetPos.Z)
+
+                WindUI:Notify({
+                    Title = "傳送成功",
+                    Content = string.format("已傳送至 %s\n(%s, %s, %s)", SelectedLocation, posX, posY, posZ),
+                    Duration = 3
+                })
+            end
+        end
+    end
+})
+
+-- 儲存目前座標按鈕 (已新增防重複邏輯)
+Tabs.Teleport:Button({
+    Title = "儲存目前座標",
+    Desc = "將目前位置儲存到選單中並顯示座標",
+    Callback = function()
+        local player = game.Players.LocalPlayer
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            -- 取得當前位置與座標值
+            local currentCFrame = player.Character.HumanoidRootPart.CFrame
+            local pos = currentCFrame.Position
+            
+            -- 取整數或四捨五入（格式化為保留小數點後 1 位）
+            local posX = string.format("%.1f", pos.X)
+            local posY = string.format("%.1f", pos.Y)
+            local posZ = string.format("%.1f", pos.Z)
+
+            -- 【防重複檢測】檢查是否已有極度接近或相同的座標
+            for name, savedCFrame in pairs(SavedLocations) do
+                -- 距離小於 0.5 單位則判定為同一地點
+                if (savedCFrame.Position - pos).Magnitude < 0.5 then
+                    WindUI:Notify({
+                        Title = "無法儲存",
+                        Content = string.format("此位置已存在於【%s】\n座標: (%s, %s, %s)", name, posX, posY, posZ),
+                        Duration = 3
+                    })
+                    return -- 中斷執行，不新增重複座標
+                end
+            end
+
+            LocationCount = LocationCount + 1
+            local locName = "座標" .. LocationCount
+            
+            -- 存入 Table
+            SavedLocations[locName] = currentCFrame
+            
+            -- 更新 Dropdown 列表
+            local dropdownList = {}
+            for name, _ in pairs(SavedLocations) do
+                table.insert(dropdownList, name)
+            end
+            
+            table.sort(dropdownList, function(a, b)
+                local numA = tonumber(a:match("%d+")) or 0
+                local numB = tonumber(b:match("%d+")) or 0
+                return numA < numB
+            end)
+            
+            -- 刷新 Dropdown
+            LocationDropdown:Refresh(dropdownList)
+            
+            -- 跳出包含 (X, Y, Z) 座標的通知
+            WindUI:Notify({
+                Title = "儲存成功",
+                Content = string.format("%s\n座標: (%s, %s, %s)", locName, posX, posY, posZ),
+                Duration = 4
+            })
+        end
+    end
+})
+Tabs.Teleport:Button({
+    Title="TP 回最後死亡位置 (Flashback)", Desc="傳送到上次死亡地點",
+    Callback=function()
+        local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+        if lastDeathPos and rt then
+            rt.CFrame = lastDeathPos; notify("Flashback","已傳送到死亡位置",3)
+        else notify("Flashback","沒有記錄到死亡位置",3) end
+    end
+})
+Tabs.Teleport:Section({ Title="傳送工具" })
+Tabs.Teleport:Button({
+    Title="傳送工具 (TpTool)", Desc="給予點擊地面即可傳送的工具",
+    Callback=function()
+        local tool = Instance.new("Tool")
+        tool.Name          = "Teleport Tool"
+        tool.RequiresHandle = false
+        tool.Parent        = LocalPlayer:FindFirstChildOfClass("Backpack")
+        tool.Activated:Connect(function()
+            local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            if rt and mouse.Hit then
+                rt.CFrame = CFrame.new(mouse.Hit.X, mouse.Hit.Y + 3, mouse.Hit.Z)
+                breakVelocity()
+            end
+        end)
+        notify("TpTool","已給予傳送工具",3)
+    end
+})
+
+-- 部件傳送輔助函式
+local function findTargetInstance(inputStr)
+    if inputStr == "" then return nil end
+    if inputStr:lower():match("^game") or inputStr:lower():match("^workspace") then
+        local cleanStr = inputStr:gsub('^game:GetService%("([^"]+)"%)', "%1")
+        cleanStr = cleanStr:gsub('^game%.', ""):gsub('^workspace', "Workspace")
+        local current = game
+        for segment in cleanStr:gmatch('[%w_]+') do
+            if segment ~= "game" and current then
+                current = current:FindFirstChild(segment)
+                    or (current == game and pcall(function() return game:GetService(segment) end) and game:GetService(segment))
+            end
+        end
+        if current and current ~= game and current:IsA("BasePart") then return current end
+    end
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name:lower() == inputStr:lower() then return v end
+    end
+    return nil
+end
+
+Tabs.Teleport:Section({ Title="前往部件" })
+local gotoPartInput = ""
+Tabs.Teleport:Toggle({
+    Title="部件路徑 (PartName)", Desc="點擊部件查看並自動複製完整路徑", Value=false,
+    Callback=function(state)
+        if partNameConn then partNameConn:Disconnect(); partNameConn = nil end
+        if not state then return end
+        local function getHierarchy(obj)
+            local ancestors, current = {}, obj
+            while current and current ~= game do
+                table.insert(ancestors, 1, current); current = current.Parent
+            end
+            if #ancestors == 0 then return obj:GetFullName() end
+            local path = 'game:GetService("'..ancestors[1].ClassName..'")'
+            for i = 2, #ancestors do
+                local name = ancestors[i].Name
+                path = path .. (name:match("^[%a_][%w_]*$") and "."..name or '["'..name..'"]')
+            end
+            return path
+        end
+        partNameConn = mouse.Button1Down:Connect(function()
+            local target = mouse.Target
+            if target then
+                local ok, path = pcall(getHierarchy, target)
+                if not ok then path = target:GetFullName() end
+                notify("部件路徑已複製", path, 8)
+                if setclipboard then setclipboard(path) end
+            end
+        end)
+    end
+})
+Tabs.Teleport:Input({
+    Title="部件名稱 / 完整路徑", Placeholder="輸入名稱 或 貼上完整路徑...",
+    Callback=function(text) gotoPartInput = text:match("^%s*(.-)%s*$") end
+})
+Tabs.Teleport:Button({
+    Title="前往部件 (GotoPart)", Desc="直接傳送到指定名稱或路徑之部件",
+    Callback=function()
+        if gotoPartInput == "" then notify("提示","請先輸入部件名稱或路徑！",3); return end
+        local targetPart = findTargetInstance(gotoPartInput)
+        if targetPart then
+            local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            if rt then rt.CFrame = targetPart.CFrame; notify("成功","已傳送到目標位置",2) end
+        else notify("錯誤","找不到該部件，請檢查名稱或路徑是否有誤",4) end
+    end
+})
+Tabs.Teleport:Button({
+    Title="漸進前往部件 (TweenGotoPart)", Desc="以 Tween 線性移動到指定名稱或路徑部件",
+    Callback=function()
+        if gotoPartInput == "" then notify("提示","請先輸入部件名稱或路徑！",3); return end
+        local targetPart = findTargetInstance(gotoPartInput)
+        if targetPart then
+            local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            if rt then
+                notify("提示","開始安全移動...",2)
+                TweenService:Create(rt, TweenInfo.new(tweenSpeed, Enum.EasingStyle.Linear), {CFrame=targetPart.CFrame}):Play()
+            end
+        else notify("錯誤","找不到該部件，請檢查名稱或路徑是否有誤",4) end
+    end
+})
+
+Tabs.Teleport:Section({ Title="座標傳送" })
+local coordX, coordY, coordZ = "0","0","0"
+Tabs.Teleport:Input({ Title="X 座標", Placeholder="X...", Callback=function(t) coordX = t end })
+Tabs.Teleport:Input({ Title="Y 座標", Placeholder="Y...", Callback=function(t) coordY = t end })
+Tabs.Teleport:Input({ Title="Z 座標", Placeholder="Z...", Callback=function(t) coordZ = t end })
+Tabs.Teleport:Button({
+    Title="傳送到座標 (TPPos)", Desc="傳送到指定X Y Z座標",
+    Callback=function()
+        local x, y, z = tonumber(coordX), tonumber(coordY), tonumber(coordZ)
+        if x and y and z then
+            local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            if rt then rt.CFrame = CFrame.new(x,y,z); breakVelocity() end
+        else notify("傳送","請輸入有效座標",3) end
+    end
+})
+Tabs.Teleport:Toggle({
+    Title="漸進傳送到座標 (TweenTPPos)", Desc="Tween方式移動到座標", Value=false,
+    Callback=function(state)
+        if not state then return end
+        local x, y, z = tonumber(coordX), tonumber(coordY), tonumber(coordZ)
+        if x and y and z then
+            local rt = LocalPlayer.Character and getRoot(LocalPlayer.Character)
+            if rt then
+                TweenService:Create(rt, TweenInfo.new(tweenSpeed, Enum.EasingStyle.Linear), {CFrame=CFrame.new(x,y,z)}):Play()
+            end
+        else notify("傳送","請輸入有效座標",3) end
+    end
+})
+
+-- ─────────────────────────────────────
+-- 伺服器
+-- ─────────────────────────────────────
+Tabs.Server:Section({ Title="伺服器資訊" })
+local gameTpInput = ""
+Tabs.Server:Input({
+    Title="遊戲 ID", Placeholder="輸入PlaceId後自動傳送...",
+    Callback=function(text)
+        gameTpInput = text
+        if gameTpInput ~= "" and tonumber(gameTpInput) then
+            notify("遊戲傳送","正在傳送到 "..gameTpInput.."...",3)
+            task.spawn(function()
+                pcall(function() TeleportService:Teleport(tonumber(gameTpInput)) end)
+            end)
+        end
+    end
+})
+Tabs.Server:Button({
+    Title="伺服器資訊 (ServerInfo)", Desc="顯示地圖名稱、Ping等資訊",
+    Callback=function()
+        task.spawn(function()
+            local plrCnt = #Players:GetPlayers()
+            local gt     = math.floor(Workspace.DistributedGameTime)
+            local ok, info = pcall(function() return MarketplaceService:GetProductInfo(PlaceId) end)
+            local ping = math.round(LocalPlayer:GetNetworkPing() * 1000)
+            notify("伺服器資訊",
+                "玩家："..plrCnt.."/"..Players.MaxPlayers..
+                "\n地圖："..(ok and info.Name or "未知")..
+                "\n地圖ID："..PlaceId..
+                "\n遊戲ID："..game.GameId..
+                "\n運行時間："..math.floor(gt/3600).."h "..math.floor(gt/60)%60 .."m "..gt%60 .."s"..
+                "\nPing："..ping.."ms", 15)
+        end)
+    end
+})
+Tabs.Server:Button({
+    Title="工作 ID (JobId)", Desc="複製遊戲JobId到剪貼簿",
+    Callback=function() toClipboard(JobId) end
+})
+Tabs.Server:Button({
+    Title="通知工作 ID", Desc="用通知顯示JobId和PlaceId",
+    Callback=function() notify("JobId / PlaceId","JobId: "..JobId.."\nPlaceId: "..PlaceId, 8) end
+})
+Tabs.Server:Button({
+    Title="複製地圖 ID (PlaceId)", Desc="複製當前地圖ID",
+    Callback=function() toClipboard(PlaceId) end
+})
+Tabs.Server:Button({
+    Title="複製遊戲 ID (GameId)", Desc="複製當前遊戲ID",
+    Callback=function() toClipboard(game.GameId) end
+})
+Tabs.Server:Section({ Title="自動加入伺服器" })
+Tabs.Server:Button({
+    Title="加入少人伺服器", Desc="跳到人數最少的伺服器",
+    Callback=function() notify("伺服器跳轉","正在尋找少人伺服器...",3); ServerCore:FindAndHop("small") end
+})
+Tabs.Server:Button({
+    Title="伺服器跳轉 (ServerHop)", Desc="跳到隨機其他伺服器",
+    Callback=function() notify("伺服器跳轉","正在切換伺服器...",3); ServerCore:FindAndHop("random") end
+})
+Tabs.Server:Button({
+    Title="重進當前伺服器", Desc="重新加入該伺服器",
+    Callback=function() notify("重進","正在重進中...",3); ServerCore:TeleportToServer(JobId) end
+})
+Tabs.Server:Toggle({
+    Title="自動重新加入 (AutoRejoin)", Desc="被踢出時自動重新加入", Value=false,
+    Callback=function(state)
+        if autorejoinConn then autorejoinConn:Disconnect(); autorejoinConn = nil end
+        if not state then return end
+        autorejoinConn = game:GetService("GuiService").ErrorMessageChanged:Connect(function()
+            task.wait(2)
+            pcall(function() TeleportService:TeleportToPlaceInstance(PlaceId, JobId, LocalPlayer) end)
+        end)
+        notify("AutoRejoin","已啟用自動重新加入",3)
+    end
+})
+Tabs.Server:Section({ Title="手動加入伺服器" })
+Tabs.Server:Input({
+    Title="伺服器 ID (JobId)", Placeholder="在此貼上JobId...",
+    Callback=function(text) TargetJobID = text end
+})
+Tabs.Server:Button({
+    Title="立即加入", Desc="加入所輸入的伺服器",
+    Callback=function()
+        if TargetJobID ~= "" then
+            notify("加入伺服器","正在加入中...",3)
+            ServerCore:TeleportToServer(TargetJobID)
+        end
+    end
+})
+
+-- ─────────────────────────────────────
+-- 設定
+-- ─────────────────────────────────────
+Tabs.Settings:Section({ Title="客戶端保護" })
+Tabs.Settings:Toggle({
+    Title="Anti AFK", Desc="防止因閒置被遊戲踢出", Value=true,
+    Callback=function(state) if state then EnableAntiAFK() else DisableAntiAFK() end end
+})
+Tabs.Settings:Toggle({
+    Title="客戶端防踢 (AntiKick)", Desc="防止LocalScript踢出玩家", Value=false,
+    Callback=function(state)
+        if not state then return end
+        if not hookmetamethod then notify("AntiKick","不支援(缺少hookmetamethod)",3); return end
+        if hookfunction then hookfunction(LocalPlayer.Kick, function() end) end
+        local old; old = hookmetamethod(game, "__namecall", function(self, ...)
+            if self == LocalPlayer and getnamecallmethod and getnamecallmethod():lower() == "kick" then return end
+            return old(self, ...)
+        end)
+        notify("AntiKick","客戶端防踢已啟用",3)
+    end
+})
+Tabs.Settings:Section({ Title="設定" })
+Tabs.Settings:Button({
+    Title="關閉遊戲 (Exit)", Desc="強制退出回到Roblox主頁",
+    Callback=function() game:Shutdown() end
+})
+Tabs.Settings:Toggle({
+    Title="隱藏UI", Desc="隱藏遊戲畫面上的UI", Value=false,
+    Callback=function(state) ToggleGameUI(state) end
+})
+Tabs.Settings:Button({
+    Title="全螢幕 (ToggleFS)", Desc="切換全螢幕",
+    Callback=function() pcall(function() game:GetService("GuiService"):ToggleFullscreen() end) end
+})
+Tabs.Settings:Toggle({
+    Title="啟用 Shift Lock", Desc="啟用Shift Lock選項", Value=false,
+    Callback=function(state)
+        if state then LocalPlayer.DevEnableMouseLock = true; notify("Shift Lock","已啟用",3) end
+    end
+})
+Tabs.Settings:Toggle({
+    Title="Ctrl Lock", Desc="將Shift Lock綁定到Ctrl鍵", Value=false,
+    Callback=function(state)
+        ctrlLockEnabled = state
+        local ml = LocalPlayer.PlayerScripts:FindFirstChild("PlayerModule")
+        local bk = ml and ml:FindFirstChild("CameraModule")
+             and ml.CameraModule:FindFirstChild("MouseLockController")
+             and ml.CameraModule.MouseLockController:FindFirstChild("BoundKeys")
+        if not bk and ml and ml:FindFirstChild("CameraModule") and ml.CameraModule:FindFirstChild("MouseLockController") then
+            bk = Instance.new("StringValue")
+            bk.Name = "BoundKeys"
+            bk.Parent = ml.CameraModule.MouseLockController
+        end
+        if bk then bk.Value = state and "LeftControl" or "LeftShift" end
+        notify("Ctrl Lock", state and "已綁定到Ctrl" or "已恢復Shift", 3)
+    end
+})
+Tabs.Settings:Toggle({
+    Title="Replication Lag", Desc="設定 IncomingReplicationLag", Value=false,
+    Callback=function(state)
+        replicationLagEnabled = state
+        settings():GetService("NetworkSettings").IncomingReplicationLag = state and currentLagValue or 0
+    end
+})
+Tabs.Settings:Slider({
+    Title="Lag 值", Desc="調整延遲量",
+    Value={Min=0, Max=100, Default=0},
+    Callback=function(v)
+        currentLagValue = v
+        if replicationLagEnabled then
+            settings():GetService("NetworkSettings").IncomingReplicationLag = v
+        end
+    end
+})
+Tabs.Settings:Section({ Title="快捷鍵設定" })
+Tabs.Settings:Keybind({
+    Title="開關快捷鍵", Desc="可更改介面開關鍵", Value=CurrentKey,
+    Callback=function(v)
+        CurrentKey = v
+        if not KeyDisabled then pcall(function() Window:SetToggleKey(Enum.KeyCode[v]) end) end
+    end
+})
+Tabs.Settings:Toggle({
+    Title="停用快捷鍵", Desc="開啟後禁用快捷鍵", Value=false,
+    Callback=function(state)
+        KeyDisabled = state
+        if state then pcall(function() Window:SetToggleKey(nil) end)
+        else pcall(function() Window:SetToggleKey(Enum.KeyCode[CurrentKey]) end) end
+    end
+})
+Tabs.Settings:Section({ Title="鏡頭" })
+Tabs.Settings:Button({
+    Title="修復鏡頭 (FixCam)", Desc="重置鏡頭到正常狀態",
+    Callback=function()
+        StopSpectate()
+        Camera.CameraType           = Enum.CameraType.Custom
+        Camera.FieldOfView          = 70
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMaxZoomDistance = 400
+        LocalPlayer.CameraMode     = "Classic"
+        notify("FixCam","鏡頭已修復",3)
+    end
+})
+Tabs.Settings:Section({ Title="光照" })
+Tabs.Settings:Toggle({
+    Title="循環全亮 (LoopFullBright)", Desc="持續保持全亮", Value=false,
+    Callback=function(state)
+        if brightLoop then brightLoop:Disconnect(); brightLoop = nil end
+        if not state then return end
+        local function doFullBright()
+            Lighting.Brightness = 2; Lighting.ClockTime = 14
+            Lighting.FogEnd = 100000; Lighting.GlobalShadows = false
+            Lighting.OutdoorAmbient = Color3.fromRGB(128,128,128)
+        end
+        doFullBright()
+        brightLoop = RunService.RenderStepped:Connect(doFullBright)
+    end
+})
+Tabs.Settings:Toggle({
+    Title="白天 (Day Toggle)", Desc="持續保持白天", Value=false,
+    Callback=function(state)
+        if dayloopConn then dayloopConn:Disconnect(); dayloopConn = nil end
+        if not state then return end
+        Lighting.ClockTime = 14
+        dayloopConn = Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+            Lighting.ClockTime = 14
+        end)
+    end
+})
+Tabs.Settings:Button({
+    Title="設為白天", Desc="立即設定為白天",
+    Callback=function() Lighting.ClockTime = 14; notify("白天","已設為白天",2) end
+})
+Tabs.Settings:Toggle({
+    Title="夜晚 (Night Toggle)", Desc="持續保持夜晚", Value=false,
+    Callback=function(state)
+        if nightloopConn then nightloopConn:Disconnect(); nightloopConn = nil end
+        if not state then return end
+        Lighting.ClockTime = 0
+        nightloopConn = Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
+            Lighting.ClockTime = 0
+        end)
+    end
+})
+Tabs.Settings:Button({
+    Title="設為夜晚", Desc="立即設定為夜晚",
+    Callback=function() Lighting.ClockTime = 0; notify("夜晚","已設為夜晚",2) end
+})
+Tabs.Settings:Section({ Title="畫質設定" })
+Tabs.Settings:Toggle({
+    Title="X光 (Xray)", Desc="讓地圖所有部件半透明", Value=false,
+    Callback=function(state)
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart")
+            and not v.Parent:FindFirstChildWhichIsA("Humanoid")
+            and not v.Parent.Parent:FindFirstChildWhichIsA("Humanoid") then
+                v.LocalTransparencyModifier = state and 0.5 or 0
+            end
+        end
+    end
+})
+Tabs.Settings:Button({
+    Title="低配模式", Desc="降低畫質以提升FPS",
+    Callback=function() ApplyLowGraphics(); notify("低配模式","已啟用",3) end
+})
+Tabs.Settings:Button({
+    Title="移除霧 (Remove Fog)", Desc="移除霧效果",
+    Callback=function() RemoveFog(); notify("移除霧","已移除",3) end
+})
+Tabs.Settings:Toggle({
+    Title="停用3D渲染 (NoRender)", Desc="停用3D渲染以降低CPU", Value=false,
+    Callback=function(state) pcall(function() RunService:Set3dRenderingEnabled(not state) end) end
+})
+Tabs.Settings:Toggle({
+    Title="2022材質", Desc="啟用2022材質貼圖", Value=false,
+    Callback=function(state)
+        if sethiddenproperty then
+            sethiddenproperty(game:GetService("MaterialService"), "Use2022Materials", state)
+        else notify("2022材質","不支援(缺少sethiddenproperty)",3) end
+    end
+})
+
+-- ─────────────────────────────────────
+-- 其他
+-- ─────────────────────────────────────
+Tabs.Other:Section({ Title="外部腳本" })
+Tabs.Other:Button({
+    Title="一般飛行 GUI", Desc="載入Normal Fly GUI",
+    Callback=function()
+        notify("Normal FLY GUI","正在載入...",3)
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/script/refs/heads/main/normal%20fly%20v3"))()
+    end
+})
+Tabs.Other:Button({
+    Title="幽靈飛行 GUI", Desc="載入Ghost Fly GUI",
+    Callback=function()
+        notify("Ghost FLY GUI","正在載入...",3)
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/script/refs/heads/main/ghost%20fly%20v3"))()
+    end
+})
+Tabs.Other:Button({
+    Title="指令 (Infinite Yield)", Desc="載入IY指令列",
+    Callback=function()
+        notify("指令","正在載入Infinite Yield...",3)
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+    end
+})
+
+-- 啟動 Anti AFK
+EnableAntiAFK()
+
+end -- Popup Callback 結尾
+        }
+    }
+})
