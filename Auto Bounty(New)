@@ -1,4 +1,4 @@
------v0.07
+-----v0.014(修復重置腳本)
 ---------------------------------------
 --服務
 ----------------------------------------
@@ -126,8 +126,8 @@ end)
 ----------------------------------------
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopMinPlayers = 5
-_G.HopMaxPlayers = 8
+_G.HopMinPlayers = 6
+_G.HopMaxPlayers = 7
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
 
@@ -195,8 +195,8 @@ local SORU_COOLDOWN = 10
 local MAX_SORU_DISTANCE = 900
 
 --Hitbox
-_G.Hitbox_Enabled = true
-_G.Hitbox_Size = 100
+_G.Hitbox_Enabled = false
+_G.Hitbox_Size = 1
 _G.Hitbox_Transparency = 0.5
 
 --Auto Flee
@@ -229,18 +229,25 @@ _G.FTP2_LinearVelocity = nil
 _G.FTP2_AntiGravity = nil
 _G.FTP2_LastTeleportTicks = {}
 _G.FTP2_TeleportPauseUntil = 0
+_G.FTP2_TeleportFails = {}
+_G.FTP2_BlockedEntrances = {}
 _G.FTP2_Blacklist = {}
 _G.FTP2_HasTriggeredHop = false
 _G.FTP2_TimeoutLimit = 120
 
 _G.FTP2_HistoryWindow = 0.35
 _G.FTP2_ClearTimeout = 10
-_G.FTP2_FlySpeed = 300
+_G.FTP2_FlySpeed = 275
 _G.FTP2_HeightOffset = 30
+_G.FTP2_OrbitRadius = 50
+_G.FTP2_OrbitInterval = 0.016
+_G.FTP2_LowHpLockPercent = 30
+_G.FTP2_NoTeleportRange = 300
 _G.FTP2_CurrentTarget = nil
 _G.FTP2_TargetLockTime = 0
 _G.TargetHistory = {}
 _G.FTP2_StartTime = 0
+_G.FTP2_FleeReturnPos = nil
 
 _G.FTP2_SafeZonePositions = {
     World1 = {
@@ -263,6 +270,7 @@ _G.FTP2_SafeZonePositions = {
 }
 
 local StartServerHop
+local IsSafeToHopCheck
 
 --自瞄
 _G.SilentAimEnabled = true
@@ -370,69 +378,42 @@ _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
 ----------------------------------------
---配置自動保存
+-- [FIX 4] 配置自動保存
 ----------------------------------------
 local ConfigFolder = "AutoBounty_Config"
 local ConfigFile = ConfigFolder .. "/settings.json"
 local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
+
 local ConfigKeys = {
-	--自動跳服
-	"ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
-    --Fast Attack&Fruit M1
-	"FastAttack", "FastAttackMode", "AttackDistance", "FastAttackSpeed", "FruitsM1Enable", "FruitsM1DelayValue",
-	--ESP Players
-	"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowPVPStatus", "ESP_FontSize",
-	--Auto Enabled PVP
-	"AutoEnablePVP",
-	--Auto Buso
-	"AutoBusoEnabled",
-	--Auto V3
-	"AutoV3_Enabled",
-	--Auto V4
-	"AutoV4_Enabled",
-	--Auto Ken
-	"AutoKenEnabled",
-	--自動順步
-	"AutoSoru",
-	--Hitbox
-	"Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
-	--Auto Flee
-	"AutoFlee", "AutoFleeHP",
-	--移除動作
-	"RemoveAnim",
-	--walk on water
-	"WaterWalkEnabled",
-	--移除岩漿
-	"RemoveLavaEnabled",
-	--移除鬼船傷害
-	"RemoveGhostShipLavaEnabled",
-	--選擇隊伍
-	"SelectTeam",
-	--自動列賞
-    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_HeightOffset", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
-	--自瞄
-	"SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
-    --畫面鎖定
+    "ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
+    "FastAttack", "FastAttackMode", "AttackDistance", "FastAttackSpeed", "FruitsM1Enable", "FruitsM1DelayValue",
+    "ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowPVPStatus", "ESP_FontSize",
+    "AutoEnablePVP",
+    "AutoBusoEnabled",
+    "AutoV3_Enabled",
+    "AutoV4_Enabled",
+    "AutoKenEnabled",
+    "AutoSoru",
+    "Hitbox_Enabled", "Hitbox_Size", "Hitbox_Transparency",
+    "AutoFlee", "AutoFleeHP",
+    "RemoveAnim",
+    "WaterWalkEnabled",
+    "RemoveLavaEnabled",
+    "RemoveGhostShipLavaEnabled",
+    "SelectTeam",
+    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_HeightOffset", "FTP2_OrbitRadius", "FTP2_OrbitInterval", "FTP2_LowHpLockPercent", "FTP2_NoTeleportRange", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
+    "SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
     "CamlockEnabled",
-	--自動放技能
     "AutoSkillMainEnable", "AutoSkillWeapons",
-	--FPS
-	"UnlockFPS",
-	--低配模式
-	"LowVisualMode",
-	--移除迷霧
-	"RemoveFogEnabled",
-    --AFK&Kick
+    "UnlockFPS",
+    "LowVisualMode",
+    "RemoveFogEnabled",
     "AntiAFK_ENABLED", "AutoRejoinEnabled",
-	--自動執行
-	"AutoExecute",
-    --主題
+    "AutoExecute",
     "Theme",
-	--自動隱藏UI
-	"AutoHideEnabled",
-	--快捷鍵
+    "AutoHideEnabled",
     "CurrentKey", "KeyDisabled",
 }
 
@@ -496,6 +477,10 @@ local function LoadConfig()
     return false
 end
 
+local function MarkConfigDirty()
+    ConfigDirty = true
+end
+
 local InitialConfig = CollectConfig()
 LoadConfig()
 if type(Settings) == "table" then
@@ -506,22 +491,12 @@ ConfigReady = true
 SelectTeam()
 
 task.spawn(function()
-    local lastConfig = nil
-    while task.wait(1) do
-        if ConfigReady then
-            local ok, currentConfig = pcall(function()
-                return HttpService:JSONEncode(CollectConfig())
-            end)
-            if ok and currentConfig ~= lastConfig then
-                lastConfig = currentConfig
-                ConfigDirty = true
-            end
-            if ConfigDirty then SaveConfig(true) end
+    while task.wait(3) do
+        if ConfigReady and ConfigDirty then
+            SaveConfig(true)
         end
     end
 end)
-
-
 
 ----------------------------------------
 --功能核心邏輯
@@ -582,21 +557,18 @@ local function IsServerAllowed(info)
     end
 
     local minP = tonumber(_G.HopMinPlayers) or 6
-    local maxP = tonumber(_G.HopMaxPlayers) or 9
+    local maxP = tonumber(_G.HopMaxPlayers) or 7
     local minB = tonumber(_G.HopMinBounty) or 3000000
     local maxB = tonumber(_G.HopMaxBounty) or math.huge
 
-    -- 嚴格人數檢查 (確保不會少於 HopMinPlayers 或超過 HopMaxPlayers)
     if info.Players < minP or info.Players > maxP then
         return false
     end
 
-    -- 賞金檢查
     if info.Bounty < minB or info.Bounty > maxB then
         return false
     end
 
-    -- 地區二次雙重比對 (避免 UI 篩選延遲導致誤入其他地區)
     if _G.ServerRegion and _G.ServerRegion ~= "" then
         local targetRegion = tostring(_G.ServerRegion):lower()
         local serverRegion = tostring(info.Region):lower()
@@ -623,7 +595,7 @@ local function BuildFilterText()
         "🌐 地區｜%s\n👥 人數｜%d ~ %d 人\n💰 賞金｜%s",
         tostring(_G.ServerRegion),
         tonumber(_G.HopMinPlayers) or 6,
-        tonumber(_G.HopMaxPlayers) or 9,
+        tonumber(_G.HopMaxPlayers) or 7,
         bountyStr
     )
 end
@@ -658,6 +630,20 @@ local function StopServerHop()
     getgenv().IsServerHopping = false
     getgenv().ShuttingDown = false
 
+    if getgenv().ServerHopHiddenGui then
+        getgenv().ServerHopHiddenGui = nil
+        local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        local serverBrowser = PlayerGui and PlayerGui:FindFirstChild("ServerBrowser")
+        if serverBrowser then
+            pcall(function()
+                serverBrowser.Enabled = false
+                if serverBrowser:FindFirstChild("Frame") then
+                    serverBrowser.Frame.Visible = true
+                end
+            end)
+        end
+    end
+
     WindUI:Notify({
         Title = "自動跳服",
         Content = "已停止跳服",
@@ -678,6 +664,69 @@ local function StartServerHop()
     getgenv().IsServerHopping = true
     getgenv().ShuttingDown = true
 
+    -- [換服超時] 開始換服後若未在5分鐘內成功換服：三海進二海、二海進三海，其餘重進伺服器
+    local hopStartTime = tick()
+    task.spawn(function()
+        while getgenv().IsServerHopping do
+            if tick() - hopStartTime >= 300 then
+                local placeId = game.PlaceId
+                if table.find({7449423635, 100117331123089}, placeId) then
+                    -- 三海 → 二海
+                    WindUI:Notify({
+                        Title = "自動跳服",
+                        Content = "5分鐘內未成功換服\n正在傳送至二海...",
+                        Icon = "waves",
+                        Duration = 5,
+                    })
+                    pcall(function()
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelDressrosa")
+                    end)
+                elseif table.find({4442272183, 79091703265657}, placeId) then
+                    -- 二海 → 三海
+                    WindUI:Notify({
+                        Title = "自動跳服",
+                        Content = "5分鐘內未成功換服\n正在傳送至三海...",
+                        Icon = "waves",
+                        Duration = 5,
+                    })
+                    pcall(function()
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelZou")
+                    end)
+                else
+                    -- 其他(一海) → 執行重進伺服器
+                    WindUI:Notify({
+                        Title = "自動跳服",
+                        Content = "5分鐘內未成功換服\n執行重進伺服器...",
+                        Icon = "refresh-cw",
+                        Duration = 5,
+                    })
+                    pcall(function()
+                        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+                    end)
+                end
+                getgenv().IsServerHopping = false
+                return
+            end
+            task.wait(5)
+        end
+    end)
+
+    -- [安全檢查] 必須安全且無PVP狀態才能開始換服
+    if IsSafeToHopCheck and not IsSafeToHopCheck() then
+        WindUI:Notify({
+            Title = "自動跳服",
+            Content = "目前狀態不安全(戰鬥中/已開啟PVP)\n等待安全後才會開始搜尋伺服器...",
+            Icon = "shield-alert",
+            Duration = 5,
+        })
+        while getgenv().IsServerHopping and IsSafeToHopCheck and not IsSafeToHopCheck() do
+            task.wait(1)
+        end
+        if not getgenv().IsServerHopping then
+            return
+        end
+    end
+
     WindUI:Notify({
         Title = "自動跳服",
         Content = "準備跳服...\n\n" .. BuildFilterText(),
@@ -685,68 +734,129 @@ local function StartServerHop()
         Duration = 8,
     })
 
-    local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
-    if not PlayerGui:FindFirstChild("ServerBrowser") then
-        getgenv().IsServerHopping = false
-        return
-    end
-
-    PlayerGui.ServerBrowser.Enabled = true
-    task.wait(0.1)
-
-    local Filters = PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
-    local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
-    local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
-
-    if not TextBox then
-        getgenv().IsServerHopping = false
-        return
-    end
-
-    TextBox.Text = _G.ServerRegion
-
-    local Full = Filters and Filters:FindFirstChild("Full")
-    local FullCheck = Full and Full:FindFirstChild("Check")
-    if FullCheck then
-        FullCheck.Text = "✔️"
-        task.wait(0.1)
-    end
-
-    local ScrollingFrame = PlayerGui.ServerBrowser.Frame.ScrollingFrame
-    local FakeScroll = PlayerGui.ServerBrowser.Frame.FakeScroll
-    local Inside = FakeScroll.Inside
-
-    task.spawn(function()
-        while getgenv().IsServerHopping do
-            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
-            task.wait(0.3)
-        end
-    end)
-
-    task.wait()
-
     local currentJobId = game.JobId
     local triedJobs = {}
-    local ServerBrowserRemote = ReplicatedStorage:WaitForChild("__ServerBrowser")
+    local ServerBrowserRemote = ReplicatedStorage:FindFirstChild("__ServerBrowser")
+
+    local directServers = nil
+    if ServerBrowserRemote then
+        for _, method in ipairs({ "getServers", "fetchServers", "getServerList", "fetch", "servers", "searchServers" }) do
+            local ok, result = pcall(function()
+                return ServerBrowserRemote:InvokeServer(method)
+            end)
+            if ok and type(result) == "table" then
+                local arr = result.Servers or result.ServerList or result.Data or result
+                if type(arr) == "table" then
+                    local parsed = {}
+                    for _, s in ipairs(arr) do
+                        if type(s) == "table" then
+                            local jobId = s.JobId or s.Job or s.id or s.teleportData
+                            if type(jobId) == "string" and tostring(jobId):find("-", 1, true) then
+                                table.insert(parsed, {
+                                    JobId = tostring(jobId),
+                                    Region = tostring(s.Region or s.RegionName or s.region or ""),
+                                    Players = tonumber(s.Players or s.PlayerCount or s.CurrentPlayers or s.currentPlayers) or 0,
+                                    MaxPlayers = tonumber(s.MaxPlayers or s.MaximumPlayers or s.maxPlayers) or 0,
+                                    Bounty = tonumber(s.Bounty or s.ServerBounty or s.bounty) or 0,
+                                })
+                            end
+                        end
+                    end
+                    if #parsed > 0 then
+                        directServers = parsed
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    local useHiddenGui = false
+    local Inside = nil
+    if not directServers then
+        local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+        local serverBrowser = PlayerGui:FindFirstChild("ServerBrowser")
+
+        if not serverBrowser then
+            getgenv().IsServerHopping = false
+            WindUI:Notify({ Title = "自動跳服", Content = "找不到 ServerBrowser，無法跳服", Duration = 4 })
+            return
+        end
+
+        useHiddenGui = true
+        getgenv().ServerHopHiddenGui = true
+
+        pcall(function()
+            if serverBrowser:FindFirstChild("Frame") then
+                serverBrowser.Frame.Visible = false
+            end
+        end)
+
+        serverBrowser.Enabled = true
+
+        pcall(function()
+            if serverBrowser:FindFirstChild("Frame") then
+                serverBrowser.Frame.Visible = false
+            end
+        end)
+
+        local Filters = serverBrowser.Frame:FindFirstChild("Filters")
+        local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
+        local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
+        if TextBox then
+            TextBox.Text = _G.ServerRegion
+        end
+
+        local ScrollingFrame = serverBrowser.Frame.ScrollingFrame
+        local FakeScroll = serverBrowser.Frame.FakeScroll
+        Inside = FakeScroll and FakeScroll:FindFirstChild("Inside")
+
+        task.spawn(function()
+            while getgenv().IsServerHopping do
+                if ScrollingFrame then
+                    ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
+                end
+                task.wait(0.3)
+            end
+        end)
+    end
+
+    task.wait(0.5)
 
     task.spawn(function()
         while getgenv().IsServerHopping do
             local candidate = nil
 
-            for _, template in ipairs(Inside:GetChildren()) do
-                if template.Name == "Template" then
-                    local joinButton = template:FindFirstChild("Join")
-                    local textLabel = template:FindFirstChild("TextLabel")
-                    local info = textLabel and ParseServerInfo(textLabel.Text)
+            if directServers then
+                for _, s in ipairs(directServers) do
+                    if s.JobId ~= currentJobId and not triedJobs[s.JobId] then
+                        local info = {
+                            Region = s.Region,
+                            Players = s.Players,
+                            MaxPlayers = s.MaxPlayers,
+                            Bounty = s.Bounty,
+                        }
+                        if IsServerAllowed(info) then
+                            candidate = { info = info, job = s.JobId }
+                            break
+                        end
+                    end
+                end
+            elseif useHiddenGui and Inside then
+                for _, template in ipairs(Inside:GetChildren()) do
+                    if template.Name == "Template" then
+                        local joinButton = template:FindFirstChild("Join")
+                        local textLabel = template:FindFirstChild("TextLabel")
+                        local info = textLabel and ParseServerInfo(textLabel.Text)
 
-                    if joinButton and info and IsServerAllowed(info) then
-                        local job = joinButton:GetAttribute("Job")
-                        if job and tostring(job):find("-", 1, true) then
-                            job = tostring(job)
-                            if job ~= currentJobId and not triedJobs[job] then
-                                candidate = { info = info, job = job }
-                                break
+                        if joinButton and info and IsServerAllowed(info) then
+                            local job = joinButton:GetAttribute("Job")
+                            if job and tostring(job):find("-", 1, true) then
+                                job = tostring(job)
+                                if job ~= currentJobId and not triedJobs[job] then
+                                    candidate = { info = info, job = job }
+                                    break
+                                end
                             end
                         end
                     end
@@ -754,18 +864,23 @@ local function StartServerHop()
             end
 
             if candidate and getgenv().IsServerHopping then
-                WindUI:Notify({
-                    Title = "匹配到服务器",
-                    Content = BuildServerInfoText(candidate.info, candidate.job),
-                    Icon = "wind",
-                    Duration = 6,
-                })
+                -- 換服前再次確認安全且無PVP狀態
+                if IsSafeToHopCheck and not IsSafeToHopCheck() then
+                    task.wait(1)
+                else
+                    WindUI:Notify({
+                        Title = "匹配到服务器",
+                        Content = BuildServerInfoText(candidate.info, candidate.job),
+                        Icon = "wind",
+                        Duration = 6,
+                    })
 
-                pcall(function()
-                    ServerBrowserRemote:InvokeServer("teleport", candidate.job)
-                end)
+                    pcall(function()
+                        ServerBrowserRemote:InvokeServer("teleport", candidate.job)
+                    end)
 
-                triedJobs[candidate.job] = true
+                    triedJobs[candidate.job] = true
+                end
             end
 
             task.wait(5)
@@ -1310,9 +1425,21 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-Players.PlayerRemoving:Connect(removeESP)
+local PlayerCharConns = {}
+
+Players.PlayerRemoving:Connect(function(p)
+    removeESP(p)
+    if PlayerCharConns[p] then
+        PlayerCharConns[p]:Disconnect()
+        PlayerCharConns[p] = nil
+    end
+end)
+
 Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
+    if PlayerCharConns[p] then
+        PlayerCharConns[p]:Disconnect()
+    end
+    PlayerCharConns[p] = p.CharacterAdded:Connect(function()
         task.wait(0.5)
         if _G.ESP_Master then createESP(p) end
     end)
@@ -1326,7 +1453,7 @@ end
 
 task.spawn(function()
     while true do
-        if _G.AutoEnablePVP then
+        if _G.AutoEnablePVP and not getgenv().IsServerHopping then
             local remote = GetCommF()
             if remote then 
                 pcall(function()
@@ -1406,7 +1533,7 @@ task.spawn(function()
     end
 end)
 
---Auto Ken
+-- Auto Ken
 local function toggleKenVision()
     if UserInputService:GetFocusedTextBox() then return end
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -1417,20 +1544,20 @@ end
 task.spawn(function()
     while task.wait(0.1) do
         if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
-        
-        local kenLeft = LocalPlayer:GetAttribute("KenDodgesLeft")
+
+        if not _G.AutoKenEnabled then continue end
+
+        local kenLeft   = LocalPlayer:GetAttribute("KenDodgesLeft")
         local kenActive = LocalPlayer:GetAttribute("KenActive")
-        
+
         if kenLeft ~= nil then
-            if _G.AutoKenEnabled and not kenActive then
+            if not kenActive then
                 toggleKenVision()
                 task.wait(0.5)
             end
         else
-            if _G.AutoKenEnabled then
-                toggleKenVision()
-                task.wait(1.0)
-            end
+            toggleKenVision()
+            task.wait(2.0)
         end
     end
 end)
@@ -1578,7 +1705,7 @@ local function setupPlayerEvents(plr)
     if plr == LocalPlayer then return end
 
     plr.CharacterAdded:Connect(function(char)
-        task.wait(0.5) -- 等待角色部位加載完成
+        task.wait(0.5)
         applyHitboxToPlayer(plr)
     end)
 
@@ -1611,53 +1738,163 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
---Auto flee
+--Auto flee（修改版）
+-- 穿牆輔助：啟用/停用角色的無碰撞
+local function SetCharNoclip(char, enabled)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not enabled
+        end
+    end
+end
+
 local function StartAutoFlee()
     if _G.AutoFleeConn then return end
     _G.AutoFleeConn = task.spawn(function()
+        local wasFleeing = false
+        -- 獨立逃跑用的飛行組件（不與自動列賞共用，避免互相覆蓋）
+        local fleeAttachment = nil
+        local fleeLinearVelocity = nil
+        local fleeAntiGravity = nil
+
+        local function SetupFleeComponents(hrp)
+            -- 清理舊的組件
+            if fleeLinearVelocity then fleeLinearVelocity:Destroy() fleeLinearVelocity = nil end
+            if fleeAntiGravity then fleeAntiGravity:Destroy() fleeAntiGravity = nil end
+            if fleeAttachment then fleeAttachment:Destroy() fleeAttachment = nil end
+
+            local att = Instance.new("Attachment")
+            att.Name = "AutoFlee_Attachment"
+            att.Parent = hrp
+            fleeAttachment = att
+
+            local lv = Instance.new("LinearVelocity")
+            lv.Name = "AutoFlee_LinearVelocity"
+            lv.MaxForce = math.huge
+            lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+            lv.VectorVelocity = Vector3.new(0, 0, 0)
+            lv.Attachment0 = att
+            lv.Parent = hrp
+            fleeLinearVelocity = lv
+
+            -- 計算角色總質量以抵消重力
+            local totalMass = 0
+            local char = hrp.Parent
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and not part.Massless then
+                        totalMass = totalMass + part:GetMass()
+                    end
+                end
+            end
+
+            local vf = Instance.new("VectorForce")
+            vf.Name = "AutoFlee_AntiGravity"
+            vf.ApplyAtCenterOfMass = true
+            vf.Attachment0 = att
+            vf.Force = Vector3.new(0, totalMass * workspace.Gravity, 0)
+            vf.Parent = hrp
+            fleeAntiGravity = vf
+        end
+
+        local function ClearFleeComponents()
+            if fleeLinearVelocity then fleeLinearVelocity:Destroy() fleeLinearVelocity = nil end
+            if fleeAntiGravity then fleeAntiGravity:Destroy() fleeAntiGravity = nil end
+            if fleeAttachment then fleeAttachment:Destroy() fleeAttachment = nil end
+        end
+
         while _G.AutoFlee do
-            task.wait(0.1)
+            task.wait(0.05)
             pcall(function()
-                if _G.FTP2_Enabled then return end
+                -- 自動列賞開啟時不接管，讓自動列賞自己處理逃跑
+                if _G.FTP2_Enabled then
+                    if wasFleeing then
+                        wasFleeing = false
+                        ClearFleeComponents()
+                        SetCharNoclip(LocalPlayer.Character, false)
+                    end
+                    return
+                end
 
                 local char = LocalPlayer.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if not hum or not hrp or hum.Health <= 0 then return end
+                if not hum or not hrp or hum.Health <= 0 then
+                    if wasFleeing then
+                        wasFleeing = false
+                        ClearFleeComponents()
+                        SetCharNoclip(char, false)
+                    end
+                    return
+                end
                 
                 local hpPercent = (hum.Health / hum.MaxHealth) * 100
                 if hpPercent <= _G.AutoFleeHP then
-                    hrp.CFrame = hrp.CFrame + Vector3.new(0, 20, 0)
+                    if not wasFleeing then
+                        wasFleeing = true
+                        -- 穿牆 + 建立飛行組件
+                        SetCharNoclip(char, true)
+                        SetupFleeComponents(hrp)
+                    else
+                        -- 每次都確認組件仍然存在於正確的 hrp
+                        local needSetup = not fleeLinearVelocity or fleeLinearVelocity.Parent ~= hrp
+                        if needSetup then
+                            SetupFleeComponents(hrp)
+                        end
+                    end
+                    -- 持續往上飛，速度 300
+                    if fleeLinearVelocity then
+                        fleeLinearVelocity.VectorVelocity = Vector3.new(0, 300, 0)
+                    end
+                elseif wasFleeing then
+                    -- 血量恢復，停止逃跑
+                    wasFleeing = false
+                    ClearFleeComponents()
+                    SetCharNoclip(char, false)
                 end
             end)
         end
+
+        -- 迴圈結束時恢復碰撞並清理組件
+        pcall(function()
+            if wasFleeing then
+                SetCharNoclip(LocalPlayer.Character, false)
+            end
+            if fleeLinearVelocity then fleeLinearVelocity:Destroy() fleeLinearVelocity = nil end
+            if fleeAntiGravity then fleeAntiGravity:Destroy() fleeAntiGravity = nil end
+            if fleeAttachment then fleeAttachment:Destroy() fleeAttachment = nil end
+        end)
         _G.AutoFleeConn = nil
     end)
 end
 
 local function StopAutoFlee()
     _G.AutoFleeConn = nil
+    pcall(function()
+        SetCharNoclip(LocalPlayer.Character, false)
+    end)
 end
 
 if _G.AutoFlee then StartAutoFlee() end
 
--- 移除動作
+-- [FIX 2] 移除動作
 local function DisableAnimForChar(char)
     if not char then return end
     local hum = char:WaitForChild("Humanoid", 5)
     if not hum then return end
     local animator = hum:WaitForChild("Animator", 5)
     if not animator then return end
-    
-    for _, t in pairs(animator:GetPlayingAnimationTracks()) do 
-        t:Stop() 
+
+    for _, t in pairs(animator:GetPlayingAnimationTracks()) do
+        t:Stop()
     end
-    
-    if _G.RemoveAnimTrackConn then 
-        _G.RemoveAnimTrackConn:Disconnect() 
+
+    if _G.RemoveAnimTrackConn then
+        _G.RemoveAnimTrackConn:Disconnect()
         _G.RemoveAnimTrackConn = nil
     end
-    
+
     _G.RemoveAnimTrackConn = animator.AnimationPlayed:Connect(function(t)
         if _G.RemoveAnim then
             t:Stop()
@@ -1666,27 +1903,27 @@ local function DisableAnimForChar(char)
 end
 
 local function StartRemoveAnim()
+    if _G.RemoveAnimCharConn then return end
+
     if LocalPlayer and LocalPlayer.Character then
         DisableAnimForChar(LocalPlayer.Character)
     end
-    
-    if not _G.RemoveAnimCharConn then
-        _G.RemoveAnimCharConn = LocalPlayer.CharacterAdded:Connect(function(char)
-            task.wait(0.5) 
-            if _G.RemoveAnim then
-                DisableAnimForChar(char)
-            end
-        end)
-    end
+
+    _G.RemoveAnimCharConn = LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if _G.RemoveAnim then
+            DisableAnimForChar(char)
+        end
+    end)
 end
 
 local function StopRemoveAnim()
-    if _G.RemoveAnimTrackConn then 
-        _G.RemoveAnimTrackConn:Disconnect() 
+    if _G.RemoveAnimTrackConn then
+        _G.RemoveAnimTrackConn:Disconnect()
         _G.RemoveAnimTrackConn = nil
     end
     if _G.RemoveAnimCharConn then
-        _G.RemoveAnimCharConn:Disconnect() 
+        _G.RemoveAnimCharConn:Disconnect()
         _G.RemoveAnimCharConn = nil
     end
 end
@@ -1815,6 +2052,37 @@ local function GetCombatStatus()
     end
 end
 
+local FTP2_CombatCache = "NotInCombat"
+local FTP2_CombatCacheTime = 0
+
+local function IsInCombatState()
+    local now = os.clock()
+    if now - FTP2_CombatCacheTime >= 0.5 then
+        FTP2_CombatCacheTime = now
+        FTP2_CombatCache = GetCombatStatus()
+    end
+    return FTP2_CombatCache ~= "NotInCombat"
+end
+
+-- 換服安全檢查：必須安全且無PVP狀態才能換服
+IsSafeToHopCheck = function()
+    if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then
+        return false
+    end
+
+    -- 戰鬥中(賞金受威脅)不可換服
+    if GetCombatStatus() == "BountyAtRisk" then
+        return false
+    end
+
+    -- 已開啟PVP時不可換服
+    if CheckPVP(LocalPlayer) then
+        return false
+    end
+
+    return true
+end
+
 local function CheckAndNotifyCombatStatus()
     if _G.FTP2_HasTriggeredHop then return end
 
@@ -1907,14 +2175,18 @@ local function IsValidTarget(plr)
         return false
     end
 
-    if plr:GetAttribute("SafeZone") == true or plr:GetAttribute("InSafeZone") == true then
-        _G.FTP2_Blacklist[plr] = true
-        return false
-    end
+    local combatLockTarget = (plr == _G.FTP2_CurrentTarget) and IsInCombatState()
 
-    if IsInSafeZone(plr) then
-        _G.FTP2_Blacklist[plr] = true
-        return false
+    if not combatLockTarget then
+        if plr:GetAttribute("SafeZone") == true or plr:GetAttribute("InSafeZone") == true then
+            _G.FTP2_Blacklist[plr] = true
+            return false
+        end
+
+        if IsInSafeZone(plr) then
+            _G.FTP2_Blacklist[plr] = true
+            return false
+        end
     end
 
     if plr:GetAttribute("PvpDisabled") == true then
@@ -1963,6 +2235,15 @@ local function IsValidTargetFast(plr)
     return v
 end
 
+local function IsTargetLowHP(plr)
+    if not plr then return false end
+    local char = plr.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 or hum.MaxHealth <= 0 then return false end
+    local percent = (hum.Health / hum.MaxHealth) * 100
+    return percent < (_G.FTP2_LowHpLockPercent or 30)
+end
+
 local function GetCurrentWorldEntrances()
     local pool = {}
     local placeId = game.PlaceId
@@ -1985,8 +2266,8 @@ local function GetCurrentWorldEntrances()
         pool = {
             { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
             { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
-            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
             { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
+            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
         }
     end
     return pool
@@ -2049,7 +2330,11 @@ local function GetPredictedPosition2(plr)
 
     if not history or #history < 3 then
         local t = math.clamp(ping, 0.03, 0.25)
-        return currentPos + (currentVel * t)
+        local pos = currentPos + (currentVel * t)
+        if pos.Y < hrp.Position.Y then
+            pos = Vector3.new(pos.X, hrp.Position.Y, pos.Z)
+        end
+        return pos
     end
 
     local count = #history
@@ -2123,6 +2408,10 @@ local function GetPredictedPosition2(plr)
         end
     end
 
+    if predictedPos.Y < hrp.Position.Y then
+        predictedPos = Vector3.new(predictedPos.X, hrp.Position.Y, predictedPos.Z)
+    end
+
     return predictedPos
 end
 
@@ -2191,6 +2480,9 @@ local function SetupFTP2FlightComponents(hrp)
     _G.FTP2_AntiGravity = vf
 end
 
+local FTP2_OrbitOffset = nil
+local FTP2_NextOrbitTime = 0
+
 local function FlyToTargetLogic2(plr)
     if not plr or not plr.Character then return end
 
@@ -2207,22 +2499,21 @@ local function FlyToTargetLogic2(plr)
     end
 
     local rawTargetPos = GetPredictedPosition2(plr) or tgHRP.Position
-    local HeightOffset = _G.FTP2_HeightOffset or 30
-    local targetPos = rawTargetPos + Vector3.new(0, HeightOffset, 0)
+
+    local now = os.clock()
+    if not FTP2_OrbitOffset or now >= FTP2_NextOrbitTime then
+        local maxRadius = _G.FTP2_OrbitRadius or 50
+        local distance = math.random(1, maxRadius)
+        local dir = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1)
+        if dir.Magnitude > 0 then dir = dir.Unit end
+        FTP2_OrbitOffset = dir * distance
+        FTP2_NextOrbitTime = now + (_G.FTP2_OrbitInterval or 0.016)
+    end
+    local targetPos = rawTargetPos + FTP2_OrbitOffset
 
     local dir = targetPos - myHRP.Position
-    local currentDist = dir.Magnitude
 
-    local flySpeed = 300
-    if currentDist < 150 then
-        flySpeed = 600
-    elseif currentDist < 250 then
-        flySpeed = 450
-    elseif currentDist < 500 then
-        flySpeed = 400
-    elseif currentDist < 750 then
-        flySpeed = 300
-    end
+    local flySpeed = _G.FTP2_FlySpeed
 
     local distToTargetCenter = (rawTargetPos - myHRP.Position).Magnitude
     local directFlightTime = distToTargetCenter / _G.FTP2_FlySpeed
@@ -2231,7 +2522,13 @@ local function FlyToTargetLogic2(plr)
     local teleportPenalty = 1.5 
     local pool = GetCurrentWorldEntrances()
 
+    if distToTargetCenter < (_G.FTP2_NoTeleportRange or 300) then
+        pool = {}
+    end
+
     for _, e in ipairs(pool) do
+        if _G.FTP2_BlockedEntrances[e.Arg] then continue end
+
         local destDistToTarget = (e.Dest - rawTargetPos).Magnitude
         local totalTimeViaPortal = (destDistToTarget / _G.FTP2_FlySpeed) + teleportPenalty
         
@@ -2248,6 +2545,8 @@ local function FlyToTargetLogic2(plr)
         if os.clock() - lastTime > 4 then
             _G.FTP2_LastTeleportTicks[bestEntrance.Arg] = os.clock()
             _G.FTP2_TeleportPauseUntil = os.clock() + 1.2
+
+            local preDist = (myHRP.Position - bestEntrance.Dest).Magnitude
             
             if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
             myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -2257,6 +2556,25 @@ local function FlyToTargetLogic2(plr)
                     local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
                     commF:InvokeServer("requestEntrance", bestEntrance.Arg)
                 end)
+            end)
+
+            task.spawn(function()
+                task.wait(1.5)
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
+                    if postDist > 150 and postDist >= preDist * 0.5 then
+                        local fails = (_G.FTP2_TeleportFails[bestEntrance.Arg] or 0) + 1
+                        _G.FTP2_TeleportFails[bestEntrance.Arg] = fails
+                        if fails >= 3 then
+                            _G.FTP2_BlockedEntrances[bestEntrance.Arg] = true
+                            if WindUI then
+                                WindUI:Notify({ Title = "自動列賞", Content = "傳送點 3 次無法到達，已改用其他傳送點", Duration = 3 })
+                            end
+                        end
+                    end
+                end
             end)
             return 
         end
@@ -2280,15 +2598,19 @@ local function FleeUpLogic()
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hum or not hrp or hum.Health <= 0 then return end
 
-        if _G.FTP2_LinearVelocity then
-            _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+        -- 穿牆：關閉碰撞，避免被建築卡住
+        SetCharNoclip(char, true)
+
+        -- 確保飛行組件存在且掛在正確的 hrp 上
+        local needSetup = not _G.FTP2_LinearVelocity or _G.FTP2_LinearVelocity.Parent ~= hrp
+        if needSetup then
+            SetupFTP2FlightComponents(hrp)
         end
 
-        hrp.CFrame = hrp.CFrame + Vector3.new(0, 10, 0)
+        _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 300, 0)
     end)
 end
 
--- 偵測坐到座位時強制起身 (每個動作各自 pcall，避免單一錯誤中斷整個流程)
 local function ForceStandUp()
     local myChar = LocalPlayer.Character
     if not myChar then return end
@@ -2303,7 +2625,6 @@ local function ForceStandUp()
         pcall(function() myHum:ChangeState(Enum.HumanoidStateType.Physics) end)
     end
 
-    -- 破壞與座位之間的焊接，防止被綁住
     if myHRP then
         for _, child in ipairs(myHRP:GetChildren()) do
             if child:IsA("Weld") then
@@ -2332,19 +2653,24 @@ local function StartFTPFlight2()
     local checkHum = char:FindFirstChildOfClass("Humanoid")
     if checkHum and checkHum.Health <= 0 then
         LocalPlayer.CharacterAdded:Wait()
-        return StartFTPFlight2() -- 重新執行等待流程
+        return StartFTPFlight2()
     end
 
     if not _G.FTP2_Enabled then return end
 
     _G.FTP2_Enabled = true
     table.clear(_G.FTP2_LastTeleportTicks) 
+    table.clear(_G.FTP2_TeleportFails)
+    table.clear(_G.FTP2_BlockedEntrances)
     table.clear(_G.FTP2_Blacklist)
     _G.FTP2_TeleportPauseUntil = 0 
     _G.FTP2_HasTriggeredHop = false
     _G.FTP2_CurrentTarget = nil
     _G.FTP2_TargetLockTime = os.clock()
     _G.FTP2_StartTime = os.clock()
+    _G.FTP2_FleeReturnPos = nil
+    FTP2_OrbitOffset = nil
+    FTP2_NextOrbitTime = 0
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
@@ -2371,18 +2697,41 @@ local function StartFTPFlight2()
         local currentChar = LocalPlayer.Character
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
 
-        -- 坐到座位時強制起身
         ForceStandUp()
 
         if _G.AutoFlee and currentHum and currentHum.Health > 0 then
             local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
             local fleeHP = _G.AutoFleeHP or 30
             if hpPercent <= fleeHP then
-                if _G.FTP2_LinearVelocity then
-                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                if not _G.FTP2_FleeReturnPos then
+                    local fChar = LocalPlayer.Character
+                    local fHRP = fChar and fChar:FindFirstChild("HumanoidRootPart")
+                    if fHRP then
+                        _G.FTP2_FleeReturnPos = fHRP.Position
+                    end
                 end
                 FleeUpLogic()
                 return
+            end
+        end
+
+        if _G.FTP2_FleeReturnPos then
+            local fChar = LocalPlayer.Character
+            local fHum = fChar and fChar:FindFirstChildOfClass("Humanoid")
+            local fHRP = fChar and fChar:FindFirstChild("HumanoidRootPart")
+            if fHRP and fHum and fHum.Health > 0 then
+                fHRP.CFrame = CFrame.new(_G.FTP2_FleeReturnPos)
+                _G.FTP2_FleeReturnPos = nil
+                -- 恢復後停止上飛，重新啟用飛行組件給列賞使用
+                if _G.FTP2_LinearVelocity then
+                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+                SetCharNoclip(fChar, false)
+                if WindUI then
+                    WindUI:Notify({ Title = "自動列賞", Content = "血量已恢復，傳送回原位置繼續列賞", Duration = 3 })
+                end
+            elseif not fHRP or not fHum or fHum.Health <= 0 then
+                _G.FTP2_FleeReturnPos = nil
             end
         end
 
@@ -2430,19 +2779,25 @@ local function StartFTPFlight2()
         end
 
         local oldTarget = _G.FTP2_CurrentTarget
-        local nearest = GetNearestPlayer()
-        if nearest then
-            _G.FTP2_CurrentTarget = nearest
+        local lowHpLock = IsTargetLowHP(oldTarget)
+
+        if lowHpLock then
+            _G.FTP2_CurrentTarget = oldTarget
         else
-            _G.FTP2_CurrentTarget = nil
+            local nearest = GetNearestPlayer()
+            if nearest then
+                _G.FTP2_CurrentTarget = nearest
+            else
+                _G.FTP2_CurrentTarget = nil
+            end
         end
 
         if _G.FTP2_CurrentTarget then
             if _G.FTP2_CurrentTarget ~= oldTarget then
                 _G.FTP2_TargetLockTime = os.clock()
             end
-            
-            if os.clock() - _G.FTP2_TargetLockTime >= _G.FTP2_TimeoutLimit then
+
+            if not lowHpLock and os.clock() - _G.FTP2_TargetLockTime >= _G.FTP2_TimeoutLimit then
                 _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
                 if WindUI then
                     WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，已跳過玩家: " .. _G.FTP2_CurrentTarget.Name, duration = 3 })
@@ -2470,6 +2825,7 @@ local function StopFTPFlight2()
     _G.FTP2_Enabled = false
     _G.FTP2_TeleportPauseUntil = 0
     _G.FTP2_CurrentTarget = nil
+    _G.FTP2_FleeReturnPos = nil
     
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(false) end
 
@@ -2567,9 +2923,6 @@ local function SilentAim_GetTargetPartAndDist()
     return closest, shortest
 end
 
--- ==========================================
--- 4. 自瞄 Hook 邏輯 (支援檢測)
--- ==========================================
 if not _G.SilentAimHooked and not disableHook then
     _G.SilentAimHooked = true
 
@@ -2641,7 +2994,7 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
     end
 end)
 
---Camlock (第一人稱)
+--Camlock
 local camlockWasEnabled = false
 
 RunService.RenderStepped:Connect(function()
@@ -3018,6 +3371,7 @@ Tabs.Config:Dropdown({
     Callback = function(v)
         _G.ServerRegion = v
         RefreshFilterParagraph()
+        MarkConfigDirty()
     end,
 })
 
@@ -3045,6 +3399,7 @@ Tabs.Config:Dropdown({
     Value = _G.FastAttackMode,
     Callback = function(v)
         _G.FastAttackMode = v
+        MarkConfigDirty()
     end
 })
 
@@ -3058,6 +3413,7 @@ Tabs.Config:Toggle({
         else
             startManual()
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3071,6 +3427,7 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.AttackDistance = v
+        MarkConfigDirty()
     end
 })
 
@@ -3085,6 +3442,7 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.FastAttackSpeed = v
+        MarkConfigDirty()
     end
 })
 
@@ -3095,6 +3453,7 @@ Tabs.Config:Toggle({
     Value = _G.FruitsM1Enable,
     Callback = function(v)
         _G.FruitsM1Enable = v
+        MarkConfigDirty()
     end
 })
 
@@ -3108,6 +3467,7 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.FruitsM1DelayValue = v
+        MarkConfigDirty()
     end
 })
 
@@ -3133,6 +3493,7 @@ Tabs.Config:Toggle({
                 removeESP(p) 
             end
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3146,6 +3507,7 @@ Tabs.Config:Toggle({
                 removeTracer(p) 
             end 
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3159,6 +3521,7 @@ Tabs.Config:Slider({
     },
     Callback = function(value)
         _G.ESP_FontSize = value
+        MarkConfigDirty()
     end
 })
 
@@ -3168,6 +3531,7 @@ Tabs.Config:Toggle({
     Value = _G.AutoEnablePVP,
     Callback = function(state)
         _G.AutoEnablePVP = state
+        MarkConfigDirty()
     end
 })
 
@@ -3177,6 +3541,7 @@ Tabs.Config:Toggle({
     Value = _G.AutoBusoEnabled,
     Callback = function(v)
         _G.AutoBusoEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3186,6 +3551,7 @@ Tabs.Config:Toggle({
     Value = _G.AutoV3_Enabled,
     Callback = function(v)
         _G.AutoV3_Enabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3195,6 +3561,7 @@ Tabs.Config:Toggle({
     Value = _G.AutoV4_Enabled,
     Callback = function(v)
         _G.AutoV4_Enabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3204,6 +3571,7 @@ Tabs.Config:Toggle({
     Value = _G.AutoKenEnabled,
     Callback = function(v)
         _G.AutoKenEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3218,6 +3586,7 @@ Tabs.Config:Toggle({
         else
             StopAutoSoru()
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3227,6 +3596,7 @@ Tabs.Config:Toggle({
     Callback = function(v)
         _G.Hitbox_Enabled = v
         applyHitboxAll()
+        MarkConfigDirty()
     end
 })
 
@@ -3239,6 +3609,7 @@ Tabs.Config:Slider({
         if _G.Hitbox_Enabled then
             applyHitboxAll()
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3252,12 +3623,13 @@ Tabs.Config:Toggle({
         else 
             StopAutoFlee() 
         end
+        MarkConfigDirty()
     end
 })
 
 Tabs.Config:Slider({
     Title = "逃跑血量值 (%)",
-    Desc = "血量低於設定值自動逃跑",
+    Desc = "血量低於設定值自動往上飛離",
     Value = {
         Min = 1,
         Max = 100,
@@ -3265,6 +3637,7 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.AutoFleeHP = v
+        MarkConfigDirty()
     end
 })
 
@@ -3278,6 +3651,7 @@ Tabs.Config:Toggle({
         else 
             StopRemoveAnim() 
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3286,6 +3660,7 @@ Tabs.Config:Toggle({
     Value = _G.WaterWalkEnabled,
     Callback = function(v)
         _G.WaterWalkEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3294,6 +3669,7 @@ Tabs.Config:Toggle({
     Value = _G.RemoveLavaEnabled,
     Callback = function(v)
         _G.RemoveLavaEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3302,6 +3678,7 @@ Tabs.Config:Toggle({
     Value = _G.RemoveGhostShipLavaEnabled,
     Callback = function(v)
         _G.RemoveGhostShipLavaEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3313,6 +3690,7 @@ Tabs.Skills:Dropdown({
     Callback = function(v)
         _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
         SelectTeam()
+        MarkConfigDirty()
     end,
 })
 Tabs.Skills:Toggle({ 
@@ -3334,6 +3712,7 @@ Tabs.Skills:Toggle({
                 WindUI:Notify({ Title = "自動列賞", Content = "已關閉", duration = 3 }) 
             end
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3346,6 +3725,7 @@ Tabs.Skills:Slider({
     },
     Callback = function(v)
         _G.FTP2_TimeoutLimit = v
+        MarkConfigDirty()
     end
 })
 
@@ -3378,6 +3758,7 @@ Tabs.Skills:Toggle({
     Callback = function(v)
         if disableHook then return end
         _G.SilentAimEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3387,6 +3768,7 @@ Tabs.Skills:Toggle({
     Value = _G.CamlockEnabled,
     Callback = function(v)
         _G.CamlockEnabled = v
+        MarkConfigDirty()
     end
 })
 
@@ -3395,12 +3777,12 @@ Tabs.Skills:Toggle({
     Value = _G.SilentAimTeamCheck,
     Callback = function(v)
         _G.SilentAimTeamCheck = v
+        MarkConfigDirty()
     end
 })
 
 Tabs.Skills:Section({ Title = "使用技能" })
 
--- 从当前配置构建下拉框初始选中值
 local function GetEnabledWeaponList()
     local list = {}
     for weaponName, data in pairs(_G.AutoSkillWeapons) do
@@ -3429,6 +3811,7 @@ Tabs.Skills:Toggle({
     Value = _G.AutoSkillMainEnable,
     Callback = function(v)
         _G.AutoSkillMainEnable = v
+        MarkConfigDirty()
     end
 })
 
@@ -3449,6 +3832,7 @@ Tabs.Skills:Dropdown({
                 _G.AutoSkillWeapons[wName].Enable = true
             end
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3465,6 +3849,7 @@ Tabs.Skills:Dropdown({
     Values = {"Z", "X", "C"},
     Callback = function(v)
         HandleSkillDropdown("Melee", v)
+        MarkConfigDirty()
     end
 })
 
@@ -3475,6 +3860,7 @@ Tabs.Skills:Dropdown({
     Values = {"Z", "X", "C", "V", "F"},
     Callback = function(v)
         HandleSkillDropdown("Blox Fruit", v)
+        MarkConfigDirty()
     end
 })
 
@@ -3485,6 +3871,7 @@ Tabs.Skills:Dropdown({
     Values = {"Z", "X"},
     Callback = function(v)
         HandleSkillDropdown("Sword", v)
+        MarkConfigDirty()
     end
 })
 
@@ -3495,6 +3882,7 @@ Tabs.Skills:Dropdown({
     Values = {"Z", "X"},
     Callback = function(v)
         HandleSkillDropdown("Gun", v)
+        MarkConfigDirty()
     end
 })
 
@@ -3514,6 +3902,7 @@ Tabs.Settings:Button({
             end
         end)
         if ok then
+            ConfigDirty = false
             WindUI:Notify({
                 Title = "配置等待重置",
                 Content = "下次啟動腳本後將完全生效 當前功能不受影響",
@@ -3544,6 +3933,7 @@ Tabs.Settings:Toggle({
                 setfpscap(0)
             end
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3553,6 +3943,7 @@ Tabs.Settings:Toggle({
     Value = _G.LowVisualMode,
     Callback = function(v)
         _G.SetLowVisualState(v)
+        MarkConfigDirty()
     end
 })
 
@@ -3564,6 +3955,7 @@ Tabs.Settings:Toggle({
         if v then
             _G.ApplyRemoveFog()
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3579,7 +3971,8 @@ Tabs.Settings:Toggle({
             EnableAntiAFK() 
         else 
             DisableAntiAFK() 
-        end 
+        end
+        MarkConfigDirty()
     end
 })
 
@@ -3589,13 +3982,14 @@ Tabs.Settings:Toggle({
     Value = _G.AutoRejoinEnabled,
     Callback = function(v)
         _G.AutoRejoinEnabled = v
+        MarkConfigDirty()
     end
 })
 
 Tabs.Settings:Toggle({ 
     Title = "換服後自動執行",
     Desc = "切換伺服器時自動重新載入",
-    Value = _G.AutoExecute, -- 綁定讀取到的真實狀態
+    Value = _G.AutoExecute,
     Callback = function(v)
         _G.AutoExecute = v
         
@@ -3625,6 +4019,7 @@ Tabs.Settings:Toggle({
                 Duration = 3
             })
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3634,7 +4029,8 @@ Tabs.Settings:Dropdown({
     Value = _G.Theme,            
     Callback = function(state)
         _G.Theme = state             
-        WindUI:SetTheme(state)         
+        WindUI:SetTheme(state)
+        MarkConfigDirty()
     end
 })
 
@@ -3647,6 +4043,7 @@ Tabs.Settings:Toggle({
         if v then
             startAutoHideTimer()
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3663,6 +4060,7 @@ Tabs.Settings:Keybind({
                 Window:SetToggleKey(keyCode)
             end
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3681,6 +4079,7 @@ Tabs.Settings:Toggle({
                 Window:SetToggleKey(keyCode)
             end
         end
+        MarkConfigDirty()
     end
 })
 
@@ -3705,17 +4104,14 @@ task.spawn(function()
         end
     end
 
-    -- 低畫質模式
     if _G.LowVisualMode then
         _G.SetLowVisualState(true)
     end
 
-    -- 移除迷霧
     if _G.RemoveFogEnabled then
         _G.ApplyRemoveFog()
     end
 
-    -- 突破 FPS 上限
     if setfpscap then
         if _G.UnlockFPS then
             setfpscap(999)
@@ -3724,14 +4120,8 @@ task.spawn(function()
         end
     end
 
-    -- Anti AFK
     if _G.AntiAFK_ENABLED then
         EnableAntiAFK()
-    end
-
-    -- 自動重新連接 (Anti Kick)
-    if _G.AutoRejoinEnabled then
-
     end
 
 end)
