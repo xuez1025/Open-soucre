@@ -1,0 +1,1322 @@
+-- ========================================================
+-- Macro 連招管理器 v3
+-- 觸發模式：切換開關 / 按住執行 / 持續循環
+-- 全鍵盤錄製 / 即時預覽 / 隱藏快捷鍵 / 啟用開關
+-- ========================================================
+
+local Players             = game:GetService("Players")
+local UserInputService    = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService          = game:GetService("RunService")
+local HttpService         = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char
+end)
+
+_G.Macros = _G.Macros or {}
+
+-- ========================================================
+-- 工具函數
+-- ========================================================
+local function DeepCopy(v)
+    if type(v) ~= "table" then return v end
+    local c = {}
+    for k, val in pairs(v) do c[k] = DeepCopy(val) end
+    return c
+end
+
+local function KeyCodeToName(kc)
+    if not kc then return "?" end
+    return tostring(kc):gsub("Enum%.KeyCode%.", "")
+end
+
+local function MouseBtnToName(mb)
+    if not mb then return "?" end
+    return tostring(mb):gsub("Enum%.UserInputType%.", "")
+end
+
+local function NameToKeyCode(name)
+    if not name then return nil end
+    local ok, code = pcall(function() return Enum.KeyCode[name] end)
+    return (ok and code) or nil
+end
+
+-- ========================================================
+-- 武器類型偵測 (Blox Fruits)
+-- ========================================================
+-- 根據武器名稱判斷類別，回傳顯示標籤與對應顏色 key
+local WeaponCategories = {
+    -- Melee
+    { label="Melee",      colorKey="orange", keywords={"Shark","Pole","Dragon Claw","Death Step","Superhuman","Dark Step","Water Kung Fu","Electric Claw","Godhuman","Sharkman","Sanguine Art","Combat","Kenbunshoku","Geppo"} },
+    -- Blox Fruit
+    { label="Blox Fruit", colorKey="purple", keywords={"Barrier","Magma","Light","Ice","Sand","Dark","Tremor","Rubber","Smoke","Snow","String","Flame","Paw","Gravity","Door","Void","Quake","Buddha","Shadow","Love","Phoenix","Rumble","Bomb","Spike","Falcon","Kilo","Leopard","Spider","Gas","Portal","Soul","Venom","Pain","Sound","Blizzard","Dough","Ope","Kage","T-Rex","Revive"} },
+    -- Sword
+    { label="Sword",      colorKey="yellow", keywords={"Sword","Katana","Cutlass","Dual","Blade","Saber","Scythe","Trident","Yama","Tushita","Shisui","Bisento","Midnight","Wando","Rengoku","Pole","Serpent","Shark","Dark","Gravity","True","Enma","Soul","Cursed","Spikey","Canvander","Dragon","Hallow","Black","Koko","Pole"} },
+    -- Gun
+    { label="Gun",        colorKey="teal",   keywords={"Pistol","Rifle","Shotgun","Cannon","Musket","Slingshot","Flintlock","Acidum","Kabucha","Serpent Bow","Dark Dagger","Huso","Wrist","Pipe"} },
+}
+
+local function DetectWeaponType(weaponName)
+    if not weaponName or weaponName == "" then return nil, nil end
+    local lower = weaponName:lower()
+    for _, cat in ipairs(WeaponCategories) do
+        for _, kw in ipairs(cat.keywords) do
+            if lower:find(kw:lower(), 1, true) then
+                return cat.label, cat.colorKey
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function GetCurrentWeapon()
+    if not Character then return nil end
+    local tool = Character:FindFirstChildOfClass("Tool")
+    return tool and tool.Name or nil
+end
+
+local function EquipWeapon(weaponName)
+    local item = LocalPlayer.Backpack:FindFirstChild(weaponName)
+    if item and Character and Character:FindFirstChild("Humanoid") then
+        Character.Humanoid:EquipTool(item)
+        return true
+    end
+    return false
+end
+
+-- ========================================================
+-- 核心：按鍵發送
+-- ========================================================
+local function SendKey(keyCodeEnum, holdMs)
+    if not keyCodeEnum then return end
+    VirtualInputManager:SendKeyEvent(true,  keyCodeEnum, false, game)
+    task.wait(math.max(holdMs or 100, 50) / 1000)
+    VirtualInputManager:SendKeyEvent(false, keyCodeEnum, false, game)
+end
+
+-- ========================================================
+-- Macro 播放
+-- triggerMode:
+--   "toggle"  — 按一次開始（執行一輪後停止，等下次按）
+--               → 但搭配 loop 功能在外部處理
+--   "hold"    — 按住期間執行一輪
+--   "loop"    — 持續循環，按一次開始，再按一次停止
+-- ========================================================
+local MacroRunning  = {}   -- [idx] = true / nil
+local MacroLoopStop = {}   -- [idx] = true（訊號停止循環）
+
+local function ExecMacroSteps(macroIndex, steps)
+    for _, step in ipairs(steps) do
+        if MacroLoopStop[macroIndex] then return false end
+        if step.type == "skill" then
+            local kc = NameToKeyCode(step.key)
+            SendKey(kc, step.duration or 100)
+        elseif step.type == "switch" then
+            EquipWeapon(step.weapon)
+            if (step.waitAfter or 0) > 0 then
+                task.wait(step.waitAfter / 1000)
+            end
+        elseif step.type == "wait" then
+            task.wait((step.ms or 100) / 1000)
+        end
+    end
+    return true
+end
+
+local function RunMacro(macroIndex)
+    local macro = _G.Macros[macroIndex]
+    if not macro or #(macro.steps or {}) == 0 then return end
+    if not (macro.enabled ~= false) then return end  -- 已關閉的連招不執行
+
+    if macro.triggerMode == "loop" then
+        if MacroRunning[macroIndex] then
+            -- 已在循環：發出停止訊號
+            MacroLoopStop[macroIndex] = true
+            MacroRunning[macroIndex]  = nil
+            return
+        end
+        MacroRunning[macroIndex]  = true
+        MacroLoopStop[macroIndex] = nil
+        task.spawn(function()
+            while MacroRunning[macroIndex] do
+                local cont = ExecMacroSteps(macroIndex, macro.steps)
+                if not cont then break end
+                if MacroLoopStop[macroIndex] then break end
+                task.wait(0.016)  -- 循環間隙
+            end
+            MacroRunning[macroIndex]  = nil
+            MacroLoopStop[macroIndex] = nil
+        end)
+    else
+        -- toggle / hold：執行一輪
+        if MacroRunning[macroIndex] then return end
+        MacroRunning[macroIndex]  = true
+        MacroLoopStop[macroIndex] = nil
+        task.spawn(function()
+            ExecMacroSteps(macroIndex, macro.steps)
+            MacroRunning[macroIndex]  = nil
+            MacroLoopStop[macroIndex] = nil
+        end)
+    end
+end
+
+local function StopMacro(macroIndex)
+    MacroLoopStop[macroIndex] = true
+    MacroRunning[macroIndex]  = nil
+end
+
+-- ========================================================
+-- 熱鍵監聽
+-- ========================================================
+local HotkeyConns = {}
+
+local function RefreshHotkeyListeners()
+    for _, c in pairs(HotkeyConns) do c:Disconnect() end
+    HotkeyConns = {}
+
+    for i, macro in ipairs(_G.Macros) do
+        if macro.hotkey and (macro.enabled ~= false) then
+            local idx = i
+            local mode = macro.triggerMode or "toggle"
+
+            local cBegan = UserInputService.InputBegan:Connect(function(input, gpe)
+                if gpe then return end
+                local match = (macro.hotkey.keyCode and input.KeyCode == macro.hotkey.keyCode)
+                           or (macro.hotkey.mouseButton and input.UserInputType == macro.hotkey.mouseButton)
+                if not match then return end
+
+                if mode == "toggle" then
+                    if MacroRunning[idx] then StopMacro(idx) else RunMacro(idx) end
+                elseif mode == "loop" then
+                    RunMacro(idx)   -- RunMacro 內部處理開/停
+                elseif mode == "hold" then
+                    RunMacro(idx)
+                end
+            end)
+            table.insert(HotkeyConns, cBegan)
+
+            if mode == "hold" then
+                local cEnded = UserInputService.InputEnded:Connect(function(input, gpe)
+                    if gpe then return end
+                    local match = (macro.hotkey.keyCode and input.KeyCode == macro.hotkey.keyCode)
+                               or (macro.hotkey.mouseButton and input.UserInputType == macro.hotkey.mouseButton)
+                    if not match then return end
+                    StopMacro(idx)
+                end)
+                table.insert(HotkeyConns, cEnded)
+            end
+        end
+    end
+end
+
+-- ========================================================
+-- 錄製系統（全鍵盤）
+-- ========================================================
+local RecordConns = {}
+local RecordState = { active=false, lastTime=0, steps={}, curWeapon=nil }
+local OnRecordStep = nil
+
+local ExcludeKeys = {
+    [Enum.KeyCode.Escape]=true,
+    [Enum.KeyCode.LeftAlt]=true,   [Enum.KeyCode.RightAlt]=true,
+    [Enum.KeyCode.LeftControl]=true,[Enum.KeyCode.RightControl]=true,
+    [Enum.KeyCode.LeftShift]=true,  [Enum.KeyCode.RightShift]=true,
+    [Enum.KeyCode.Tab]=true,        [Enum.KeyCode.CapsLock]=true,
+    [Enum.KeyCode.Delete]=true,     [Enum.KeyCode.Backspace]=true,
+    [Enum.KeyCode.Return]=true,     [Enum.KeyCode.Insert]=true,
+    [Enum.KeyCode.Home]=true,       [Enum.KeyCode.End]=true,
+    [Enum.KeyCode.PageUp]=true,     [Enum.KeyCode.PageDown]=true,
+    [Enum.KeyCode.F1]=true, [Enum.KeyCode.F2]=true, [Enum.KeyCode.F3]=true,
+    [Enum.KeyCode.F4]=true, [Enum.KeyCode.F5]=true, [Enum.KeyCode.F6]=true,
+    [Enum.KeyCode.F7]=true, [Enum.KeyCode.F8]=true, [Enum.KeyCode.F9]=true,
+    [Enum.KeyCode.F10]=true,[Enum.KeyCode.F11]=true,[Enum.KeyCode.F12]=true,
+}
+
+local function StartRecording(stepsRef, onStep)
+    RecordState.active    = true
+    RecordState.lastTime  = tick()
+    RecordState.steps     = stepsRef
+    RecordState.curWeapon = GetCurrentWeapon()
+    OnRecordStep          = onStep
+    local pressAt = {}
+
+    local c1 = UserInputService.InputBegan:Connect(function(input, _)
+        if not RecordState.active then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if ExcludeKeys[input.KeyCode] then return end
+        local nm = KeyCodeToName(input.KeyCode)
+        if nm == "Unknown" then return end
+        pressAt[nm] = tick()
+    end)
+
+    local c2 = UserInputService.InputEnded:Connect(function(input, _)
+        if not RecordState.active then return end
+        if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        if ExcludeKeys[input.KeyCode] then return end
+        local nm = KeyCodeToName(input.KeyCode)
+        if nm == "Unknown" then return end
+
+        local now  = tick()
+        local dur  = pressAt[nm] and math.max(math.floor((now - pressAt[nm])*1000), 50) or 100
+        pressAt[nm] = nil
+        local gap  = math.max(math.floor((now - RecordState.lastTime)*1000) - dur, 0)
+        RecordState.lastTime = now
+
+        -- 武器切換偵測
+        local cw = GetCurrentWeapon()
+        if cw and cw ~= RecordState.curWeapon then
+            table.insert(RecordState.steps, { type="switch", weapon=cw, waitAfter=0 })
+            RecordState.curWeapon = cw
+            if OnRecordStep then OnRecordStep() end
+        end
+        -- 間隙 > 80ms 插入等待
+        if gap > 80 then
+            table.insert(RecordState.steps, { type="wait", ms=gap })
+            if OnRecordStep then OnRecordStep() end
+        end
+        table.insert(RecordState.steps, { type="skill", key=nm, duration=dur })
+        if OnRecordStep then OnRecordStep() end
+    end)
+
+    table.insert(RecordConns, c1)
+    table.insert(RecordConns, c2)
+end
+
+local function StopRecording()
+    RecordState.active = false
+    for _, c in pairs(RecordConns) do c:Disconnect() end
+    RecordConns = {}
+    OnRecordStep = nil
+end
+
+-- ========================================================
+-- 設定存取
+-- ========================================================
+local ConfigFolder = "XuHub_Config"
+local ConfigFile   = ConfigFolder .. "/settings.json"
+local ConfigDirty  = false
+local ConfigReady  = false
+local ConfigSaving = false
+
+local function CollectConfig()
+    return { Macros = DeepCopy(_G.Macros) }
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    if type(data.Macros) == "table" then _G.Macros = DeepCopy(data.Macros) end
+end
+
+local function SaveConfig()
+    if ConfigSaving or not ConfigDirty or typeof(writefile) ~= "function" then return end
+    ConfigSaving = true
+    pcall(function()
+        if typeof(isfolder)=="function" and typeof(makefolder)=="function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    ConfigDirty  = false
+end
+
+local function LoadConfig()
+    if typeof(readfile)~="function" or typeof(isfile)~="function" or not isfile(ConfigFile) then return end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(ConfigFile)) end)
+    if ok and type(data)=="table" then ApplyConfig(data) end
+end
+
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local last = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, cur = pcall(function() return HttpService:JSONEncode(CollectConfig()) end)
+            if ok and cur ~= last then last = cur; ConfigDirty = true end
+            if ConfigDirty then SaveConfig() end
+        end
+    end
+end)
+
+-- ========================================================
+-- GUI 建構
+-- ========================================================
+local ParentGui = (gethui and gethui()) or game:GetService("CoreGui") or LocalPlayer.PlayerGui
+if ParentGui:FindFirstChild("MacroManagerGUI") then
+    ParentGui.MacroManagerGUI:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name         = "MacroManagerGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent       = ParentGui
+
+-- ── 顏色 ────────────────────────────────────────────────
+local C = {
+    bg0    = Color3.fromRGB(13,  13,  19),
+    bg1    = Color3.fromRGB(21,  21,  29),
+    bg2    = Color3.fromRGB(29,  29,  39),
+    bg3    = Color3.fromRGB(40,  40,  53),
+    border = Color3.fromRGB(58,  58,  80),
+    text   = Color3.fromRGB(218, 218, 230),
+    sub    = Color3.fromRGB(136, 136, 158),
+    accent = Color3.fromRGB( 88, 168, 255),
+    green  = Color3.fromRGB( 68, 208,  98),
+    red    = Color3.fromRGB(222,  68,  68),
+    yellow = Color3.fromRGB(238, 183,  48),
+    orange = Color3.fromRGB(255, 138,  38),
+    purple = Color3.fromRGB(158,  98, 252),
+    teal   = Color3.fromRGB( 58, 198, 188),
+    lime   = Color3.fromRGB(148, 228,  68),
+}
+
+-- ── 尺寸 ─────────────────────────────────────────────────
+local SZ = {
+    winW  = 740,
+    winH  = 660,
+    topH  = 46,
+    rowH  = 34,
+    btnH  = 30,
+    inputH= 26,
+    stepH = 34,
+    leftW = 218,
+    fs    = 15,
+    fsS   = 13,
+    fsXS  = 12,
+    fsL   = 18,
+    pad   = 12,
+}
+
+-- ── 工廠函數 ─────────────────────────────────────────────
+local function MkCorner(p, r) local c=Instance.new("UICorner",p); c.CornerRadius=UDim.new(0,r or 7); return c end
+local function MkStroke(p, col, th) local s=Instance.new("UIStroke",p); s.Color=col or C.border; s.Thickness=th or 1; return s end
+local function MkPad(p, t, b, l, r)
+    local u=Instance.new("UIPadding",p)
+    u.PaddingTop=UDim.new(0,t or 0); u.PaddingBottom=UDim.new(0,b or 0)
+    u.PaddingLeft=UDim.new(0,l or 0); u.PaddingRight=UDim.new(0,r or 0)
+end
+local function MkLbl(parent, props)
+    local l=Instance.new("TextLabel")
+    l.BackgroundTransparency=1
+    l.TextColor3    = props.color  or C.text
+    l.TextSize      = props.size   or SZ.fs
+    l.Font          = props.font   or Enum.Font.SourceSans
+    l.Text          = props.text   or ""
+    l.TextXAlignment= props.xalign or Enum.TextXAlignment.Left
+    l.TextYAlignment= props.yalign or Enum.TextYAlignment.Center
+    l.Size          = props.sz     or UDim2.new(1,0,0,SZ.rowH)
+    l.Position      = props.pos    or UDim2.new(0,0,0,0)
+    l.TextWrapped   = props.wrap   or false
+    l.Parent        = parent
+    return l
+end
+local function MkBtn(parent, props)
+    local b=Instance.new("TextButton")
+    b.BackgroundColor3 = props.bg    or C.bg2
+    b.TextColor3       = props.color or C.text
+    b.TextSize         = props.size  or SZ.fs
+    b.Font             = props.font  or Enum.Font.SourceSansBold
+    b.Text             = props.text  or "Btn"
+    b.AutoButtonColor  = true
+    b.Size             = props.sz   or UDim2.new(0,90,0,SZ.btnH)
+    b.Position         = props.pos  or UDim2.new(0,0,0,0)
+    b.Parent           = parent
+    MkCorner(b, 6)
+    return b
+end
+local function MkInput(parent, props)
+    local b=Instance.new("TextBox")
+    b.BackgroundColor3  = props.bg          or C.bg2
+    b.TextColor3        = props.color       or C.text
+    b.TextSize          = props.size        or SZ.fs
+    b.Font              = props.font        or Enum.Font.SourceSans
+    b.Text              = props.text        or ""
+    b.PlaceholderText   = props.placeholder or ""
+    b.PlaceholderColor3 = C.sub
+    b.ClearTextOnFocus  = false
+    b.Size              = props.sz  or UDim2.new(0,120,0,SZ.inputH)
+    b.Position          = props.pos or UDim2.new(0,0,0,0)
+    b.Parent            = parent
+    MkCorner(b, 5)
+    MkPad(b, 0,0,7,7)
+    return b
+end
+
+-- ── 主視窗 ───────────────────────────────────────────────
+local MainFrame = Instance.new("Frame")
+MainFrame.Name             = "MainFrame"
+MainFrame.Size             = UDim2.new(0, SZ.winW, 0, SZ.winH)
+MainFrame.Position         = UDim2.new(0.5, -SZ.winW/2, 0.1, 0)
+MainFrame.BackgroundColor3 = C.bg0
+MainFrame.BorderSizePixel  = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent           = ScreenGui
+MkCorner(MainFrame, 10)
+MkStroke(MainFrame, C.border, 1.5)
+
+-- ── 標題列 ───────────────────────────────────────────────
+local TopBar = Instance.new("Frame")
+TopBar.Size             = UDim2.new(1,0,0,SZ.topH)
+TopBar.BackgroundColor3 = C.bg1
+TopBar.BorderSizePixel  = 0
+TopBar.Parent           = MainFrame
+MkCorner(TopBar, 10)
+
+MkLbl(TopBar, {
+    text="🎮  Macro 連招管理器", color=C.accent,
+    size=SZ.fsL, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(1,-118,1,0), pos=UDim2.new(0,14,0,0),
+})
+
+-- 隱藏按鈕（預設 LeftShift）
+local HideBtn = MkBtn(TopBar, {
+    text="隱藏", bg=C.bg3, color=C.sub, size=SZ.fsS,
+    sz=UDim2.new(0,50,0,28), pos=UDim2.new(1,-110,0.5,-14),
+})
+local CloseBtn = MkBtn(TopBar, {
+    text="關閉", bg=C.bg3, color=C.red, size=SZ.fsS,
+    sz=UDim2.new(0,50,0,28), pos=UDim2.new(1,-56,0.5,-14),
+})
+
+-- ── Toast 通知層（隱藏提示） ─────────────────────────────
+local ToastFrame = Instance.new("Frame")
+ToastFrame.Size             = UDim2.new(0, 340, 0, 44)
+ToastFrame.Position         = UDim2.new(0.5, -170, 0, 60)
+ToastFrame.BackgroundColor3 = C.bg3
+ToastFrame.BackgroundTransparency = 0.1
+ToastFrame.Visible          = false
+ToastFrame.ZIndex           = 20
+ToastFrame.Parent           = ScreenGui
+MkCorner(ToastFrame, 8)
+MkStroke(ToastFrame, C.accent, 1.5)
+
+local ToastLbl = MkLbl(ToastFrame, {
+    text="", color=C.text, size=SZ.fs,
+    xalign=Enum.TextXAlignment.Center,
+    sz=UDim2.new(1,-16,1,0), pos=UDim2.new(0,8,0,0),
+    wrap=true,
+})
+
+local function ShowToast(msg, duration)
+    ToastLbl.Text   = msg
+    ToastFrame.Visible = true
+    task.delay(duration or 10, function()
+        ToastFrame.Visible = false
+    end)
+end
+
+-- ── 隱藏快捷鍵設定 ───────────────────────────────────────
+-- 儲存在 _G 以便跨注入持久
+_G.HideHotkey = _G.HideHotkey or { keyCode = Enum.KeyCode.LeftShift }
+
+local WaitingForHideKey = false
+local isHidden = false
+
+local function SetHideHotkeyUI(btn)
+    local nm = _G.HideHotkey.keyCode and KeyCodeToName(_G.HideHotkey.keyCode)
+             or (_G.HideHotkey.mouseButton and MouseBtnToName(_G.HideHotkey.mouseButton))
+             or "未設定"
+    btn.Text = "隱藏 [" .. nm .. "]"
+end
+
+SetHideHotkeyUI(HideBtn)
+
+HideBtn.MouseButton1Click:Connect(function()
+    if WaitingForHideKey then
+        WaitingForHideKey = false
+        SetHideHotkeyUI(HideBtn)
+        HideBtn.TextColor3 = C.sub
+        return
+    end
+    -- 右鍵長按設定快捷鍵
+    WaitingForHideKey = true
+    HideBtn.Text       = "按下新快捷鍵..."
+    HideBtn.TextColor3 = C.orange
+end)
+
+HideBtn.MouseButton2Click:Connect(function()
+    -- 左鍵單擊觸發隱藏
+    isHidden = true
+    MainFrame.Visible = false
+    local nm = _G.HideHotkey.keyCode and KeyCodeToName(_G.HideHotkey.keyCode)
+             or (_G.HideHotkey.mouseButton and MouseBtnToName(_G.HideHotkey.mouseButton))
+             or "LeftShift"
+    ShowToast("視窗已隱藏   按 [" .. nm .. "] 可重新顯示", 10)
+end)
+
+-- ── 頁面區域 ─────────────────────────────────────────────
+local pageY = SZ.topH + 6
+local pageH = SZ.winH - pageY - SZ.pad
+
+local MacroPage = Instance.new("Frame")
+MacroPage.Size             = UDim2.new(1, -2*SZ.pad, 0, pageH)
+MacroPage.Position         = UDim2.new(0, SZ.pad, 0, pageY)
+MacroPage.BackgroundTransparency = 1
+MacroPage.Parent           = MainFrame
+
+-- ========================================================
+-- 左側面板：連招清單
+-- ========================================================
+local LeftPanel = Instance.new("Frame")
+LeftPanel.Size             = UDim2.new(0, SZ.leftW, 1, 0)
+LeftPanel.BackgroundColor3 = C.bg1
+LeftPanel.Parent           = MacroPage
+MkCorner(LeftPanel, 8)
+MkStroke(LeftPanel, C.border, 1)
+
+MkLbl(LeftPanel, {
+    text="📋 連招清單", color=C.accent,
+    size=SZ.fsL, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(1,-10,0,38), pos=UDim2.new(0,SZ.pad,0,4),
+})
+
+local MacroScroll = Instance.new("ScrollingFrame")
+MacroScroll.Size                = UDim2.new(1,-8,1,-88)
+MacroScroll.Position            = UDim2.new(0,4,0,44)
+MacroScroll.BackgroundTransparency = 1
+MacroScroll.ScrollBarThickness  = 4
+MacroScroll.ScrollBarImageColor3= C.border
+MacroScroll.CanvasSize          = UDim2.new(0,0,0,0)
+MacroScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+MacroScroll.Parent              = LeftPanel
+local MacroLL = Instance.new("UIListLayout", MacroScroll)
+MacroLL.SortOrder = Enum.SortOrder.LayoutOrder
+MacroLL.Padding   = UDim.new(0, 4)
+
+local NewMacroBtn = MkBtn(LeftPanel, {
+    text="＋ 新增連招", bg=C.accent, color=C.bg0,
+    size=SZ.fs, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(1,-10,0,SZ.btnH), pos=UDim2.new(0,5,1,-(SZ.btnH+8)),
+})
+
+-- ========================================================
+-- 右側面板：編輯器
+-- ========================================================
+local rightX = SZ.leftW + 10
+local rightW = (SZ.winW - 2*SZ.pad) - SZ.leftW - 10
+local innerW = rightW - 2*SZ.pad
+
+local RightPanel = Instance.new("Frame")
+RightPanel.Size             = UDim2.new(0, rightW, 1, 0)
+RightPanel.Position         = UDim2.new(0, rightX, 0, 0)
+RightPanel.BackgroundColor3 = C.bg1
+RightPanel.Parent           = MacroPage
+MkCorner(RightPanel, 8)
+MkStroke(RightPanel, C.border, 1)
+MkPad(RightPanel, SZ.pad, SZ.pad, SZ.pad, SZ.pad)
+
+-- 右側預設顯示提示，點選清單後才顯示內容
+local RightHint = MkLbl(RightPanel, {
+    text = "← 點擊左側連招以編輯\n或點「新增連招」建立新的",
+    color = C.sub, size = SZ.fs,
+    xalign = Enum.TextXAlignment.Center,
+    wrap = true,
+    sz  = UDim2.new(1, 0, 0, 60),
+    pos = UDim2.new(0, 0, 0, pageH/2 - 50),
+})
+
+-- 編輯器容器（點選後才顯示）
+local EditorContainer = Instance.new("Frame")
+EditorContainer.Size             = UDim2.new(1, 0, 1, 0)
+EditorContainer.BackgroundTransparency = 1
+EditorContainer.Visible          = false
+EditorContainer.Parent           = RightPanel
+
+-- ▌ 標題
+local EditTitle = MkLbl(EditorContainer, {
+    text="選擇連招", color=C.accent,
+    size=SZ.fsL, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(1,0,0,26),
+})
+
+-- ▌ 名稱
+local nameY = 30
+MkLbl(EditorContainer, {
+    text="名稱", color=C.sub, size=SZ.fsS,
+    sz=UDim2.new(0,36,0,SZ.inputH), pos=UDim2.new(0,0,0,nameY+1),
+})
+local NameInput = MkInput(EditorContainer, {
+    placeholder="連招名稱（任意）", bg=C.bg2, size=SZ.fs,
+    sz=UDim2.new(1,-42,0,SZ.inputH), pos=UDim2.new(0,42,0,nameY),
+})
+
+-- ▌ 快捷鍵
+local hkY = nameY + SZ.inputH + 8
+local HkRow = Instance.new("Frame")
+HkRow.Size=UDim2.new(1,0,0,SZ.btnH); HkRow.Position=UDim2.new(0,0,0,hkY)
+HkRow.BackgroundTransparency=1; HkRow.Parent=EditorContainer
+MkLbl(HkRow,{text="快捷鍵",color=C.sub,size=SZ.fsS,sz=UDim2.new(0,50,1,0)})
+local HotkeyDisplay = MkBtn(HkRow,{
+    text="點此設定", bg=C.bg2, color=C.sub, size=SZ.fsS,
+    sz=UDim2.new(0,200,1,0), pos=UDim2.new(0,54,0,0),
+})
+local ClearHkBtn = MkBtn(HkRow,{
+    text="清除", bg=C.bg3, color=C.red, size=SZ.fsS,
+    sz=UDim2.new(0,44,0,SZ.btnH), pos=UDim2.new(0,260,0,0),
+})
+
+-- ▌ 觸發方式（3 個：切換開關 / 按住執行 / 持續循環）
+local trY = hkY + SZ.btnH + 8
+local TrigRow = Instance.new("Frame")
+TrigRow.Size=UDim2.new(1,0,0,SZ.btnH); TrigRow.Position=UDim2.new(0,0,0,trY)
+TrigRow.BackgroundTransparency=1; TrigRow.Parent=EditorContainer
+MkLbl(TrigRow,{text="觸發方式",color=C.sub,size=SZ.fsS,sz=UDim2.new(0,60,1,0)})
+
+local TrigModes  = {"toggle","hold","loop"}
+local TrigLabels = { toggle="🔄 切換開關", hold="⏬ 按住執行", loop="🔁 持續循環" }
+local TrigTips   = {
+    toggle = "按一次開始執行一輪，再按一次可提前停止",
+    hold   = "按住快捷鍵期間執行，放開即停止",
+    loop   = "按一次開始持續循環，再按同一鍵停止",
+}
+local CurrentTrigger = "toggle"
+local TrigBtns = {}
+local trBW = math.floor((innerW - 64) / 3) - 3
+
+for i, mode in ipairs(TrigModes) do
+    local active = (mode=="toggle")
+    local btn = MkBtn(TrigRow, {
+        text=TrigLabels[mode],
+        bg=active and C.purple or C.bg3,
+        color=active and Color3.fromRGB(255,255,255) or C.sub,
+        size=SZ.fsS, font=Enum.Font.SourceSansBold,
+        sz=UDim2.new(0,trBW,1,0), pos=UDim2.new(0,64+(i-1)*(trBW+4),0,0),
+    })
+    TrigBtns[mode] = btn
+    btn.MouseButton1Click:Connect(function()
+        CurrentTrigger = mode
+        for m, b in pairs(TrigBtns) do
+            b.BackgroundColor3 = (m==mode) and C.purple or C.bg3
+            b.TextColor3       = (m==mode) and Color3.fromRGB(255,255,255) or C.sub
+        end
+    end)
+    btn.MouseEnter:Connect(function() btn.Text = TrigTips[mode] end)
+    btn.MouseLeave:Connect(function() btn.Text = TrigLabels[mode] end)
+end
+
+-- ▌ 步驟區標頭
+local stLblY = trY + SZ.btnH + 8
+local stHdr = Instance.new("Frame")
+stHdr.Size=UDim2.new(1,0,0,18); stHdr.Position=UDim2.new(0,0,0,stLblY)
+stHdr.BackgroundTransparency=1; stHdr.Parent=EditorContainer
+MkLbl(stHdr,{text="步驟序列",color=C.teal,size=SZ.fsS,font=Enum.Font.SourceSansBold,sz=UDim2.new(0,70,1,0)})
+MkLbl(stHdr,{
+    text="技能=鍵+持按ms　切換=武器名+後ms　等待=純延遲ms　↑↓移動　✕刪除",
+    color=C.sub, size=11,
+    sz=UDim2.new(1,-74,1,0), pos=UDim2.new(0,74,0,0),
+})
+
+-- ▌ 底部工具列
+local btmH = SZ.btnH*2 + 14
+
+-- ▌ 步驟捲動區
+local stScrollY = stLblY + 20
+local stScrollH = pageH - stScrollY - btmH - SZ.pad - 14
+
+local StepsScroll = Instance.new("ScrollingFrame")
+StepsScroll.Size               = UDim2.new(1,0,0,stScrollH)
+StepsScroll.Position           = UDim2.new(0,0,0,stScrollY)
+StepsScroll.BackgroundColor3   = C.bg2
+StepsScroll.ScrollBarThickness = 4
+StepsScroll.ScrollBarImageColor3=C.border
+StepsScroll.CanvasSize         = UDim2.new(0,0,0,0)
+StepsScroll.AutomaticCanvasSize= Enum.AutomaticSize.Y
+StepsScroll.Parent             = EditorContainer
+MkCorner(StepsScroll, 6)
+MkStroke(StepsScroll, C.border, 1)
+MkPad(StepsScroll, 4,4,6,6)
+local StepsLL = Instance.new("UIListLayout", StepsScroll)
+StepsLL.SortOrder = Enum.SortOrder.LayoutOrder
+StepsLL.Padding   = UDim.new(0, 3)
+
+-- ▌ 底部工具列
+local btmY = stScrollY + stScrollH + 8
+local BtmBar = Instance.new("Frame")
+BtmBar.Size=UDim2.new(1,0,0,btmH); BtmBar.Position=UDim2.new(0,0,0,btmY)
+BtmBar.BackgroundTransparency=1; BtmBar.Parent=EditorContainer
+
+-- 第一列：錄製 / +技能 / +切換 / +等待 / 清空步驟
+local r1W5 = math.floor((innerW - 12) / 5)
+local RecordBtn = MkBtn(BtmBar,{
+    text="⏺ 開始錄製", bg=C.red, color=Color3.new(1,1,1),
+    size=SZ.fsS, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(0,r1W5,0,SZ.btnH), pos=UDim2.new(0,0,0,0),
+})
+local AddSkillBtn = MkBtn(BtmBar,{
+    text="＋ 技能", bg=C.bg3, color=C.yellow, size=SZ.fsS,
+    sz=UDim2.new(0,r1W5,0,SZ.btnH), pos=UDim2.new(0,(r1W5+3),0,0),
+})
+local AddSwitchBtn = MkBtn(BtmBar,{
+    text="＋ 切換", bg=C.bg3, color=C.accent, size=SZ.fsS,
+    sz=UDim2.new(0,r1W5,0,SZ.btnH), pos=UDim2.new(0,(r1W5+3)*2,0,0),
+})
+local AddWaitBtn = MkBtn(BtmBar,{
+    text="＋ 等待", bg=C.bg3, color=C.green, size=SZ.fsS,
+    sz=UDim2.new(0,r1W5,0,SZ.btnH), pos=UDim2.new(0,(r1W5+3)*3,0,0),
+})
+local ClearStepsBtn = MkBtn(BtmBar,{
+    text="🗑 清空步驟", bg=C.bg3, color=C.red, size=SZ.fsS,
+    sz=UDim2.new(0,r1W5,0,SZ.btnH), pos=UDim2.new(0,(r1W5+3)*4,0,0),
+})
+
+-- 第二列：儲存 / 立即執行
+local r2Y   = SZ.btnH + 8
+local r2W   = math.floor((innerW - 4) / 2)
+local SaveBtn = MkBtn(BtmBar,{
+    text="💾 儲存連招", bg=C.green, color=C.bg0,
+    size=SZ.fs, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(0,r2W,0,SZ.btnH), pos=UDim2.new(0,0,0,r2Y),
+})
+local RunBtn = MkBtn(BtmBar,{
+    text="▶ 立即執行", bg=C.accent, color=C.bg0,
+    size=SZ.fs, font=Enum.Font.SourceSansBold,
+    sz=UDim2.new(0,r2W,0,SZ.btnH), pos=UDim2.new(0,r2W+4,0,r2Y),
+})
+
+-- ========================================================
+-- 編輯器狀態
+-- ========================================================
+local EditingIndex = nil
+local EditSteps    = {}
+local EditHotkey   = nil
+local WaitingForHotkey = false
+
+-- ── 步驟列表重建 ─────────────────────────────────────────
+local function RebuildStepsList()
+    for _, ch in pairs(StepsScroll:GetChildren()) do
+        if ch:IsA("Frame") then ch:Destroy() end
+    end
+    local total = #EditSteps
+    if total == 0 then
+        local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,38)
+        f.BackgroundTransparency=1; f.Parent=StepsScroll
+        MkLbl(f,{text="尚無步驟 — 點下方按鈕手動加入，或按「開始錄製」自動生成",
+            color=C.sub, size=SZ.fsS, xalign=Enum.TextXAlignment.Center,
+            sz=UDim2.new(1,0,1,0)})
+        return
+    end
+
+    for idx, step in ipairs(EditSteps) do
+        local row=Instance.new("Frame")
+        row.Size=UDim2.new(1,0,0,SZ.stepH)
+        row.BackgroundColor3=C.bg3
+        row.LayoutOrder=idx
+        row.Parent=StepsScroll
+        MkCorner(row,5); MkPad(row,0,0,6,4)
+
+        -- 序號
+        MkLbl(row,{text=string.format("%02d",idx),color=C.sub,size=11,
+            sz=UDim2.new(0,20,1,0), xalign=Enum.TextXAlignment.Center})
+
+        -- 類型標籤
+        local tStr,tCol
+        if step.type=="skill"  then tStr,tCol="技能",C.yellow
+        elseif step.type=="switch" then tStr,tCol="切換",C.accent
+        else tStr,tCol="等待",C.green end
+        MkLbl(row,{text=tStr,color=tCol,size=SZ.fsS,font=Enum.Font.SourceSansBold,
+            sz=UDim2.new(0,28,1,0),pos=UDim2.new(0,20,0,0)})
+
+        local fx = 50
+
+        -- ── 技能 ──
+        if step.type=="skill" then
+            MkLbl(row,{text="鍵",color=C.sub,size=11,sz=UDim2.new(0,12,1,0),pos=UDim2.new(0,fx,0,0)})
+            local kIn=MkInput(row,{text=step.key or "Z",bg=C.bg2,size=SZ.fsXS,
+                sz=UDim2.new(0,54,0,SZ.stepH-6),pos=UDim2.new(0,fx+14,0,3)})
+            kIn.FocusLost:Connect(function()
+                local k=kIn.Text:upper()
+                if NameToKeyCode(k) then EditSteps[idx].key=k
+                else kIn.Text=EditSteps[idx].key or "Z" end
+            end)
+            MkLbl(row,{text="持按ms",color=C.sub,size=11,sz=UDim2.new(0,38,1,0),pos=UDim2.new(0,fx+72,0,0)})
+            local dIn=MkInput(row,{text=tostring(step.duration or 100),bg=C.bg2,size=SZ.fsXS,
+                sz=UDim2.new(0,54,0,SZ.stepH-6),pos=UDim2.new(0,fx+112,0,3)})
+            dIn.FocusLost:Connect(function()
+                EditSteps[idx].duration=math.max(tonumber(dIn.Text) or 100,10)
+                dIn.Text=tostring(EditSteps[idx].duration)
+            end)
+
+        -- ── 切換武器 ──
+        elseif step.type=="switch" then
+            MkLbl(row,{text="武器",color=C.sub,size=11,sz=UDim2.new(0,28,1,0),pos=UDim2.new(0,fx,0,0)})
+            local wIn=MkInput(row,{text=step.weapon or "",placeholder="武器名稱",bg=C.bg2,size=SZ.fsXS,
+                sz=UDim2.new(0,148,0,SZ.stepH-6),pos=UDim2.new(0,fx+30,0,3)})
+            wIn.FocusLost:Connect(function() EditSteps[idx].weapon=wIn.Text end)
+
+            MkLbl(row,{text="後ms",color=C.sub,size=11,sz=UDim2.new(0,28,1,0),pos=UDim2.new(0,fx+182,0,0)})
+            local waIn=MkInput(row,{text=tostring(step.waitAfter or 0),bg=C.bg2,size=SZ.fsXS,
+                sz=UDim2.new(0,46,0,SZ.stepH-6),pos=UDim2.new(0,fx+212,0,3)})
+            waIn.FocusLost:Connect(function()
+                EditSteps[idx].waitAfter=math.max(tonumber(waIn.Text) or 0,0)
+                waIn.Text=tostring(EditSteps[idx].waitAfter)
+            end)
+
+        -- ── 等待 ──
+        elseif step.type=="wait" then
+            MkLbl(row,{text="延遲",color=C.sub,size=11,sz=UDim2.new(0,28,1,0),pos=UDim2.new(0,fx,0,0)})
+            local mIn=MkInput(row,{text=tostring(step.ms or 100),bg=C.bg2,size=SZ.fsXS,
+                sz=UDim2.new(0,72,0,SZ.stepH-6),pos=UDim2.new(0,fx+30,0,3)})
+            mIn.FocusLost:Connect(function()
+                EditSteps[idx].ms=math.max(tonumber(mIn.Text) or 100,10)
+                mIn.Text=tostring(EditSteps[idx].ms)
+            end)
+            MkLbl(row,{text="ms",color=C.sub,size=11,sz=UDim2.new(0,24,1,0),pos=UDim2.new(0,fx+106,0,0)})
+        end
+
+        -- 右側控制：↑ ↓ ✕（根據位置隱藏多餘箭頭）
+        local cW=26
+        local delB=MkBtn(row,{text="✕",bg=C.bg2,color=C.red,size=SZ.fsS,
+            sz=UDim2.new(0,cW,0,SZ.stepH-6), pos=UDim2.new(1,-(cW+2),0,3)})
+        local dnB=MkBtn(row,{text="↓",bg=C.bg2,color=C.sub,size=SZ.fsS,
+            sz=UDim2.new(0,cW,0,SZ.stepH-6), pos=UDim2.new(1,-(cW*2+5),0,3)})
+        local upB=MkBtn(row,{text="↑",bg=C.bg2,color=C.sub,size=SZ.fsS,
+            sz=UDim2.new(0,cW,0,SZ.stepH-6), pos=UDim2.new(1,-(cW*3+8),0,3)})
+
+        -- 第一行隱藏上箭頭，最後一行隱藏下箭頭
+        if idx==1     then upB.Visible=false end
+        if idx==total then dnB.Visible=false end
+
+        local ci=idx
+        delB.MouseButton1Click:Connect(function() table.remove(EditSteps,ci); RebuildStepsList() end)
+        upB.MouseButton1Click:Connect(function()
+            if ci>1 then
+                EditSteps[ci],EditSteps[ci-1]=EditSteps[ci-1],EditSteps[ci]
+                RebuildStepsList()
+            end
+        end)
+        dnB.MouseButton1Click:Connect(function()
+            if ci<#EditSteps then
+                EditSteps[ci],EditSteps[ci+1]=EditSteps[ci+1],EditSteps[ci]
+                RebuildStepsList()
+            end
+        end)
+    end
+end
+
+-- ── 載入 Macro 到編輯器 ──────────────────────────────────
+local function LoadMacroToEditor(idx)
+    EditingIndex = idx
+    local macro  = _G.Macros[idx]
+    if not macro then return end
+
+    RightHint.Visible        = false
+    EditorContainer.Visible  = true
+
+    NameInput.Text   = macro.name or ""
+    EditSteps        = DeepCopy(macro.steps or {})
+    EditHotkey       = macro.hotkey and DeepCopy(macro.hotkey) or nil
+    CurrentTrigger   = macro.triggerMode or "toggle"
+
+    for m, b in pairs(TrigBtns) do
+        b.BackgroundColor3 = (m==CurrentTrigger) and C.purple or C.bg3
+        b.TextColor3       = (m==CurrentTrigger) and Color3.new(1,1,1) or C.sub
+    end
+
+    if EditHotkey then
+        local nm = (EditHotkey.keyCode and KeyCodeToName(EditHotkey.keyCode))
+                or (EditHotkey.mouseButton and MouseBtnToName(EditHotkey.mouseButton))
+                or "未設定"
+        HotkeyDisplay.Text      = "📌 "..nm
+        HotkeyDisplay.TextColor3= C.yellow
+    else
+        HotkeyDisplay.Text      = "點此設定"
+        HotkeyDisplay.TextColor3= C.sub
+    end
+
+    EditTitle.Text = "✏️  ".. (macro.name~="" and macro.name or "未命名")
+    RebuildStepsList()
+end
+
+-- ── 清空編輯器（新增模式） ───────────────────────────────
+local function ClearEditor()
+    EditingIndex = nil
+    EditSteps    = {}
+    EditHotkey   = nil
+    NameInput.Text           = ""
+    HotkeyDisplay.Text       = "點此設定"
+    HotkeyDisplay.TextColor3 = C.sub
+    CurrentTrigger           = "toggle"
+    for m, b in pairs(TrigBtns) do
+        b.BackgroundColor3 = (m=="toggle") and C.purple or C.bg3
+        b.TextColor3       = (m=="toggle") and Color3.new(1,1,1) or C.sub
+    end
+    EditTitle.Text = "📝  新增連招"
+    RightHint.Visible       = false
+    EditorContainer.Visible = true
+    RebuildStepsList()
+end
+
+-- ── 重建左側連招清單 ─────────────────────────────────────
+-- 顯示：啟用開關 / 名稱 / 武器類型 / 快捷鍵+觸發 / 步驟數
+local function RebuildMacroList()
+    for _, ch in pairs(MacroScroll:GetChildren()) do
+        if ch:IsA("Frame") then ch:Destroy() end
+    end
+
+    if #_G.Macros==0 then
+        local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,54)
+        f.BackgroundTransparency=1; f.Parent=MacroScroll
+        MkLbl(f,{text="尚無連招\n點下方「新增連招」",color=C.sub,size=SZ.fsS,
+            xalign=Enum.TextXAlignment.Center,wrap=true,sz=UDim2.new(1,0,1,0)})
+        return
+    end
+
+    for i, macro in ipairs(_G.Macros) do
+        local enabled = (macro.enabled ~= false)
+        local isEditing = (EditingIndex==i)
+
+        -- 高亮邊框
+        local rowBg = isEditing and C.bg3 or C.bg2
+        local row=Instance.new("Frame")
+        row.Size=UDim2.new(1,0,0,58)
+        row.BackgroundColor3=rowBg
+        row.LayoutOrder=i; row.Parent=MacroScroll
+        MkCorner(row,6); MkPad(row,0,0,8,4)
+        if isEditing then MkStroke(row, C.accent, 1.5) end
+
+        -- ── 啟用開關 ──
+        local onOffBtn = MkBtn(row,{
+            text = enabled and "ON" or "OFF",
+            bg   = enabled and C.green or C.bg3,
+            color= enabled and C.bg0   or C.sub,
+            size = SZ.fsS, font=Enum.Font.SourceSansBold,
+            sz=UDim2.new(0,36,0,20), pos=UDim2.new(0,0,0,4),
+        })
+
+        -- ── 武器類型標籤 ──
+        local wType, wColorKey = nil, nil
+        -- 嘗試從步驟中分析武器類型
+        for _, st in ipairs(macro.steps or {}) do
+            if st.type=="switch" and st.weapon then
+                local wt, wck = DetectWeaponType(st.weapon)
+                if wt then wType=wt; wColorKey=wck; break end
+            end
+        end
+        -- 若沒有切換步驟，顯示預設（名稱偵測）
+        if not wType then
+            wType, wColorKey = DetectWeaponType(macro.name)
+        end
+
+        local wTypeColor = C.sub
+        if wColorKey then wTypeColor = C[wColorKey] or C.sub end
+
+        local wTypeLbl = MkLbl(row,{
+            text = wType and ("[" .. wType .. "]") or "",
+            color=wTypeColor, size=11, font=Enum.Font.SourceSansBold,
+            sz=UDim2.new(0,64,0,18), pos=UDim2.new(0,40,0,4),
+        })
+
+        -- ── 連招名稱 ──
+        local nameX = wType and 108 or 42
+        MkLbl(row,{
+            text=(macro.name~="" and macro.name) or "（未命名）",
+            color = enabled and C.text or C.sub, size=SZ.fs,
+            sz=UDim2.new(1,-100,0,22), pos=UDim2.new(0,nameX,0,4),
+        })
+
+        -- ── 快捷鍵 + 觸發模式 ──
+        local hkText = macro.hotkey
+            and ((macro.hotkey.keyCode and KeyCodeToName(macro.hotkey.keyCode))
+              or (macro.hotkey.mouseButton and MouseBtnToName(macro.hotkey.mouseButton))
+              or "未設定")
+            or "無快捷鍵"
+        local mLbl = TrigLabels[macro.triggerMode or "toggle"] or macro.triggerMode or ""
+        MkLbl(row,{
+            text=hkText.."　"..mLbl,
+            color=C.yellow, size=11,
+            sz=UDim2.new(1,-80,0,16), pos=UDim2.new(0,8,0,38),
+        })
+
+        -- ── 步驟數 + 編輯 / 刪除 ──
+        MkLbl(row,{
+            text=tostring(#(macro.steps or {})).." 步",
+            color=C.sub, size=11, xalign=Enum.TextXAlignment.Right,
+            sz=UDim2.new(0,30,0,16), pos=UDim2.new(1,-72,0,38),
+        })
+        local editB=MkBtn(row,{text="編輯",bg=C.bg3,color=C.accent,size=SZ.fsXS,
+            sz=UDim2.new(0,36,0,22),pos=UDim2.new(1,-70,0,4)})
+        local delB2=MkBtn(row,{text="刪除",bg=C.bg3,color=C.red,size=SZ.fsXS,
+            sz=UDim2.new(0,36,0,22),pos=UDim2.new(1,-70,0,30)})
+
+        -- ── 按鈕事件 ──
+        local ci=i
+        onOffBtn.MouseButton1Click:Connect(function()
+            _G.Macros[ci].enabled = not (_G.Macros[ci].enabled ~= false)
+            ConfigDirty=true
+            RefreshHotkeyListeners()
+            RebuildMacroList()
+        end)
+        editB.MouseButton1Click:Connect(function()
+            LoadMacroToEditor(ci)
+            RebuildMacroList()
+        end)
+        delB2.MouseButton1Click:Connect(function()
+            StopMacro(ci)
+            table.remove(_G.Macros, ci)
+            ConfigDirty=true
+            RefreshHotkeyListeners()
+            RebuildMacroList()
+            if EditingIndex==ci then
+                EditingIndex=nil
+                EditorContainer.Visible=false
+                RightHint.Visible=true
+            elseif EditingIndex and EditingIndex>ci then
+                EditingIndex=EditingIndex-1
+            end
+        end)
+    end
+end
+
+-- ========================================================
+-- 快捷鍵捕捉（連招 & 隱藏）
+-- ========================================================
+UserInputService.InputBegan:Connect(function(input, gpe)
+    -- 設定隱藏快捷鍵
+    if WaitingForHideKey then
+        WaitingForHideKey = false
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            _G.HideHotkey = { keyCode=input.KeyCode, mouseButton=nil }
+        else
+            _G.HideHotkey = { keyCode=nil, mouseButton=input.UserInputType }
+        end
+        SetHideHotkeyUI(HideBtn)
+        HideBtn.TextColor3 = C.sub
+        ConfigDirty = true
+        return
+    end
+
+    -- 設定連招快捷鍵
+    if WaitingForHotkey then
+        WaitingForHotkey = false
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            EditHotkey = { keyCode=input.KeyCode, mouseButton=nil }
+            HotkeyDisplay.Text = "📌 "..KeyCodeToName(input.KeyCode)
+        else
+            EditHotkey = { keyCode=nil, mouseButton=input.UserInputType }
+            HotkeyDisplay.Text = "📌 "..MouseBtnToName(input.UserInputType)
+        end
+        HotkeyDisplay.TextColor3 = C.yellow
+        return
+    end
+
+    -- 隱藏/顯示視窗
+    if not gpe then
+        local hk = _G.HideHotkey
+        local match = (hk.keyCode and input.KeyCode==hk.keyCode)
+                   or (hk.mouseButton and input.UserInputType==hk.mouseButton)
+        if match then
+            isHidden = not isHidden
+            MainFrame.Visible = not isHidden
+            if isHidden then
+                local nm = hk.keyCode and KeyCodeToName(hk.keyCode)
+                        or (hk.mouseButton and MouseBtnToName(hk.mouseButton))
+                        or "LeftShift"
+                ShowToast("視窗已隱藏   按 ["..nm.."] 重新顯示", 10)
+            end
+        end
+    end
+end)
+
+HotkeyDisplay.MouseButton1Click:Connect(function()
+    WaitingForHotkey          = true
+    HotkeyDisplay.Text        = "🔴 請按下目標鍵..."
+    HotkeyDisplay.TextColor3  = C.orange
+end)
+ClearHkBtn.MouseButton1Click:Connect(function()
+    EditHotkey               = nil
+    HotkeyDisplay.Text       = "點此設定"
+    HotkeyDisplay.TextColor3 = C.sub
+end)
+
+-- ========================================================
+-- 錄製
+-- ========================================================
+local IsRecording = false
+RecordBtn.MouseButton1Click:Connect(function()
+    if not IsRecording then
+        IsRecording = true
+        RecordBtn.Text             = "⏹ 停止錄製"
+        RecordBtn.BackgroundColor3 = C.orange
+        EditSteps = {}
+        RebuildStepsList()
+        StartRecording(EditSteps, function()
+            RebuildStepsList()
+            StepsScroll.CanvasPosition = Vector2.new(0, math.huge)
+        end)
+    else
+        IsRecording = false
+        RecordBtn.Text             = "⏺ 開始錄製"
+        RecordBtn.BackgroundColor3 = C.red
+        StopRecording()
+        RebuildStepsList()
+    end
+end)
+
+-- ========================================================
+-- 其他按鈕
+-- ========================================================
+NewMacroBtn.MouseButton1Click:Connect(function()
+    if IsRecording then
+        IsRecording=false
+        RecordBtn.Text="⏺ 開始錄製"
+        RecordBtn.BackgroundColor3=C.red
+        StopRecording()
+    end
+    ClearEditor()
+end)
+
+AddSkillBtn.MouseButton1Click:Connect(function()
+    table.insert(EditSteps,{type="skill",key="Z",duration=100})
+    RebuildStepsList()
+    StepsScroll.CanvasPosition=Vector2.new(0,math.huge)
+end)
+
+AddSwitchBtn.MouseButton1Click:Connect(function()
+    local cw=GetCurrentWeapon() or ""
+    table.insert(EditSteps,{type="switch",weapon=cw,waitAfter=200})
+    RebuildStepsList()
+    StepsScroll.CanvasPosition=Vector2.new(0,math.huge)
+end)
+
+AddWaitBtn.MouseButton1Click:Connect(function()
+    table.insert(EditSteps,{type="wait",ms=300})
+    RebuildStepsList()
+    StepsScroll.CanvasPosition=Vector2.new(0,math.huge)
+end)
+
+ClearStepsBtn.MouseButton1Click:Connect(function()
+    EditSteps = {}
+    RebuildStepsList()
+end)
+
+SaveBtn.MouseButton1Click:Connect(function()
+    local name=(NameInput.Text~="" and NameInput.Text) or ("未命名連招 "..( #_G.Macros+1))
+    local macro={
+        name        = name,
+        hotkey      = EditHotkey and DeepCopy(EditHotkey) or nil,
+        triggerMode = CurrentTrigger,
+        steps       = DeepCopy(EditSteps),
+        enabled     = true,
+    }
+    if EditingIndex then
+        macro.enabled = (_G.Macros[EditingIndex].enabled ~= false)
+        _G.Macros[EditingIndex] = macro
+    else
+        table.insert(_G.Macros, macro)
+        EditingIndex = #_G.Macros
+    end
+    ConfigDirty=true
+    RefreshHotkeyListeners()
+    RebuildMacroList()
+    EditTitle.Text = "✅  已儲存："..name
+end)
+
+RunBtn.MouseButton1Click:Connect(function()
+    if EditingIndex and _G.Macros[EditingIndex] then
+        RunMacro(EditingIndex)
+        RunBtn.Text="▶ 執行中..."
+        task.delay(0.8, function() RunBtn.Text="▶ 立即執行" end)
+    elseif #EditSteps>0 then
+        -- 預覽（未儲存）
+        local steps=DeepCopy(EditSteps)
+        task.spawn(function()
+            for _, step in ipairs(steps) do
+                if step.type=="skill" then
+                    SendKey(NameToKeyCode(step.key), step.duration or 100)
+                elseif step.type=="switch" then
+                    EquipWeapon(step.weapon)
+                    if (step.waitAfter or 0)>0 then task.wait(step.waitAfter/1000) end
+                elseif step.type=="wait" then
+                    task.wait((step.ms or 100)/1000)
+                end
+            end
+        end)
+        RunBtn.Text="▶ 預覽中..."
+        task.delay(0.8, function() RunBtn.Text="▶ 立即執行" end)
+    end
+end)
+
+-- ========================================================
+-- 初始化
+-- ========================================================
+RebuildMacroList()
+-- 右側預設顯示提示
+RightHint.Visible       = true
+EditorContainer.Visible = false
+
+-- ========================================================
+-- 視窗拖動
+-- ========================================================
+local dragging, dragInput, dragStart, startPos
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1
+    or input.UserInputType==Enum.UserInputType.Touch then
+        dragging=true; dragStart=input.Position; startPos=MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState==Enum.UserInputState.End then dragging=false end
+        end)
+    end
+end)
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseMovement
+    or input.UserInputType==Enum.UserInputType.Touch then
+        dragInput=input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input==dragInput and dragging then
+        local d=input.Position-dragStart
+        MainFrame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+    end
+end)
+
+-- ========================================================
+-- 隱藏按鈕（左鍵點擊 = 立即隱藏視窗）
+-- ========================================================
+HideBtn.MouseButton1Click:Connect(function()
+    if WaitingForHideKey then
+        -- 已進入等待模式，取消
+        WaitingForHideKey = false
+        SetHideHotkeyUI(HideBtn)
+        HideBtn.TextColor3 = C.sub
+        return
+    end
+    -- 左鍵：直接隱藏
+    isHidden = true
+    MainFrame.Visible = false
+    local hk = _G.HideHotkey
+    local nm = (hk.keyCode and KeyCodeToName(hk.keyCode))
+            or (hk.mouseButton and MouseBtnToName(hk.mouseButton))
+            or "LeftShift"
+    ShowToast("視窗已隱藏   按 ["..nm.."] 可重新顯示", 10)
+end)
+
+-- 右鍵點擊：設定隱藏快捷鍵
+HideBtn.MouseButton2Click:Connect(function()
+    WaitingForHideKey  = true
+    HideBtn.Text       = "按下新快捷鍵..."
+    HideBtn.TextColor3 = C.orange
+end)
+
+-- ========================================================
+-- 關閉
+-- ========================================================
+local HeartbeatConn
+CloseBtn.MouseButton1Click:Connect(function()
+    if HeartbeatConn then HeartbeatConn:Disconnect() end
+    for _, c in pairs(HotkeyConns)  do c:Disconnect() end
+    for _, c in pairs(RecordConns) do c:Disconnect() end
+    ScreenGui:Destroy()
+end)
+
+HeartbeatConn = RunService.Heartbeat:Connect(function()
+    -- 可擴充每幀邏輯
+end)
