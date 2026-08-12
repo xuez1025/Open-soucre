@@ -2,6 +2,10 @@
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
 
 ----------------------------------------
 -- 防重複啟用
@@ -69,6 +73,12 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+--select Team
+_G.SelectTeam = "Marines"
+
+--自動抽果
+_G.AutoRollFruit = false
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -99,6 +109,8 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+    "SelectTeam",
+    "AutoRollFruit",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled"
@@ -187,23 +199,88 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
---自動執行
-local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
-
-if _G.AutoExecute and queue_func then
-    queue_func(ScriptLoadstring)
+--select Team
+local function SelectTeam()
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
 end
+
+SelectTeam()
+
+-- 自動抽果
+task.spawn(function()
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.CharacterAdded:Wait()
+        task.wait(3) 
+    else
+        task.wait(3)
+    end
+
+    while true do
+        if _G.AutoRollFruit then
+            local response
+            pcall(function()
+                local args = {
+                    "Cousin",
+                    "DLCBoxData"
+                }
+                response = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+            end)
+            
+            if response then
+                WindUI:Notify({ 
+                    Title = "抽果結果", 
+                    Content = tostring(response), 
+                    Duration = 5 
+                })
+            end
+            task.wait(600)
+        else
+            task.wait(1)
+        end
+    end
+end)
 
 --------------------------
 -- 分頁
 --------------------------
 local Tabs = {
+    Fruit = Window:Tab({ Title = "果實", Icon = "leaf" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
 --------------------------
 -- 元件
 --------------------------
+Tabs.Fruit:Section({ Title = "Select Team" })
+
+Tabs.Fruit:Dropdown({
+    Title = "選擇陣營",
+    Values = { "海賊", "海軍" },
+    Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
+    Callback = function(v)
+        _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
+        SelectTeam()
+        MarkConfigDirty()
+    end,
+})
+
+Tabs.Fruit:Section({ Title = "果實" })
+
+Tabs.Fruit:Toggle({ 
+    Title = "自動抽果",
+    Value = _G.AutoRollFruit,
+    Callback = function(v)
+        _G.AutoRollFruit = v
+    end
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
