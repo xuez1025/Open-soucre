@@ -644,62 +644,34 @@ local function StopServerHop()
         end
     end
 
-    WindUI:Notify({
-        Title = "自動跳服",
-        Content = "已停止跳服",
-        Duration = 2,
-    })
 end
 
 local function StartServerHop()
     if getgenv().IsServerHopping == true then
-        WindUI:Notify({
-            Title = "自動跳服",
-            Content = "跳服已在進行中",
-            Duration = 3,
-        })
         return
     end
 
     getgenv().IsServerHopping = true
     getgenv().ShuttingDown = true
 
-    -- [換服超時] 開始換服後若未在5分鐘內成功換服：三海進二海、二海進三海，其餘重進伺服器
+    -- [換服超時] 開始換服後若未在3分鐘內成功換服：三海進二海、二海進三海，其餘重進伺服器
     local hopStartTime = tick()
     task.spawn(function()
         while getgenv().IsServerHopping do
-            if tick() - hopStartTime >= 300 then
+            if tick() - hopStartTime >= 180 then
                 local placeId = game.PlaceId
                 if table.find({7449423635, 100117331123089}, placeId) then
                     -- 三海 → 二海
-                    WindUI:Notify({
-                        Title = "自動跳服",
-                        Content = "5分鐘內未成功換服\n正在傳送至二海...",
-                        Icon = "waves",
-                        Duration = 5,
-                    })
                     pcall(function()
                         ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelDressrosa")
                     end)
                 elseif table.find({4442272183, 79091703265657}, placeId) then
                     -- 二海 → 三海
-                    WindUI:Notify({
-                        Title = "自動跳服",
-                        Content = "5分鐘內未成功換服\n正在傳送至三海...",
-                        Icon = "waves",
-                        Duration = 5,
-                    })
                     pcall(function()
                         ReplicatedStorage.Remotes.CommF_:InvokeServer("TravelZou")
                     end)
                 else
                     -- 其他(一海) → 執行重進伺服器
-                    WindUI:Notify({
-                        Title = "自動跳服",
-                        Content = "5分鐘內未成功換服\n執行重進伺服器...",
-                        Icon = "refresh-cw",
-                        Duration = 5,
-                    })
                     pcall(function()
                         game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
                     end)
@@ -713,12 +685,6 @@ local function StartServerHop()
 
     -- [安全檢查] 必須安全且無PVP狀態才能開始換服
     if IsSafeToHopCheck and not IsSafeToHopCheck() then
-        WindUI:Notify({
-            Title = "自動跳服",
-            Content = "目前狀態不安全(戰鬥中/已開啟PVP)\n等待安全後才會開始搜尋伺服器...",
-            Icon = "shield-alert",
-            Duration = 5,
-        })
         while getgenv().IsServerHopping and IsSafeToHopCheck and not IsSafeToHopCheck() do
             task.wait(1)
         end
@@ -726,13 +692,6 @@ local function StartServerHop()
             return
         end
     end
-
-    WindUI:Notify({
-        Title = "自動跳服",
-        Content = "準備跳服...\n\n" .. BuildFilterText(),
-        Icon = "wind",
-        Duration = 8,
-    })
 
     local currentJobId = game.JobId
     local triedJobs = {}
@@ -779,7 +738,6 @@ local function StartServerHop()
 
         if not serverBrowser then
             getgenv().IsServerHopping = false
-            WindUI:Notify({ Title = "自動跳服", Content = "找不到 ServerBrowser，無法跳服", Duration = 4 })
             return
         end
 
@@ -868,13 +826,6 @@ local function StartServerHop()
                 if IsSafeToHopCheck and not IsSafeToHopCheck() then
                     task.wait(1)
                 else
-                    WindUI:Notify({
-                        Title = "匹配到服务器",
-                        Content = BuildServerInfoText(candidate.info, candidate.job),
-                        Icon = "wind",
-                        Duration = 6,
-                    })
-
                     pcall(function()
                         ServerBrowserRemote:InvokeServer("teleport", candidate.job)
                     end)
