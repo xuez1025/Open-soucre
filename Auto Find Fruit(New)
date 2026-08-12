@@ -128,7 +128,7 @@ end
 
 local ScriptLoadstring = [[if isfile("Hub.file") then
     if readfile("Hub.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Find%20Fruit(New)"))()
     end
 end]]
 
@@ -139,7 +139,7 @@ _G.KeyDisabled = false
 ----------------------------------------
 -- 配置自動保存
 ----------------------------------------
-local ConfigFolder = "Hub_Config"
+local ConfigFolder = "AutoFindFruit_Config"
 local ConfigFile = ConfigFolder .. "/settings.json"
 local ConfigReady = false
 local ConfigSaving = false
