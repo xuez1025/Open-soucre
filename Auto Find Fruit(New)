@@ -4,6 +4,7 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -76,6 +77,12 @@ end)
 --select Team
 _G.SelectTeam = "Marines"
 
+--ESP Fruit
+_G.FruitESP = false
+
+--Auto Store Fruit
+_G.AutoStoreFruit = false
+
 --自動抽果
 _G.AutoRollFruit = false
 
@@ -110,6 +117,8 @@ local ConfigDirty = false
 
 local ConfigKeys = {
     "SelectTeam",
+    "FruitESP",
+    "AutoStoreFruit",
     "AutoRollFruit",
     "AutoExecute",
     "CurrentKey",
@@ -213,6 +222,148 @@ end
 
 SelectTeam()
 
+--ESP Fruit
+local function round(num)
+    return math.floor(num + 0.5)
+end
+
+local function clearEspForInstance(v)
+    pcall(function()
+        if v:FindFirstChild("Handle") and v.Handle:FindFirstChild("NameEsp") then
+            v.Handle["NameEsp"]:Destroy()
+        end
+    end)
+end
+
+local function clearAllEsp()
+    for _, v in pairs(Workspace:GetChildren()) do
+        clearEspForInstance(v)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not _G.FruitESP then return end
+    
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("Head") then return end
+    local headPos = character.Head.Position
+
+    for _, v in pairs(Workspace:GetChildren()) do
+        pcall(function()
+            if string.find(v.Name, "Fruit") and v:FindFirstChild("Handle") then
+                local handle = v.Handle
+                local espName = "NameEsp"
+                local dist = round((headPos - handle.Position).Magnitude / 3)
+                local displayText = v.Name .. "\n[" .. dist .. "m]"
+
+                local bill = handle:FindFirstChild(espName)
+                if not bill then
+                    bill = Instance.new("BillboardGui", handle)
+                    bill.Name = espName
+                    bill.ExtentsOffset = Vector3.new(0, 2, 0)
+                    bill.Size = UDim2.new(0, 200, 0, 50)
+                    bill.Adornee = handle
+                    bill.AlwaysOnTop = true
+
+                    local name = Instance.new("TextLabel", bill)
+                    name.Font = Enum.Font.GothamBold
+                    name.TextSize = 14
+                    name.TextWrapped = true
+                    name.Size = UDim2.new(1, 0, 1, 0)
+                    name.TextYAlignment = Enum.TextYAlignment.Center
+                    name.BackgroundTransparency = 1
+                    name.TextStrokeTransparency = 0.2
+                    name.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+                    name.TextColor3 = Color3.fromRGB(255, 230, 100)
+                    name.Text = displayText
+                else
+                    bill.TextLabel.Text = displayText
+                end
+            end
+        end)
+    end
+end)
+
+Workspace.ChildRemoved:Connect(function(child)
+    clearEspForInstance(child)
+end)
+
+--Auto Store Fruit
+local FruitList = {
+    ["Dragon-West"]     = "Dragon (West) Fruit",
+    ["Dragon-East"]     = "Dragon (East) Fruit",
+    ["Kitsune-Kitsune"] = "Kitsune Fruit",
+    ["Tiger-Tiger"]     = "Tiger Fruit",
+    ["Spirit-Spirit"]   = "Spirit Fruit",
+    ["Control-Control"] = "Control Fruit",
+    ["Venom-Venom"]     = "Venom Fruit",
+    ["Shadow-Shadow"]   = "Shadow Fruit",
+    ["Dough-Dough"]     = "Dough Fruit",
+    ["T-Rex-T-Rex"]     = "T-Rex Fruit",
+    ["Mammoth-Mammoth"] = "Mammoth Fruit",
+    ["Gravity-Gravity"] = "Gravity Fruit",
+    ["Blizzard-Blizzard"]= "Blizzard Fruit",
+    ["Pain-Pain"]       = "Pain Fruit",
+    ["Lightning-Lightning"] = "Lightning Fruit",
+    ["Portal-Portal"]   = "Portal Fruit",
+    ["Phoenix-Phoenix"] = "Phoenix Fruit",
+    ["Gas-Gas"]         = "Gas Fruit",
+    ["Yeti-Yeti"]       = "Yeti Fruit",
+    ["Sound-Sound"]     = "Sound Fruit",
+    ["Spider-Spider"]   = "Spider Fruit",
+    ["Love-Love"]       = "Love Fruit",
+    ["Buddha-Buddha"]   = "Buddha Fruit",
+    ["Quake-Quake"]     = "Quake Fruit",
+    ["Magma-Magma"]     = "Magma Fruit",
+    ["Ghost-Ghost"]     = "Ghost Fruit",
+    ["Creation-Creation"] = "Creation Fruit",
+    ["Rubber-Rubber"]   = "Rubber Fruit",
+    ["Light-Light"]     = "Light Fruit",
+    ["Diamond-Diamond"] = "Diamond Fruit",
+    ["Dark-Dark"]       = "Dark Fruit",
+    ["Sand-Sand"]       = "Sand Fruit",
+    ["Ice-Ice"]         = "Ice Fruit",
+    ["Eagle-Eagle"]     = "Eagle Fruit",
+    ["Flame-Flame"]     = "Flame Fruit",
+    ["Spike-Spike"]     = "Spike Fruit",
+    ["Smoke-Smoke"]     = "Smoke Fruit",
+    ["Bomb-Bomb"]       = "Bomb Fruit",
+    ["Spring-Spring"]   = "Spring Fruit",
+    ["Blade-Blade"]     = "Blade Fruit",
+    ["Spin-Spin"]       = "Spin Fruit",
+    ["Rocket-Rocket"]   = "Rocket Fruit"
+}
+
+task.spawn(function()
+    while true do
+        if _G.AutoStoreFruit then
+            pcall(function()
+                local character = LocalPlayer.Character
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                
+                for remoteName, toolName in pairs(FruitList) do
+                    local fruitTool = nil
+                    
+                    if character then
+                        fruitTool = character:FindFirstChild(toolName)
+                    end
+                    
+                    if not fruitTool then
+                        if backpack then
+                            fruitTool = backpack:FindFirstChild(toolName)
+                        end
+                    end
+                    
+                    if fruitTool then
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("StoreFruit", remoteName, fruitTool)
+                    end
+                end
+            end)
+        end
+        task.wait(0.5)
+    end
+end)
+
 -- 自動抽果
 task.spawn(function()
     if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -258,7 +409,7 @@ local Tabs = {
 --------------------------
 -- 元件
 --------------------------
-Tabs.Fruit:Section({ Title = "Select Team" })
+Tabs.Fruit:Section({ Title = "Config" })
 
 Tabs.Fruit:Dropdown({
     Title = "選擇陣營",
@@ -272,6 +423,25 @@ Tabs.Fruit:Dropdown({
 })
 
 Tabs.Fruit:Section({ Title = "果實" })
+
+Tabs.Fruit:Toggle({ 
+    Title = "ESP Fruit",
+    Value = _G.FruitESP,
+    Callback = function(v)
+        _G.FruitESP = v
+        if not _G.FruitESP then
+            clearAllEsp()
+        end
+    end
+})
+
+Tabs.Fruit:Toggle({ 
+    Title = "自動儲存果實",
+    Value = _G.AutoStoreFruit,
+    Callback = function(v)
+        _G.AutoStoreFruit = v
+    end
+})
 
 Tabs.Fruit:Toggle({ 
     Title = "自動抽果",
