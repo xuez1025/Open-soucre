@@ -1,3 +1,114 @@
+----------------------------------------
+--服務
+----------------------------------------
+local HttpService = game:GetService("HttpService")
+
+----------------------------------------
+--變數
+----------------------------------------
+--自動執行
+_G.AutoExecute = false
+local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()'
+
+--快捷鍵
+_G.CurrentKey = "G"
+_G.KeyDisabled = false
+
+----------------------------------------
+-- 配置自動保存
+----------------------------------------
+local ConfigFolder = "AutoFindFruit_Config"
+local ConfigFile = ConfigFolder .. "/settings.json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+
+local ConfigKeys = {
+    "AutoExecute",
+    "CurrentKey",
+    "KeyDisabled"
+}
+
+local function CopyConfigValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = CopyConfigValue(item)
+    end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then
+            data[key] = CopyConfigValue(_G[key])
+        end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then
+            _G[key] = CopyConfigValue(data[key])
+        end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then
+        ApplyConfig(data)
+        return true
+    end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
+
 --------------------------
 -- WindUI 載入
 --------------------------
@@ -6,10 +117,9 @@ local WindUI = loadstring(request({
 }).Body)()
 
 local Window = WindUI:CreateWindow({
-    Title         = "Xu-hub",
+    Title         = "Auto Find Fruit",
     Icon          = "user-check",
     Author        = "by xuez1025",
-    Folder        = "Xu-Hub",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
     Theme         = "Dark",
@@ -29,7 +139,7 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = false,
     SideBarWidth  = 200,
     OpenButton = {
-        Title           = "Xu-hub",
+        Title           = "Auto Find Fruit",
         CornerRadius    = UDim.new(1, 0),
         StrokeThickness = 3,
         Enabled         = true,
@@ -41,26 +151,47 @@ local Window = WindUI:CreateWindow({
 })
 
 --------------------------
---功能變數
---------------------------
---快捷鍵
-local CurrentKey = "G"
-local KeyDisabled = false
-
---自動執行
-_G.AutoExecute = false
-local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()'
-
---------------------------
--- 建立分頁
+-- 分頁
 --------------------------
 local Tabs = {
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
 --------------------------
---元件
+-- 元件
 --------------------------
+Tabs.Settings:Section({ Title = "重置腳本" })
+
+Tabs.Settings:Button({
+    Title = "將所有配置恢復初始",
+    Icon = "trash-2",
+    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Callback = function()
+        local ok = pcall(function()
+            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+                makefolder(ConfigFolder)
+            end
+            if typeof(writefile) == "function" then
+                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
+            end
+        end)
+        
+        if ok then
+            WindUI:Notify({
+                Title = "配置等待重置",
+                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "重置失敗",
+                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
+                Duration = 4
+            })
+        end
+    end
+})
+
 Tabs.Settings:Section({ Title = "設定" })
 
 Tabs.Settings:Toggle({
@@ -90,11 +221,11 @@ Tabs.Settings:Toggle({
 Tabs.Settings:Keybind({ 
     Title = "快捷鍵", 
     Desc = "可更改", 
-    Value = CurrentKey,
+    Value = _G.CurrentKey,
     Callback = function(v)
-        CurrentKey = v
+        _G.CurrentKey = v
         
-        if not KeyDisabled then
+        if not _G.KeyDisabled then
             Window:SetToggleKey(Enum.KeyCode[v])
         end
     end
@@ -103,14 +234,14 @@ Tabs.Settings:Keybind({
 Tabs.Settings:Toggle({
     Title = "停用快捷鍵",
     Desc = "開啟後將禁用快捷鍵",
-    Value = false,
+    Value = _G.KeyDisabled,
     Callback = function(state)
-        KeyDisabled = state
+        _G.KeyDisabled = state
         
         if state then
             Window:SetToggleKey(nil)
         else
-            Window:SetToggleKey(Enum.KeyCode[CurrentKey])
+            Window:SetToggleKey(Enum.KeyCode[_G.CurrentKey])
         end
     end
 })
