@@ -151,6 +151,14 @@ local Window = WindUI:CreateWindow({
 })
 
 --------------------------
+-- 功能核心邏輯
+--------------------------
+--自動執行
+if _G.AutoExecute and queue_on_teleport then
+    queue_on_teleport(ScriptLoadstring)
+end
+
+--------------------------
 -- 分頁
 --------------------------
 local Tabs = {
