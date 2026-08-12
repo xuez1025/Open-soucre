@@ -7,8 +7,20 @@ local HttpService = game:GetService("HttpService")
 --變數
 ----------------------------------------
 --自動執行
-_G.AutoExecute = true
-local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()'
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+
+if isfile and isfile("TopPVP.file") then
+    local success, content = pcall(function() return readfile("TopPVP.file") end)
+    _G.AutoExecute = (success and content == "true")
+else
+    _G.AutoExecute = false
+end
+
+local ScriptLoadstring = [[if isfile("TopPVP.file") then
+    if readfile("TopPVP.file") == "true" then
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
+    end
+end]]
 
 --快捷鍵
 _G.CurrentKey = "G"
@@ -182,8 +194,10 @@ end
 -- 功能核心邏輯
 --------------------------
 --自動執行
-if _G.AutoExecute and queue_on_teleport then
-    queue_on_teleport(ScriptLoadstring)
+local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+
+if _G.AutoExecute and queue_func then
+    queue_func(ScriptLoadstring)
 end
 
 --------------------------
@@ -230,24 +244,36 @@ Tabs.Settings:Button({
 
 Tabs.Settings:Section({ Title = "設定" })
 
-Tabs.Settings:Toggle({
+Tabs.Settings:Toggle({ 
     Title = "換服後自動執行",
-    Desc = "切換伺服器時自動載入",
+    Desc = "切換伺服器時自動重新載入",
     Value = _G.AutoExecute,
-    Callback = function(state)
-        _G.AutoExecute = state
+    Callback = function(v)
+        _G.AutoExecute = v
         
-        if _G.AutoExecute and queue_on_teleport then
-            queue_on_teleport(ScriptLoadstring)
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                writefile("TopPVP.file", "true")
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        else
+            if queue_on_teleport and isfile("TopPVP.file") then
+                delfile("TopPVP.file")
+            end
             WindUI:Notify({
                 Title = "通知",
-                Content = "已開啟自動執行",
-                Duration = 3
-            })
-        elseif not queue_on_teleport then
-            WindUI:Notify({
-                Title = "支援錯誤",
-                Content = "你目前的注入器不支援",
+                Content = "已關閉自動執行",
                 Duration = 3
             })
         end
@@ -281,3 +307,23 @@ Tabs.Settings:Toggle({
         end
     end
 })
+
+-- 初始化狀態
+task.spawn(function()
+    task.wait()
+
+    -- 自動執行
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("TopPVP.file") then
+                writefile("TopPVP.file", "true")
+            end
+
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("TopPVP.file") then
+            delfile("TopPVP.file")
+        end
+    end
+end)
