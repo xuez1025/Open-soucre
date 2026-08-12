@@ -240,6 +240,18 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+-- 等待自己的角色（人偶）完整載入後才繼續執行
+local function WaitForCharacterReady()
+    local char = LocalPlayer.Character
+    if not char then
+        char = LocalPlayer.CharacterAdded:Wait()
+    end
+    char:WaitForChild("HumanoidRootPart", 10)
+    char:WaitForChild("Humanoid", 10)
+    -- 再等一段時間，確保所有部位與動作都載入完成
+    task.wait(3)
+end
+
 --select Team
 local function SelectTeam()
     local lp = game:GetService("Players").LocalPlayer
@@ -252,7 +264,11 @@ local function SelectTeam()
     end
 end
 
-SelectTeam()
+-- 等待人偶載入完成後再選擇陣營
+task.spawn(function()
+    WaitForCharacterReady()
+    SelectTeam()
+end)
 
 --ESP Fruit
 local function round(num)
@@ -398,12 +414,8 @@ end)
 
 -- 自動抽果
 task.spawn(function()
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.CharacterAdded:Wait()
-        task.wait(3) 
-    else
-        task.wait(3)
-    end
+    -- 等待人偶完整載入後再開始抽果
+    WaitForCharacterReady()
 
     while true do
         if _G.AutoRollFruit then
