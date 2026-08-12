@@ -4,20 +4,83 @@
 local HttpService = game:GetService("HttpService")
 
 ----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if getgenv().HubLoaded then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Hub",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
+getgenv().HubLoaded = true
+
+--------------------------
+-- WindUI 載入
+--------------------------
+local WindUI = loadstring(request({
+    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+}).Body)()
+
+local Window = WindUI:CreateWindow({
+    Title         = "Hub",
+    Icon          = "user-check",
+    Author        = "by xuez1025",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            local LocalPlayer = game.Players.LocalPlayer
+            WindUI:Notify({ 
+                Title = LocalPlayer.Name, 
+                Content = "ID: " .. LocalPlayer.UserId, 
+                Duration = 3 
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Hub",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+    }
+})
+
+--UI被關閉可重複執行
+Window:OnDestroy(function()
+    getgenv().HubLoaded = nil
+end)
+
+----------------------------------------
 --變數
 ----------------------------------------
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
-if isfile and isfile("TopPVP.file") then
-    local success, content = pcall(function() return readfile("TopPVP.file") end)
+if isfile and isfile("Hub.file") then
+    local success, content = pcall(function() return readfile("Hub.file") end)
     _G.AutoExecute = (success and content == "true")
 else
     _G.AutoExecute = false
 end
 
-local ScriptLoadstring = [[if isfile("TopPVP.file") then
-    if readfile("TopPVP.file") == "true" then
+local ScriptLoadstring = [[if isfile("Hub.file") then
+    if readfile("Hub.file") == "true" then
         loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
     end
 end]]
@@ -29,7 +92,7 @@ _G.KeyDisabled = false
 ----------------------------------------
 -- 配置自動保存
 ----------------------------------------
-local ConfigFolder = "_Config"
+local ConfigFolder = "Hub_Config"
 local ConfigFile = ConfigFolder .. "/settings.json"
 local ConfigReady = false
 local ConfigSaving = false
@@ -121,75 +184,6 @@ task.spawn(function()
     end
 end)
 
-----------------------------------------
--- 防重複啟用
-----------------------------------------
-if getgenv().HubLoaded then
-    local StarterGui = game:GetService("StarterGui")
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "hub",
-            Text = "腳本已在運行中，請先關閉介面後再重新執行！",
-            Duration = 3
-        })
-    end)
-    return
-end
-
--- 標記腳本為已載入狀態
-getgenv().HubLoaded = true
-
---------------------------
--- WindUI 載入
---------------------------
-local WindUI = loadstring(request({
-    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
-}).Body)()
-
-local Window = WindUI:CreateWindow({
-    Title         = "Hub",
-    Icon          = "user-check",
-    Author        = "by xuez1025",
-    Size          = UDim2.fromOffset(600, 400),
-    Transparent   = true,
-    Theme         = "Dark",
-    User = {
-        Enabled   = true,
-        Anonymous = false,
-        Callback  = function()
-            local LocalPlayer = game.Players.LocalPlayer
-            WindUI:Notify({ 
-                Title = LocalPlayer.Name, 
-                Content = "ID: " .. LocalPlayer.UserId, 
-                Duration = 3 
-            })
-        end
-    },
-    Acrylic       = false,
-    HideSearchBar = false,
-    SideBarWidth  = 200,
-    OpenButton = {
-        Title           = "Hub",
-        CornerRadius    = UDim.new(1, 0),
-        StrokeThickness = 3,
-        Enabled         = true,
-        OnlyMobile      = false,
-        Draggable       = true,
-        OnlyIcon        = false,
-        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
-    }
-})
-
---UI被關閉可重複執行
-local originalDestroy = Window.Destroy
-Window.Destroy = function(self, ...)
-    getgenv().XuHubLoaded = nil
-    
-    if originalDestroy then
-        return originalDestroy(self, ...)
-    end
-end
-
 --------------------------
 -- 功能核心邏輯
 --------------------------
@@ -253,7 +247,7 @@ Tabs.Settings:Toggle({
         
         if _G.AutoExecute then
             if queue_on_teleport then
-                writefile("TopPVP.file", "true")
+                writefile("Hub.file", "true")
                 queue_on_teleport(ScriptLoadstring)
                 WindUI:Notify({
                     Title = "通知",
@@ -268,8 +262,8 @@ Tabs.Settings:Toggle({
                 })
             end
         else
-            if queue_on_teleport and isfile("TopPVP.file") then
-                delfile("TopPVP.file")
+            if queue_on_teleport and isfile("Hub.file") then
+                delfile("Hub.file")
             end
             WindUI:Notify({
                 Title = "通知",
@@ -315,15 +309,15 @@ task.spawn(function()
     -- 自動執行
     if _G.AutoExecute then
         if queue_on_teleport then
-            if not isfile("TopPVP.file") then
-                writefile("TopPVP.file", "true")
+            if not isfile("Hub.file") then
+                writefile("Hub.file", "true")
             end
 
             queue_on_teleport(ScriptLoadstring)
         end
     else
-        if queue_on_teleport and isfile("TopPVP.file") then
-            delfile("TopPVP.file")
+        if queue_on_teleport and isfile("Hub.file") then
+            delfile("Hub.file")
         end
     end
 end)
