@@ -7,7 +7,7 @@ local HttpService = game:GetService("HttpService")
 --變數
 ----------------------------------------
 --自動執行
-_G.AutoExecute = false
+_G.AutoExecute = true
 local ScriptLoadstring = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()'
 
 --快捷鍵
