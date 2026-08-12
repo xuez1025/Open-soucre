@@ -610,9 +610,6 @@ local function FlyToFruitLogic(targetPos)
                         _G.Fruit_TeleportFails[bestEntrance.Arg] = fails
                         if fails >= 3 then
                             _G.Fruit_BlockedEntrances[bestEntrance.Arg] = true
-                            if WindUI then
-                                WindUI:Notify({ Title = "撿果實", Content = "傳送點 3 次無法到達，已改用其他傳送點", Duration = 3 })
-                            end
                         end
                     end
                 end
@@ -655,6 +652,26 @@ local function StopFruitFlight()
             hrp.AssemblyAngularVelocity = Vector3.zero
         end
     end
+end
+
+local function GetActiveFruitCount()
+    local count = 0
+    for _, v in ipairs(workspace:GetChildren()) do
+        if string.find(v.Name, "Fruit") and v:FindFirstChild("Handle") then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function WaitForAllFruitsPicked(timeout)
+    local startTime = tick()
+    while GetActiveFruitCount() > 0 do
+        if not _G.Tweenfruit then return false end
+        if tick() - startTime >= timeout then return false end
+        task.wait(1)
+    end
+    return true
 end
 
 local ServerCore = {}
@@ -712,9 +729,6 @@ function ServerCore:TeleportToServer(jobId)
         end
         if tick() - hopStartTime > 10 then
             retryCount = retryCount + 1
-            if WindUI then
-                WindUI:Notify({ Title = "換服確認", Content = "仍在原伺服器，正在重試... (" .. retryCount .. "/" .. MAX_RETRIES .. ")", Duration = 3 })
-            end
             if retryCount >= MAX_RETRIES then
                 _G.HopConfirmConn:Disconnect(); _G.HopConfirmConn = nil
                 _G.HopTargetJobId = nil
@@ -722,6 +736,13 @@ function ServerCore:TeleportToServer(jobId)
                 return
             end
             hopStartTime = tick()
+
+            if GetActiveFruitCount() > 0 then
+                _G.HopTargetJobId = nil
+                _G.ServerHopping = false
+                return
+            end
+
             ServerCore:FindAndHop("random")
         end
     end)
@@ -760,12 +781,16 @@ local function StartServerHopSequence()
     task.spawn(function()
         for i = _G.HopDelayTime, 1, -1 do
             if not _G.Tweenfruit then _G.ServerHopping = false; return end
+            if GetActiveFruitCount() > 0 then
+                _G.ServerHopping = false
+                return
+            end
             if WindUI then
                 WindUI:Notify({ Title = "提示", Content = tostring(i) .. " 秒之後自動換服...", Duration = 1 })
             end
             task.wait(1)
         end
-        if _G.Tweenfruit then
+        if _G.Tweenfruit and GetActiveFruitCount() == 0 then
             ServerCore:FindAndHop("random")
         else
             _G.ServerHopping = false
@@ -874,9 +899,6 @@ task.spawn(function()
             else
                 if not _G.ForceHopTriggered and (tick() - _G.LastFruitTime) > 300 then
                     _G.ForceHopTriggered = true
-                    if WindUI then
-                        WindUI:Notify({ Title = "逾時換服", Content = "超過 5 分鐘未偵測到果實，強制切換伺服器...", Duration = 4 })
-                    end
                     StartServerHopSequence()
                 end
             end
@@ -898,15 +920,15 @@ task.spawn(function()
         for _, entry in ipairs(schedule) do
             task.wait(entry.wait)
             if entry.mode == "hop" then
-                if WindUI then
-                    WindUI:Notify({ Title = "定時換服", Content = entry.label .. "，正在切換伺服器...", Duration = 4 })
+                if GetActiveFruitCount() > 0 then
+                    WaitForAllFruitsPicked(300)
                 end
                 _G.ServerHopping = false
                 StopFruitFlight()
                 ServerCore:FindAndHop("random")
             elseif entry.mode == "rejoin" then
-                if WindUI then
-                    WindUI:Notify({ Title = "定時重連", Content = entry.label .. "，正在重新連線至當前伺服器...", Duration = 4 })
+                if GetActiveFruitCount() > 0 then
+                    WaitForAllFruitsPicked(300)
                 end
                 task.wait(4)
                 _G.ServerHopping = false
