@@ -17,7 +17,7 @@ _G.KeyDisabled = false
 ----------------------------------------
 -- 配置自動保存
 ----------------------------------------
-local ConfigFolder = "AutoFindFruit_Config"
+local ConfigFolder = "_Config"
 local ConfigFile = ConfigFolder .. "/settings.json"
 local ConfigReady = false
 local ConfigSaving = false
@@ -117,7 +117,7 @@ local WindUI = loadstring(request({
 }).Body)()
 
 local Window = WindUI:CreateWindow({
-    Title         = "Auto Find Fruit",
+    Title         = "Hub",
     Icon          = "user-check",
     Author        = "by xuez1025",
     Size          = UDim2.fromOffset(600, 400),
@@ -139,7 +139,7 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = false,
     SideBarWidth  = 200,
     OpenButton = {
-        Title           = "Auto Find Fruit",
+        Title           = "Hub",
         CornerRadius    = UDim.new(1, 0),
         StrokeThickness = 3,
         Enabled         = true,
