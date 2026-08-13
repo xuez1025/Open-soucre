@@ -699,10 +699,26 @@ local function GetActiveFruitCount()
     return count
 end
 
-local function WaitForAllFruitsPicked(timeout)
+-- 伺服器是否有活著的 Core（工廠可打）
+local function HasLiveCore()
+    local enemies = workspace:FindFirstChild("Enemies")
+    local core = enemies and enemies:FindFirstChild("Core")
+    if not core then return false end
+    local hum = core:FindFirstChild("Humanoid")
+    return hum and hum.Health > 0
+end
+
+-- 是否允許換服：沒有果實要撿 且 沒有工廠(Core)要打
+local function CanHop()
+    if _G.Tweenfruit and GetActiveFruitCount() > 0 then return false end
+    if _G.AutoFactory and HasLiveCore() then return false end
+    return true
+end
+
+-- 等待所有任務結束（撿果 + 打工廠），timeout 秒後放棄
+local function WaitForAllTasksDone(timeout)
     local startTime = tick()
-    while GetActiveFruitCount() > 0 do
-        if not _G.Tweenfruit then return false end
+    while (_G.Tweenfruit and GetActiveFruitCount() > 0) or (_G.AutoFactory and HasLiveCore()) do
         if tick() - startTime >= timeout then return false end
         task.wait(1)
     end
@@ -772,7 +788,7 @@ function ServerCore:TeleportToServer(jobId)
             end
             hopStartTime = tick()
 
-            if GetActiveFruitCount() > 0 then
+            if not CanHop() then
                 _G.HopTargetJobId = nil
                 _G.ServerHopping = false
                 return
@@ -812,11 +828,17 @@ end
 
 local function StartServerHopSequence()
     if _G.ServerHopping then return end
+    if not _G.Tweenfruit and not _G.AutoFactory then return end
     _G.ServerHopping = true
     task.spawn(function()
         for i = _G.HopDelayTime, 1, -1 do
-            if not _G.Tweenfruit then _G.ServerHopping = false; return end
-            if GetActiveFruitCount() > 0 then
+            -- 還有果實要撿或工廠(Core)要打就取消換服
+            if (_G.Tweenfruit and GetActiveFruitCount() > 0) or (_G.AutoFactory and HasLiveCore()) then
+                _G.ServerHopping = false
+                return
+            end
+            -- 兩邊都關閉了就取消換服
+            if not _G.Tweenfruit and not _G.AutoFactory then
                 _G.ServerHopping = false
                 return
             end
@@ -825,11 +847,12 @@ local function StartServerHopSequence()
             end
             task.wait(1)
         end
-        if _G.Tweenfruit and GetActiveFruitCount() == 0 then
-            ServerCore:FindAndHop("random")
-        else
+        -- 換服前最後檢查：還有得打/撿就取消
+        if (_G.Tweenfruit and GetActiveFruitCount() > 0) or (_G.AutoFactory and HasLiveCore()) then
             _G.ServerHopping = false
+            return
         end
+        ServerCore:FindAndHop("random")
     end)
 end
 
@@ -919,7 +942,7 @@ task.spawn(function()
                 SetCollide(char)
             end
 
-            if not _G.ServerHopping and not _G.AutoFactory then
+            if not _G.ServerHopping and CanHop() then
                 StartServerHopSequence()
             end
         end
@@ -1057,9 +1080,15 @@ task.spawn(function()
                 core = enemies:WaitForChild("Core", math.huge)
             end)
 
+            local waitStart = tick()
             while not core and _G.AutoFactory do
                 _G.FactoryBusy = false
                 updateAutoEquip()
+                -- 等 Core 太久且沒果實可撿：正常換服找有工廠的伺服器
+                if tick() - waitStart > 300 and CanHop() then
+                    StartServerHopSequence()
+                    waitStart = tick()
+                end
                 task.wait()
             end
 
@@ -1562,7 +1591,7 @@ end)
 task.spawn(function()
     while true do
         task.wait(10)
-        if _G.Tweenfruit and not _G.ServerHopping and not _G.AutoFactory then
+        if _G.Tweenfruit and not _G.ServerHopping and CanHop() then
             local fruitHandle = getClosestFruit()
             if fruitHandle then
                 _G.LastFruitTime = tick()
@@ -1591,16 +1620,12 @@ task.spawn(function()
         for _, entry in ipairs(schedule) do
             task.wait(entry.wait)
             if entry.mode == "hop" then
-                if GetActiveFruitCount() > 0 then
-                    WaitForAllFruitsPicked(300)
-                end
+                WaitForAllTasksDone(300)
                 _G.ServerHopping = false
                 StopFruitFlight()
                 ServerCore:FindAndHop("random")
             elseif entry.mode == "rejoin" then
-                if GetActiveFruitCount() > 0 then
-                    WaitForAllFruitsPicked(300)
-                end
+                WaitForAllTasksDone(300)
                 task.wait(4)
                 _G.ServerHopping = false
                 StopFruitFlight()
