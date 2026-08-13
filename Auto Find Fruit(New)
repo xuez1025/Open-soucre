@@ -86,10 +86,10 @@ end)
 _G.SelectTeam = "Marines"
 
 --ESP Fruit
-_G.FruitESP = false
+_G.FruitESP = true
 
 --Auto Store Fruit
-_G.AutoStoreFruit = false
+_G.AutoStoreFruit = true
 
 --自動抽果
 _G.AutoRollFruit = false
@@ -1000,8 +1000,7 @@ Tabs.Fruit:Toggle({
 })
 
 Tabs.Fruit:Toggle({
-    Title = "Auto Tween Fruit",
-    Desc = "自動飛向果實撿取並自動換服",
+    Title = "開始撿果",
     Value = _G.Tweenfruit,
     Callback = function(v)
         _G.Tweenfruit = v
