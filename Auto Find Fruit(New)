@@ -100,7 +100,6 @@ _G.LastFruitTime = tick()
 _G.ForceHopTriggered = false
 _G.HopTargetJobId = nil
 _G.HopConfirmConn = nil
-_G.ScriptReady = false
 
 _G.Fruit_LinearVelocity = nil
 _G.Fruit_AntiGravity = nil
@@ -188,11 +187,6 @@ local function ApplyConfig(data)
     end
 end
 
--- [修復] 補上遺漏的 MarkConfigDirty 函式
-local function MarkConfigDirty()
-    ConfigDirty = true
-end
-
 local function SaveConfig(force)
     if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
         return false
@@ -244,35 +238,6 @@ task.spawn(function()
 end)
 
 --------------------------
--- 等待遊戲與角色載入
---------------------------
--- 等待遊戲完全載入
-local function WaitForGameLoaded()
-    if not game:IsLoaded() then
-        game.Loaded:Wait()
-    end
-    -- 確保 Remote 也已載入
-    pcall(function()
-        ReplicatedStorage:WaitForChild("Remotes", 30)
-    end)
-    task.wait(1)
-end
-
--- 等待角色完全載入（含核心部件）
-local function WaitForCharacterReady()
-    local char = LocalPlayer.Character
-    if not char then
-        char = LocalPlayer.CharacterAdded:Wait()
-    end
-    pcall(function()
-        char:WaitForChild("HumanoidRootPart", 30)
-        char:WaitForChild("Humanoid", 30)
-    end)
-    -- 選完隊伍後角色會重生，多等一會確保新角色完全載入
-    task.wait(3)
-end
-
---------------------------
 -- 功能核心邏輯
 --------------------------
 --select Team
@@ -287,35 +252,7 @@ local function SelectTeam()
     end
 end
 
--- [修復] 安全版 SelectTeam：只在 ScriptReady 後才真正呼叫，否則靜默忽略
-local function SafeSelectTeam()
-    if not _G.ScriptReady then return end
-    pcall(SelectTeam)
-end
-
--- 載入順序：遊戲完全載入 → 選擇隊伍 → 角色完全載入 → 啟動其他功能
-task.spawn(function()
-    WaitForGameLoaded()
-    SelectTeam()
-    WaitForCharacterReady()
-    _G.ScriptReady = true
-
-    -- [修復] ScriptReady 後才套用自動執行設定
-    task.spawn(function()
-        if _G.AutoExecute then
-            if queue_on_teleport then
-                if not isfile("Hub.file") then
-                    writefile("Hub.file", "true")
-                end
-                queue_on_teleport(ScriptLoadstring)
-            end
-        else
-            if queue_on_teleport and isfile and isfile("Hub.file") then
-                delfile("Hub.file")
-            end
-        end
-    end)
-end)
+SelectTeam()
 
 --ESP Fruit
 local function round(num)
@@ -430,7 +367,6 @@ local FruitList = {
 }
 
 task.spawn(function()
-    while not _G.ScriptReady do task.wait(1) end
     while true do
         if _G.AutoStoreFruit then
             pcall(function()
@@ -462,8 +398,12 @@ end)
 
 -- 自動抽果
 task.spawn(function()
-    while not _G.ScriptReady do task.wait(1) end
-    task.wait(3)
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.CharacterAdded:Wait()
+        task.wait(3) 
+    else
+        task.wait(3)
+    end
 
     while true do
         if _G.AutoRollFruit then
@@ -879,7 +819,6 @@ local function getClosestFruit()
 end
 
 task.spawn(function()
-    while not _G.ScriptReady do task.wait(1) end
     local jumpTimer = 0
 
     local function enterFlyMode(char)
@@ -950,7 +889,6 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while not _G.ScriptReady do task.wait(1) end
     while true do
         task.wait(10)
         if _G.Tweenfruit and not _G.ServerHopping then
@@ -972,7 +910,6 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while not _G.ScriptReady do task.wait(1) end
     local schedule = {
         { wait = 600, label = "10 分鐘定時換服", mode = "hop" },
         { wait = 300, label = "15 分鐘定時換服", mode = "hop" },
@@ -1021,8 +958,7 @@ Tabs.Fruit:Dropdown({
     Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
     Callback = function(v)
         _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
-        -- [修復] 使用 SafeSelectTeam，避免 ScriptReady 前呼叫失敗
-        SafeSelectTeam()
+        SelectTeam()
         MarkConfigDirty()
     end,
 })
@@ -1136,7 +1072,7 @@ Tabs.Settings:Toggle({
                 })
             end
         else
-            if queue_on_teleport and isfile and isfile("Hub.file") then
+            if queue_on_teleport and isfile("Hub.file") then
                 delfile("Hub.file")
             end
             WindUI:Notify({
@@ -1175,3 +1111,23 @@ Tabs.Settings:Toggle({
         end
     end
 })
+
+-- 初始化狀態
+task.spawn(function()
+    task.wait()
+
+    -- 自動執行
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("Hub.file") then
+                writefile("Hub.file", "true")
+            end
+
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("Hub.file") then
+            delfile("Hub.file")
+        end
+    end
+end)
