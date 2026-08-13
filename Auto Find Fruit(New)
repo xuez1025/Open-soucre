@@ -188,6 +188,11 @@ local function ApplyConfig(data)
     end
 end
 
+-- [修復] 補上遺漏的 MarkConfigDirty 函式
+local function MarkConfigDirty()
+    ConfigDirty = true
+end
+
 local function SaveConfig(force)
     if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
         return false
@@ -282,19 +287,34 @@ local function SelectTeam()
     end
 end
 
+-- [修復] 安全版 SelectTeam：只在 ScriptReady 後才真正呼叫，否則靜默忽略
+local function SafeSelectTeam()
+    if not _G.ScriptReady then return end
+    pcall(SelectTeam)
+end
+
 -- 載入順序：遊戲完全載入 → 選擇隊伍 → 角色完全載入 → 啟動其他功能
 task.spawn(function()
     WaitForGameLoaded()
     SelectTeam()
     WaitForCharacterReady()
     _G.ScriptReady = true
-    if WindUI then
-        WindUI:Notify({
-            Title = "載入完成",
-            Content = "遊戲與角色已載入完成，功能已啟用",
-            Duration = 3
-        })
-    end
+
+    -- [修復] ScriptReady 後才套用自動執行設定
+    task.spawn(function()
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                if not isfile("Hub.file") then
+                    writefile("Hub.file", "true")
+                end
+                queue_on_teleport(ScriptLoadstring)
+            end
+        else
+            if queue_on_teleport and isfile and isfile("Hub.file") then
+                delfile("Hub.file")
+            end
+        end
+    end)
 end)
 
 --ESP Fruit
@@ -410,7 +430,6 @@ local FruitList = {
 }
 
 task.spawn(function()
-    -- 等待角色完全載入後才開始執行
     while not _G.ScriptReady do task.wait(1) end
     while true do
         if _G.AutoStoreFruit then
@@ -443,7 +462,6 @@ end)
 
 -- 自動抽果
 task.spawn(function()
-    -- 等待角色完全載入後才開始執行
     while not _G.ScriptReady do task.wait(1) end
     task.wait(3)
 
@@ -861,7 +879,6 @@ local function getClosestFruit()
 end
 
 task.spawn(function()
-    -- 等待角色完全載入後才開始執行
     while not _G.ScriptReady do task.wait(1) end
     local jumpTimer = 0
 
@@ -933,7 +950,6 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    -- 等待角色完全載入後才開始執行
     while not _G.ScriptReady do task.wait(1) end
     while true do
         task.wait(10)
@@ -956,7 +972,6 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    -- 等待角色完全載入後才開始執行
     while not _G.ScriptReady do task.wait(1) end
     local schedule = {
         { wait = 600, label = "10 分鐘定時換服", mode = "hop" },
@@ -1006,7 +1021,8 @@ Tabs.Fruit:Dropdown({
     Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
     Callback = function(v)
         _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
-        SelectTeam()
+        -- [修復] 使用 SafeSelectTeam，避免 ScriptReady 前呼叫失敗
+        SafeSelectTeam()
         MarkConfigDirty()
     end,
 })
@@ -1120,7 +1136,7 @@ Tabs.Settings:Toggle({
                 })
             end
         else
-            if queue_on_teleport and isfile("Hub.file") then
+            if queue_on_teleport and isfile and isfile("Hub.file") then
                 delfile("Hub.file")
             end
             WindUI:Notify({
@@ -1159,23 +1175,3 @@ Tabs.Settings:Toggle({
         end
     end
 })
-
--- 初始化狀態
-task.spawn(function()
-    task.wait()
-
-    -- 自動執行
-    if _G.AutoExecute then
-        if queue_on_teleport then
-            if not isfile("Hub.file") then
-                writefile("Hub.file", "true")
-            end
-
-            queue_on_teleport(ScriptLoadstring)
-        end
-    else
-        if queue_on_teleport and isfile("Hub.file") then
-            delfile("Hub.file")
-        end
-    end
-end)
