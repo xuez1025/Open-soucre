@@ -123,6 +123,9 @@ local ServerBrowserRemote = ReplicatedStorage:FindFirstChild("__ServerBrowser")
 local Fruit_OrbitOffset = nil
 local Fruit_NextOrbitTime = 0
 
+--打工廠
+_G.FlyToCore = false
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -836,6 +839,8 @@ task.spawn(function()
     end
 
     RunService.RenderStepped:Connect(function()
+        if _G.FlyToCore then return end
+
         if not _G.Tweenfruit then
             if _G.IsMovingToFruit then
                 StopFruitFlight()
@@ -890,6 +895,65 @@ task.spawn(function()
 
             if not _G.ServerHopping then
                 StartServerHopSequence()
+            end
+        end
+    end)
+end)
+
+--Fly To Core
+task.spawn(function()
+    local jumpTimer = 0
+    local isMoving = false
+
+    local function enterCoreFlyMode(char)
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hum then hum.PlatformStand = true; hum:ChangeState(Enum.HumanoidStateType.Physics) end
+        if hrp then SetNoCollide(char) end
+    end
+
+    RunService.RenderStepped:Connect(function()
+        if not _G.FlyToCore then
+            if isMoving then
+                StopFruitFlight()
+                isMoving = false
+            end
+            return
+        end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local core = workspace:FindFirstChild("Enemies") and workspace.Enemies:FindFirstChild("Core")
+        if not core then
+            if _G.Fruit_LinearVelocity then
+                _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+            end
+            return
+        end
+
+        local targetPart = core:FindFirstChild("HumanoidRootPart") or core:FindFirstChildOfClass("BasePart")
+        if not targetPart then return end
+
+        isMoving = true
+        enterCoreFlyMode(char)
+
+        local dist = (hrp.Position - targetPart.Position).Magnitude
+        if dist <= 8 then
+            hrp.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+            if _G.Fruit_LinearVelocity then
+                _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+            end
+            doJump()
+        else
+            FlyToFruitLogic(targetPart.Position)
+
+            jumpTimer = jumpTimer + 1 / 60
+            if jumpTimer >= 0.3 then
+                jumpTimer = 0
+                doJump()
             end
         end
     end)
@@ -1017,6 +1081,18 @@ Tabs.Fruit:Slider({
     },
     Callback = function(v)
         _G.HopDelayTime = v
+    end
+})
+
+Tabs.Fruit:Section({ Title = "工廠&襲擊" })
+
+Tabs.Fruit:Toggle({
+    Title = "自動打工廠",
+    Locked = true,
+    LockedTitle = "待增加",
+    Value = _G.FlyToCore,
+    Callback = function(v)
+        _G.FlyToCore = v
     end
 })
 
