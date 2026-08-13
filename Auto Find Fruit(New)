@@ -1,9 +1,4 @@
 ----------------------------------------
--- 延遲 5 秒後加載腳本
-----------------------------------------
-task.wait(3)
-
-----------------------------------------
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
@@ -243,6 +238,26 @@ task.spawn(function()
 end)
 
 --------------------------
+-- 等待遊戲與角色載入
+--------------------------
+local function WaitForGameAndCharacter()
+    -- 等待遊戲完全載入
+    if not game:IsLoaded() then
+        game.Loaded:Wait()
+    end
+    -- 等待自己的角色載入
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.CharacterAdded:Wait()
+    end
+    -- 確保角色核心部件存在
+    if LocalPlayer.Character then
+        pcall(function()
+            LocalPlayer.Character:WaitForChild("HumanoidRootPart", 30)
+        end)
+    end
+end
+
+--------------------------
 -- 功能核心邏輯
 --------------------------
 --select Team
@@ -257,7 +272,11 @@ local function SelectTeam()
     end
 end
 
-SelectTeam()
+task.spawn(function()
+    WaitForGameAndCharacter()
+    task.wait(2)
+    SelectTeam()
+end)
 
 --ESP Fruit
 local function round(num)
@@ -372,6 +391,7 @@ local FruitList = {
 }
 
 task.spawn(function()
+    WaitForGameAndCharacter()
     while true do
         if _G.AutoStoreFruit then
             pcall(function()
@@ -403,12 +423,8 @@ end)
 
 -- 自動抽果
 task.spawn(function()
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.CharacterAdded:Wait()
-        task.wait(3) 
-    else
-        task.wait(3)
-    end
+    WaitForGameAndCharacter()
+    task.wait(3)
 
     while true do
         if _G.AutoRollFruit then
@@ -824,6 +840,7 @@ local function getClosestFruit()
 end
 
 task.spawn(function()
+    WaitForGameAndCharacter()
     local jumpTimer = 0
 
     local function enterFlyMode(char)
@@ -894,6 +911,7 @@ task.spawn(function()
 end)
 
 task.spawn(function()
+    WaitForGameAndCharacter()
     while true do
         task.wait(10)
         if _G.Tweenfruit and not _G.ServerHopping then
@@ -915,6 +933,7 @@ task.spawn(function()
 end)
 
 task.spawn(function()
+    WaitForGameAndCharacter()
     local schedule = {
         { wait = 600, label = "10 分鐘定時換服", mode = "hop" },
         { wait = 300, label = "15 分鐘定時換服", mode = "hop" },
