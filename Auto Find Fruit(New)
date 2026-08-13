@@ -1,9 +1,4 @@
 ----------------------------------------
--- 延遲 5 秒後加載腳本
-----------------------------------------
-task.wait(5)
-
-----------------------------------------
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
@@ -105,6 +100,7 @@ _G.LastFruitTime = tick()
 _G.ForceHopTriggered = false
 _G.HopTargetJobId = nil
 _G.HopConfirmConn = nil
+_G.ScriptReady = false
 
 _G.Fruit_LinearVelocity = nil
 _G.Fruit_AntiGravity = nil
@@ -245,21 +241,30 @@ end)
 --------------------------
 -- 等待遊戲與角色載入
 --------------------------
-local function WaitForGameAndCharacter()
-    -- 等待遊戲完全載入
+-- 等待遊戲完全載入
+local function WaitForGameLoaded()
     if not game:IsLoaded() then
         game.Loaded:Wait()
     end
-    -- 等待自己的角色載入
-    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.CharacterAdded:Wait()
+    -- 確保 Remote 也已載入
+    pcall(function()
+        ReplicatedStorage:WaitForChild("Remotes", 30)
+    end)
+    task.wait(1)
+end
+
+-- 等待角色完全載入（含核心部件）
+local function WaitForCharacterReady()
+    local char = LocalPlayer.Character
+    if not char then
+        char = LocalPlayer.CharacterAdded:Wait()
     end
-    -- 確保角色核心部件存在
-    if LocalPlayer.Character then
-        pcall(function()
-            LocalPlayer.Character:WaitForChild("HumanoidRootPart", 30)
-        end)
-    end
+    pcall(function()
+        char:WaitForChild("HumanoidRootPart", 30)
+        char:WaitForChild("Humanoid", 30)
+    end)
+    -- 選完隊伍後角色會重生，多等一會確保新角色完全載入
+    task.wait(3)
 end
 
 --------------------------
@@ -277,10 +282,19 @@ local function SelectTeam()
     end
 end
 
+-- 載入順序：遊戲完全載入 → 選擇隊伍 → 角色完全載入 → 啟動其他功能
 task.spawn(function()
-    WaitForGameAndCharacter()
-    task.wait(2)
+    WaitForGameLoaded()
     SelectTeam()
+    WaitForCharacterReady()
+    _G.ScriptReady = true
+    if WindUI then
+        WindUI:Notify({
+            Title = "載入完成",
+            Content = "遊戲與角色已載入完成，功能已啟用",
+            Duration = 3
+        })
+    end
 end)
 
 --ESP Fruit
@@ -396,7 +410,8 @@ local FruitList = {
 }
 
 task.spawn(function()
-    WaitForGameAndCharacter()
+    -- 等待角色完全載入後才開始執行
+    while not _G.ScriptReady do task.wait(1) end
     while true do
         if _G.AutoStoreFruit then
             pcall(function()
@@ -428,7 +443,8 @@ end)
 
 -- 自動抽果
 task.spawn(function()
-    WaitForGameAndCharacter()
+    -- 等待角色完全載入後才開始執行
+    while not _G.ScriptReady do task.wait(1) end
     task.wait(3)
 
     while true do
@@ -845,7 +861,8 @@ local function getClosestFruit()
 end
 
 task.spawn(function()
-    WaitForGameAndCharacter()
+    -- 等待角色完全載入後才開始執行
+    while not _G.ScriptReady do task.wait(1) end
     local jumpTimer = 0
 
     local function enterFlyMode(char)
@@ -916,7 +933,8 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    WaitForGameAndCharacter()
+    -- 等待角色完全載入後才開始執行
+    while not _G.ScriptReady do task.wait(1) end
     while true do
         task.wait(10)
         if _G.Tweenfruit and not _G.ServerHopping then
@@ -938,7 +956,8 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    WaitForGameAndCharacter()
+    -- 等待角色完全載入後才開始執行
+    while not _G.ScriptReady do task.wait(1) end
     local schedule = {
         { wait = 600, label = "10 分鐘定時換服", mode = "hop" },
         { wait = 300, label = "15 分鐘定時換服", mode = "hop" },
