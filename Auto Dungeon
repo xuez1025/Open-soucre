@@ -7,6 +7,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -141,6 +142,11 @@ _G.AttackDistance = 3000
 _G.FruitsM1Enable = false
 _G.FruitsM1DelayValue = 0.05
 
+-- DragonGun
+_G.GunM1 = false
+_G.M1FireInterval = 0.2
+_G.AttackMobs = true
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -187,6 +193,10 @@ local ConfigKeys = {
 		--Fruit M1
 		"FruitsM1Enable",
 		"FruitsM1DelayValue",
+		--Gun M1
+		"GunM1",
+		"M1FireInterval",
+		"AttackMobs",
 		--自動執行
     "AutoExecute",
 		--快捷鍵
@@ -896,6 +906,119 @@ task.spawn(function()
     end
 end)
 
+-- DragonGun
+task.spawn(function()
+    local Modules = ReplicatedStorage:WaitForChild("Modules")
+    local DragonNet = Modules:WaitForChild("Net")
+    local ShootGunEvent = DragonNet:WaitForChild("RE/ShootGunEvent")
+    local Validator2 = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Validator2")
+    
+    local getupval = debug.getupvalue or getupvalue
+    local setupval = debug.setupvalue or setupvalue
+    local getupvals = debug.getupvalues or getupvalues
+    
+    local ShootFunction
+    local V_Idx = { v26 = 12, v22 = 13, v25 = 14, v21 = 15, v23 = 16, v24 = 17, v27 = 18 }
+    
+    local function InitDragonGun()
+        local success, result = pcall(require, ReplicatedStorage:WaitForChild("Controllers"):WaitForChild("CombatController"))
+        if success and type(result) == "table" and result.Attack then 
+            ShootFunction = getupval(result.Attack, 9) 
+        end
+    end
+    
+    local function GetNextValidator()
+        if not ShootFunction then InitDragonGun() end
+        if not ShootFunction then return 0, 0 end
+        local upvals = getupvals(ShootFunction)
+        if not upvals then return 0, 0 end
+        
+        if upvals[V_Idx.v21] ~= 727595 then
+            for i, v in pairs(upvals) do
+                if v == 727595 then
+                    local offset = i - 15
+                    V_Idx.v21 = i; V_Idx.v22 = 13 + offset; V_Idx.v23 = 16 + offset; V_Idx.v24 = 17 + offset
+                    V_Idx.v26 = 12 + offset; V_Idx.v25 = 14 + offset; V_Idx.v27 = 18 + offset
+                    break
+                end
+            end
+        end
+        
+        local v1 = getupval(ShootFunction, V_Idx.v21)
+        local v2 = getupval(ShootFunction, V_Idx.v22)
+        local v3 = getupval(ShootFunction, V_Idx.v23)
+        local v4 = getupval(ShootFunction, V_Idx.v24)
+        local v5 = getupval(ShootFunction, V_Idx.v25)
+        local v6 = getupval(ShootFunction, V_Idx.v26)
+        local v7 = getupval(ShootFunction, V_Idx.v27)
+        
+        if not (v1 and v2 and v3 and v4 and v5 and v6 and v7) then return 0, 0 end
+        
+        local v8 = v6 * v2
+        local v9 = (v5 * v2 + v6 * v1) % v3
+        v9 = (v9 * v3 + v8) % v4
+        v5 = math.floor(v9 / v3)
+        v6 = v9 - v5 * v3
+        v7 = v7 + 1
+        
+        setupval(ShootFunction, V_Idx.v25, v5)
+        setupval(ShootFunction, V_Idx.v26, v6)
+        setupval(ShootFunction, V_Idx.v27, v7)
+        
+        return math.floor(v9 / v4 * 16777215), v7
+    end
+    
+    local function GetClosestDragonTarget()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+        
+        local closest, dist = nil, math.huge
+        local myPos = root.Position
+        
+        if _G.AttackMobs then
+            local enemiesFolder = Workspace:FindFirstChild("Enemies")
+            if enemiesFolder then
+                for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                    local eHum = enemy:FindFirstChildOfClass("Humanoid")
+                    local eRoot = enemy:FindFirstChild("HumanoidRootPart")
+                    if eHum and eHum.Health > 0 and eRoot then
+                        local d = (eRoot.Position - myPos).Magnitude
+                        if d < dist then 
+                            dist = d
+                            closest = eRoot 
+                        end
+                    end
+                end
+            end
+        end
+        return closest
+    end
+    
+    while true do
+        task.wait(_G.M1FireInterval)
+        if not _G.GunM1 then continue end
+        
+        pcall(function()
+            local char = LocalPlayer.Character
+            local tool = char and char:FindFirstChildOfClass("Tool")
+            if not tool or tool.ToolTip ~= "Gun" then return end
+            
+            local targetPart = GetClosestDragonTarget()
+            if not targetPart then return end
+            
+            local valCode, valCount = GetNextValidator()
+            if valCode ~= 0 then 
+                Validator2:FireServer(valCode, valCount) 
+            end
+            
+            tool:SetAttribute("LocalOverheat", 0)
+            tool:SetAttribute("LocalTotalShots", (tool:GetAttribute("LocalTotalShots") or 0) + 1)
+            ShootGunEvent:FireServer(targetPart.Position, { targetPart })
+        end)
+    end
+end)
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -1003,10 +1126,34 @@ Tabs.Config:Toggle({
 
 
 Tabs.Config:Toggle({
-    Title = "自動果實M1",
+    Title = "自動果實 M1",
     Value = _G.FruitsM1Enable,
     Callback = function(v)
         _G.FruitsM1Enable = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "自動槍 M1",
+    Value = _G.GunM1,
+    Locked = disableHook,
+    LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil,
+    Callback = function(v) 
+        if disableHook then return end 
+        _G.GunM1 = v
+    end
+})
+
+Tabs.Config:Slider({
+    Title = "槍 M1 發射間隔(限龍炮)",
+    Step = 0.001,
+    Value = {
+        Min = 0.001,
+        Max = 0.2,
+        Default = _G.M1FireInterval
+    },
+    Callback = function(v)
+        _G.M1FireInterval = v
     end
 })
 
