@@ -154,6 +154,7 @@ _G.AutoBusoEnabled = true
 _G.AutoV3_Enabled = true
 _G.AutoV4_Enabled = true
 _G.AutoKenEnabled = false
+_G.RemoveKenEffectEnabled = false
 
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -210,6 +211,7 @@ local ConfigKeys = {
 		"AutoV3_Enabled",
 		"AutoV4_Enabled",
 		"AutoKenEnabled",
+		"RemoveKenEffectEnabled",
 		--自動執行
     "AutoExecute",
 		--快捷鍵
@@ -1108,6 +1110,19 @@ local function toggleKenVision()
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
+local function removeKenEffect()
+    local colorCorrection = Lighting:FindFirstChild("ColorCorrection") or Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
+    if colorCorrection and colorCorrection.Enabled then
+        colorCorrection.Enabled = false
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.RemoveKenEffectEnabled then
+        removeKenEffect()
+    end
+end)
+
 task.spawn(function()
     while task.wait(0.1) do
         if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
@@ -1115,13 +1130,13 @@ task.spawn(function()
         local kenLeft = LocalPlayer:GetAttribute("KenDodgesLeft")
         local kenActive = LocalPlayer:GetAttribute("KenActive")
         
-        if kenLeft ~= nil then
-            if _G.AutoKenEnabled and not kenActive then
-                toggleKenVision()
-                task.wait(0.5)
-            end
-        else
-            if _G.AutoKenEnabled then
+        if _G.AutoKenEnabled then
+            if kenLeft ~= nil then
+                if not kenActive then
+                    toggleKenVision()
+                    task.wait(0.5)
+                end
+            else
                 toggleKenVision()
                 task.wait(1.0)
             end
@@ -1302,6 +1317,15 @@ Tabs.Config:Toggle({
     Value = _G.AutoKenEnabled,
     Callback = function(v)
         _G.AutoKenEnabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "Remove Ken",
+    Desc = "移除見聞色效果",
+    Value = _G.RemoveKenEffectEnabled,
+    Callback = function(v)
+        _G.RemoveKenEffectEnabled = v
     end
 })
 
