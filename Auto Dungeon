@@ -8,6 +8,8 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -147,6 +149,12 @@ _G.GunM1 = false
 _G.M1FireInterval = 0.2
 _G.AttackMobs = true
 
+--自動
+_G.AutoBusoEnabled = true
+_G.AutoV3_Enabled = true
+_G.AutoV4_Enabled = true
+_G.AutoKenEnabled = false
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -197,6 +205,11 @@ local ConfigKeys = {
 		"GunM1",
 		"M1FireInterval",
 		"AttackMobs",
+		--自動
+		"AutoBusoEnabled",
+		"AutoV3_Enabled",
+		"AutoV4_Enabled",
+		"AutoKenEnabled",
 		--自動執行
     "AutoExecute",
 		--快捷鍵
@@ -1019,6 +1032,103 @@ task.spawn(function()
     end
 end)
 
+--Auto Buso
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutoBusoEnabled then
+            local character = LocalPlayer.Character
+            if character and not character:FindFirstChild("HasBuso") then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+                end)
+            end
+        end
+    end
+end)
+
+-- Auto V3
+local function toggleV3()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.T, false, game)
+    task.wait(1)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoV3_Enabled then
+            toggleV3()
+            task.wait(1)
+        end
+    end
+end)
+
+-- Auto V4
+local function GetAwakeningRemote()
+    local player = Players.LocalPlayer
+    if not player then return nil end
+
+    local backpack = player:FindFirstChild("Backpack")
+    local awakening = backpack and backpack:FindFirstChild("Awakening")
+    if awakening and awakening:FindFirstChild("RemoteFunction") then
+        return awakening.RemoteFunction
+    end
+
+    local char = player.Character
+    local charAwakening = char and char:FindFirstChild("Awakening")
+    if charAwakening and charAwakening:FindFirstChild("RemoteFunction") then
+        return charAwakening.RemoteFunction
+    end
+
+    return nil
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.AutoV4_Enabled then
+            local remote = GetAwakeningRemote()
+            if remote then
+                task.spawn(function()
+                    pcall(function()
+                        remote:InvokeServer(true)
+                    end)
+                end)
+            end
+        end
+    end
+end)
+
+-- Auto Ken
+local function toggleKenVision()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        
+        local kenLeft = LocalPlayer:GetAttribute("KenDodgesLeft")
+        local kenActive = LocalPlayer:GetAttribute("KenActive")
+        
+        if kenLeft ~= nil then
+            if _G.AutoKenEnabled and not kenActive then
+                toggleKenVision()
+                task.wait(0.5)
+            end
+        else
+            if _G.AutoKenEnabled then
+                toggleKenVision()
+                task.wait(1.0)
+            end
+        end
+    end
+end)
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -1154,6 +1264,44 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.M1FireInterval = v
+    end
+})
+
+Tabs.Config:Section({ Title = "自動" })
+
+Tabs.Config:Toggle({
+    Title = "Auto Buso",
+    Desc = "自動開啟武裝色",
+    Value = _G.AutoBusoEnabled,
+    Callback = function(v)
+        _G.AutoBusoEnabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "Auto V3",
+    Desc = "自動開啟V3",
+    Value = _G.AutoV3_Enabled,
+    Callback = function(v)
+        _G.AutoV3_Enabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "Auto V4",
+    Desc = "自動開啟V4",
+    Value = _G.AutoV4_Enabled,
+    Callback = function(v)
+        _G.AutoV4_Enabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "Auto Ken",
+    Desc = "自動開啟見聞色",
+    Value = _G.AutoKenEnabled,
+    Callback = function(v)
+        _G.AutoKenEnabled = v
     end
 })
 
