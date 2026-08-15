@@ -13,7 +13,6 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
-local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -124,31 +123,6 @@ local ServerBrowserRemote = ReplicatedStorage:FindFirstChild("__ServerBrowser")
 local Fruit_OrbitOffset = nil
 local Fruit_NextOrbitTime = 0
 
---Auto Factory
-_G.AutoFactory = false
-_G.FactoryBusy = false
-
---AutoEquip
-_G.AutoEquip_SelectedType = "Melee"
-_G.AutoEquip_Enabled = false
-
---Auto Buso
-_G.AutoBusoEnabled = false
-
---Fast Attack
-_G.FastAttack = false
-_G.FastAttackMode = "模式2(部分帳號失效可使用)" -- 改為預設模式2
-_G.AttackDistance = 500
-
---Fruit M1
-_G.FruitsM1Enable = false
-_G.FruitsM1DelayValue = 0.05
-
---DragonGun M1
-_G.DragonGunM1 = false
-_G.AttackMobs = false
-_G.M1FireInterval = 0
-
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -185,11 +159,9 @@ local ConfigKeys = {
     "AutoRollFruit",
     "Tweenfruit",
     "HopDelayTime",
-    "AutoFactory",
-    "AutoEquip_SelectedType",
     "AutoExecute",
     "CurrentKey",
-    "KeyDisabled",
+    "KeyDisabled"
 }
 
 local function CopyConfigValue(value)
@@ -699,26 +671,10 @@ local function GetActiveFruitCount()
     return count
 end
 
--- 伺服器是否有活著的 Core（工廠可打）
-local function HasLiveCore()
-    local enemies = workspace:FindFirstChild("Enemies")
-    local core = enemies and enemies:FindFirstChild("Core")
-    if not core then return false end
-    local hum = core:FindFirstChild("Humanoid")
-    return hum and hum.Health > 0
-end
-
--- 是否允許換服：沒有果實要撿 且 沒有工廠(Core)要打
-local function CanHop()
-    if _G.Tweenfruit and GetActiveFruitCount() > 0 then return false end
-    if _G.AutoFactory and HasLiveCore() then return false end
-    return true
-end
-
--- 等待所有任務結束（撿果 + 打工廠），timeout 秒後放棄
-local function WaitForAllTasksDone(timeout)
+local function WaitForAllFruitsPicked(timeout)
     local startTime = tick()
-    while (_G.Tweenfruit and GetActiveFruitCount() > 0) or (_G.AutoFactory and HasLiveCore()) do
+    while GetActiveFruitCount() > 0 do
+        if not _G.Tweenfruit then return false end
         if tick() - startTime >= timeout then return false end
         task.wait(1)
     end
@@ -788,7 +744,7 @@ function ServerCore:TeleportToServer(jobId)
             end
             hopStartTime = tick()
 
-            if not CanHop() then
+            if GetActiveFruitCount() > 0 then
                 _G.HopTargetJobId = nil
                 _G.ServerHopping = false
                 return
@@ -828,17 +784,11 @@ end
 
 local function StartServerHopSequence()
     if _G.ServerHopping then return end
-    if not _G.Tweenfruit and not _G.AutoFactory then return end
     _G.ServerHopping = true
     task.spawn(function()
         for i = _G.HopDelayTime, 1, -1 do
-            -- 還有果實要撿或工廠(Core)要打就取消換服
-            if (_G.Tweenfruit and GetActiveFruitCount() > 0) or (_G.AutoFactory and HasLiveCore()) then
-                _G.ServerHopping = false
-                return
-            end
-            -- 兩邊都關閉了就取消換服
-            if not _G.Tweenfruit and not _G.AutoFactory then
+            if not _G.Tweenfruit then _G.ServerHopping = false; return end
+            if GetActiveFruitCount() > 0 then
                 _G.ServerHopping = false
                 return
             end
@@ -847,12 +797,11 @@ local function StartServerHopSequence()
             end
             task.wait(1)
         end
-        -- 換服前最後檢查：還有得打/撿就取消
-        if (_G.Tweenfruit and GetActiveFruitCount() > 0) or (_G.AutoFactory and HasLiveCore()) then
+        if _G.Tweenfruit and GetActiveFruitCount() == 0 then
+            ServerCore:FindAndHop("random")
+        else
             _G.ServerHopping = false
-            return
         end
-        ServerCore:FindAndHop("random")
     end)
 end
 
@@ -887,9 +836,6 @@ task.spawn(function()
     end
 
     RunService.RenderStepped:Connect(function()
-        -- 工廠在打 Core 時優先，暫停撿果；工廠等待期間才允許撿果
-        if _G.FactoryBusy then return end
-
         if not _G.Tweenfruit then
             if _G.IsMovingToFruit then
                 StopFruitFlight()
@@ -942,656 +888,17 @@ task.spawn(function()
                 SetCollide(char)
             end
 
-            if not _G.ServerHopping and CanHop() then
+            if not _G.ServerHopping then
                 StartServerHopSequence()
             end
         end
     end)
 end)
 
---AutoEquip
-local function equipByType(toolType)
-    _G.AutoEquip_SelectedType = toolType -- 更新當前選擇的配置類型
-    if not _G.AutoEquip_Enabled then return end -- 若未開啟自動裝備則不執行
-
-    local char = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
-    local hum = char:WaitForChild("Humanoid")
-
-    -- 遍歷背包中的所有物品
-    for _, tool in ipairs(game.Players.LocalPlayer.Backpack:GetChildren()) do
-        -- 比對 ToolTip 是否符合選擇的配置類型
-        if tool:IsA("Tool") and tool.ToolTip == toolType then
-            hum:EquipTool(tool) -- 讓角色裝備該武器
-            break
-        end
-    end
-end
-
-local function monitorCurrentTool()
-    task.spawn(function()
-        while true do
-            task.wait(0.1) -- 每 0.1 秒檢查一次
-            if _G.AutoEquip_Enabled then
-
-                -- 【新增衝突優化】如果正在打鳥王且處於打樹狀態（需要使用靈魂吉他），則跳過當前自動裝備的檢查
-                if _G.AutoBird and _G.isHuntingBird and _G.HuntingType == "Tree" then
-                    continue
-                end
-
-                local char = game.Players.LocalPlayer.Character
-                if char then
-                    local hum = char:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        local tool = hum:FindFirstChildOfClass("Tool") -- 取得當前手上拿著的武器
-                        -- 如果手上沒拿武器，或者手上武器類型不等於所選配置，則重新執行裝備
-                        if not tool or tool.ToolTip ~= _G.AutoEquip_SelectedType then
-                            equipByType(_G.AutoEquip_SelectedType)
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
-monitorCurrentTool()
-
---自動打工廠 (等待 Enemies.Core 出現後才飛行，接近工廠自動啟動攻擊邏輯)
-task.spawn(function()
-    local VirtualUser = game:GetService("VirtualUser")
-    local FactoryPos = CFrame.new(448.46756, 199.356781, -441.389252)
-    local enemies = workspace:WaitForChild("Enemies", math.huge)
-    local isMoving = false
-    local attacking = false
-    local combatOn = false
-
-    -- 接近工廠時自動開啟的攻擊邏輯（不需個別 UI 開關）
-    local function setCombat(enabled)
-        if combatOn == enabled then return end
-        combatOn = enabled
-        _G.AutoBusoEnabled = enabled
-        _G.FastAttack = enabled
-        _G.FruitsM1Enable = enabled
-        _G.DragonGunM1 = enabled
-        _G.AttackMobs = enabled
-        if not enabled and attacking then
-            pcall(function() VirtualUser:Button1Up() end)
-            attacking = false
-        end
-    end
-
-    -- 接近工廠 100 studs 時開啟自動切換當前選擇的配置
-    local function updateAutoEquip()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if char and hrp and (hrp.Position - FactoryPos.Position).Magnitude <= 100 then
-            if not _G.AutoEquip_Enabled then
-                _G.AutoEquip_Enabled = true
-            end
-            equipByType(_G.AutoEquip_SelectedType)
-            return true
-        end
-        _G.AutoEquip_Enabled = false
-        return false
-    end
-
-    local function enterFlyMode(char)
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hum then hum.PlatformStand = true; hum:ChangeState(Enum.HumanoidStateType.Physics) end
-        if hrp then SetNoCollide(char) end
-    end
-
-    local function stopFlight()
-        if isMoving then
-            StopFruitFlight()
-            isMoving = false
-        end
-    end
-
-    local function flyTo(pos)
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not (char and hrp) then return end
-
-        isMoving = true
-        enterFlyMode(char)
-
-        if (hrp.Position - pos).Magnitude > 8 then
-            FlyToFruitLogic(pos)
-        else
-            if _G.Fruit_LinearVelocity then
-                _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
-            end
-        end
-    end
-
-    while true do
-        if not _G.AutoFactory then
-            setCombat(false)
-            _G.AutoEquip_Enabled = false
-            _G.FactoryBusy = false
-            stopFlight()
-            task.wait()
-        else
-            -- 用 WaitForChild 等 Core 生成（生成前不飛行，原地等待，期間可撿果）
-            local core = nil
-            task.spawn(function()
-                core = enemies:WaitForChild("Core", math.huge)
-            end)
-
-            local waitStart = tick()
-            while not core and _G.AutoFactory do
-                _G.FactoryBusy = false
-                updateAutoEquip()
-                -- 等 Core 太久且沒果實可撿：正常換服找有工廠的伺服器
-                if tick() - waitStart > 300 and CanHop() then
-                    StartServerHopSequence()
-                    waitStart = tick()
-                end
-                task.wait()
-            end
-
-            -- Core 已生成：飛到 Core 並攻擊直到死亡（工廠優先，暫停撿果）
-            if core and _G.AutoFactory then
-                local hum, targetPart
-                pcall(function()
-                    hum = core:WaitForChild("Humanoid", math.huge)
-                    targetPart = core:WaitForChild("HumanoidRootPart", math.huge)
-                end)
-
-                _G.FactoryBusy = true
-
-                while _G.AutoFactory and core.Parent and (not hum or hum.Health > 0) do
-                    -- 接近工廠 100 studs：開啟自動切換配置 + 武裝色 + 攻擊邏輯
-                    if updateAutoEquip() then
-                        setCombat(true)
-                        if AutoHaki then AutoHaki() end
-                        pcall(function()
-                            VirtualUser:CaptureController()
-                            VirtualUser:Button1Down(Vector2.new(1280, 672))
-                        end)
-                        attacking = true
-                    else
-                        setCombat(false)
-                    end
-
-                    if targetPart then
-                        flyTo(targetPart.Position)
-                    end
-                    task.wait()
-                end
-            end
-
-            setCombat(false)
-            _G.FactoryBusy = false
-            stopFlight()
-        end
-    end
-end)
-
---------------------------
--- 自動武裝色 (Auto Buso)
---------------------------
-task.spawn(function()
-    while task.wait(1) do
-        if _G.AutoBusoEnabled then
-            local player = game.Players.LocalPlayer
-            if player and player.Character and not player.Character:FindFirstChild("HasBuso") then
-                pcall(function()
-                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
-                end)
-            end
-        end
-    end
-end)
-
---------------------------
--- 自動攻擊 (Fast Attack)
---------------------------
---Fast Attack Serve
-local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
-local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
-local RegisterHit = Net:WaitForChild("RE/RegisterHit")
-local RemoteSeed = Net:FindFirstChild("seed")
-
-local function IsAlive(model)
-    if not model then return false end
-    local hum = model:FindFirstChildOfClass("Humanoid")
-    return hum and hum.Health > 0
-end
-
---fast attack
-local Settings = {
-    AttackInterval = 0.01,
-    MaxTargets = 20,
-    AutoScanRemotes = true
-}
-
-local State = {
-    FoundRemote = nil,
-    FoundRemoteId = nil,
-    consecutiveFailures = 0,
-    maxConsecutiveFailures = 5,
-
-    M1_Remotes = nil,
-    M1_Net = nil,
-    M1_RegisterAttack = nil,
-    M1_RegisterHit = nil,
-    M1_Enemies = nil
-}
-
-local function GetRandomValidPart(target)
-    if not target then return nil end
-    local hrp = target:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local parts = {
-        target:FindFirstChild("Head"),
-        target:FindFirstChild("UpperTorso"),
-        target:FindFirstChild("LowerTorso"),
-        target:FindFirstChild("Torso"),
-        hrp
-    }
-    local validParts = {}
-    for _, p in ipairs(parts) do
-        if p and p:IsA("BasePart") then table.insert(validParts, p) end
-    end
-    if #validParts > 0 then return validParts[math.random(1, #validParts)] end
-    return hrp
-end
-
--- 自動掃描 RemoteEvent (用於加密或特定的 Remote 觸發)
-if Settings.AutoScanRemotes then
-    task.spawn(function()
-        local folders = {
-            ReplicatedStorage:FindFirstChild("Util"),
-            ReplicatedStorage:FindFirstChild("Common"),
-            ReplicatedStorage:FindFirstChild("Remotes"),
-            ReplicatedStorage:FindFirstChild("Assets"),
-            ReplicatedStorage:FindFirstChild("FX")
-        }
-        local function checkChild(child)
-            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
-                State.FoundRemoteId = child:GetAttribute("Id")
-                State.FoundRemote = child
-            end
-        end
-        for _, folder in ipairs(folders) do
-            if folder then
-                for _, child in ipairs(folder:GetChildren()) do checkChild(child) end
-                folder.ChildAdded:Connect(checkChild)
-            end
-        end
-    end)
-end
-
-local function M1_CheckAndGetCoreComponents()
-    if State.M1_Remotes and State.M1_Net and State.M1_RegisterAttack and State.M1_RegisterHit and State.M1_Enemies then
-        return State.M1_Remotes, State.M1_Net, State.M1_RegisterAttack, State.M1_RegisterHit, State.M1_Enemies
-    end
-    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    local Modules = ReplicatedStorage:FindFirstChild("Modules")
-    local NetInstance = Modules and Modules:FindFirstChild("Net")
-    local RegAttack = NetInstance and (NetInstance:FindFirstChild("RE/RegisterAttack") or NetInstance:FindFirstChild("RegisterAttack"))
-    local RegHit = NetInstance and (NetInstance:FindFirstChild("RE/RegisterHit") or NetInstance:FindFirstChild("RegisterHit"))
-    local Enemies = workspace:FindFirstChild("Enemies") or workspace:FindFirstChild("NPCs")
-
-    if Remotes and Modules and NetInstance and RegAttack and RegHit and Enemies then
-        State.M1_Remotes = Remotes
-        State.M1_Net = NetInstance
-        State.M1_RegisterAttack = RegAttack
-        State.M1_RegisterHit = RegHit
-        State.M1_Enemies = Enemies
-        return Remotes, NetInstance, RegAttack, RegHit, Enemies
-    end
-    return nil, nil, nil, nil, nil
-end
-
-local function M1_GatherAllTargets(OthersEnemies)
-    local myPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position
-    if not myPos then return nil end
-
-    local firstPart = nil
-
-    local _, _, _, _, EnemiesFolder = M1_CheckAndGetCoreComponents()
-    if EnemiesFolder then
-        for _, Enemy in ipairs(EnemiesFolder:GetChildren()) do
-            if Enemy == LocalPlayer.Character or not IsAlive(Enemy) then continue end
-            local enemyRoot = Enemy:FindFirstChild("HumanoidRootPart")
-            if not enemyRoot then continue end
-
-            if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
-                local foundPart = GetRandomValidPart(Enemy)
-                if foundPart then
-                    table.insert(OthersEnemies, {Enemy, foundPart})
-                    if not firstPart then firstPart = foundPart end
-                end
-            end
-        end
-    end
-
-    for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-        if OtherPlayer == LocalPlayer then continue end
-        local OtherChar = OtherPlayer.Character
-        if not IsAlive(OtherChar) then continue end
-        local enemyRoot = OtherChar:FindFirstChild("HumanoidRootPart")
-        if not enemyRoot then continue end
-
-        if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
-            local foundPart = GetRandomValidPart(OtherChar)
-            if foundPart then
-                table.insert(OthersEnemies, {OtherChar, foundPart})
-                if not firstPart then firstPart = foundPart end
-            end
-        end
-    end
-
-    return firstPart
-end
-
-local function M1_Attack(BasePart, OthersEnemies)
-    local _, _, temp_RegisterAttack, temp_RegisterHit, _ = M1_CheckAndGetCoreComponents()
-    if not (BasePart and OthersEnemies and #OthersEnemies > 0 and temp_RegisterAttack and temp_RegisterHit) then
-        State.consecutiveFailures = State.consecutiveFailures + 1
-        if State.consecutiveFailures >= State.maxConsecutiveFailures then
-            State.M1_Remotes = nil; State.M1_Net = nil; State.M1_RegisterAttack = nil; State.M1_RegisterHit = nil; State.M1_Enemies = nil; State.consecutiveFailures = 0
-        end
-        return
-    end
-    State.consecutiveFailures = 0
-    local success, _ = pcall(function()
-        temp_RegisterAttack:FireServer(0.3)
-        temp_RegisterHit:FireServer(BasePart, OthersEnemies)
-    end)
-    if not success then State.M1_RegisterAttack = nil; State.M1_RegisterHit = nil end
-end
-
-local function PerformAttackMode1()
-    local OthersEnemies = {}
-    local primaryTargetPart = M1_GatherAllTargets(OthersEnemies)
-    if #OthersEnemies > 0 then
-        M1_Attack(primaryTargetPart, OthersEnemies)
-    end
-end
-
--- 取得模式2的攻擊目標列表
-local function GetMode2Targets()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return {} end
-    local targets = {}
-    local myPos = root.Position
-
-    local sourceFolders = {
-        workspace:FindFirstChild("Enemies"),
-        workspace:FindFirstChild("NPCs"),
-        workspace:FindFirstChild("Characters")
-    }
-
-    local function checkModel(model)
-        if not model or model == char then return end
-        local tRoot = model:FindFirstChild("HumanoidRootPart")
-        local tHum = model:FindFirstChild("Humanoid")
-        if tRoot and tHum and tHum.Health > 0 then
-            local dist = (tRoot.Position - myPos).Magnitude
-            if dist <= _G.AttackDistance then
-                table.insert(targets, {
-                    Model = model,
-                    Root = tRoot,
-                    Head = model:FindFirstChild("Head") or tRoot
-                })
-            end
-        end
-    end
-
-    for _, folder in ipairs(sourceFolders) do
-        if folder then
-            for _, model in ipairs(folder:GetChildren()) do
-                if #targets >= Settings.MaxTargets then break end
-                checkModel(model)
-            end
-        end
-    end
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if #targets >= Settings.MaxTargets then break end
-        if player ~= LocalPlayer and player.Character then
-            checkModel(player.Character)
-        end
-    end
-
-    return targets
-end
-
--- 執行模式2攻擊
-local function PerformAttackMode2()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
-    if not hasTool then return end
-
-    local targets = GetMode2Targets()
-    if #targets == 0 then return end
-
-    local mainTarget = targets[1]
-    local hitList = {}
-    for i, target in ipairs(targets) do
-        table.insert(hitList, { target.Model, target.Root })
-    end
-
-    RegisterAttack:FireServer(0)
-
-    local fakeHash = tostring(LocalPlayer.UserId):sub(2, 4) .. tostring(math.random(10000, 99999))
-    pcall(function()
-        RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
-    end)
-
-    if State.FoundRemote and State.FoundRemoteId then
-        pcall(function()
-            local seedValue = RemoteSeed and RemoteSeed:InvokeServer() or 1
-            local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
-            local rawName = "RE/RegisterHit"
-            local timestamp = math.floor(workspace:GetServerTimeNow() / 10 % 10) + 1
-            local encryptedName = string.gsub(rawName, ".", function(c)
-                return string.char(bit32.bxor(string.byte(c), timestamp))
-            end)
-            State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
-        end)
-    end
-end
-
-local function PerformAttack()
-    if _G.FastAttackMode == "模式1" then
-        local Character = LocalPlayer.Character
-        local Equipped = Character and IsAlive(Character) and Character:FindFirstChildOfClass("Tool")
-        if not Equipped or Equipped.ToolTip == "Gun" then return end
-        PerformAttackMode1()
-    else
-        PerformAttackMode2()
-    end
-end
-
--- 手動觸發攻擊設定
-local manualConnection = nil
-
-local function stopManual()
-    if manualConnection then
-        manualConnection:Disconnect()
-        manualConnection = nil
-    end
-end
-
-local function startManual()
-    if manualConnection then return end
-    manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if _G.FastAttack then return end
-
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            pcall(PerformAttack)
-        end
-    end)
-end
-
-if not _G.FastAttack then startManual() end
-
-LocalPlayer.CharacterRemoving:Connect(function() stopManual() end)
-LocalPlayer.CharacterAdded:Connect(function()
-    if not _G.FastAttack then startManual() end
-end)
-
--- 自動攻擊迴圈
-local isRunning = true
-task.spawn(function()
-    while isRunning do
-        local startTime = tick()
-
-        if _G.FastAttack then
-            pcall(PerformAttack)
-        end
-
-        if _G.FastAttackMode == "模式1" then
-            task.wait(0.3)
-        else
-            local elapsed = tick() - startTime
-            local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
-            task.wait(waitTime)
-        end
-    end
-end)
-
---------------------------
--- 果實 M1 (Fruit M1)
---------------------------
-local function GetFruitRemote()
-    for _, loc in ipairs({ LocalPlayer.Character, LocalPlayer:FindFirstChild("Backpack") }) do
-        if loc then
-            for _, tool in ipairs(loc:GetChildren()) do
-                local remote = tool:IsA("Tool") and tool:FindFirstChild("LeftClickRemote", true)
-                if remote then
-                    return remote, tool.Name
-                end
-            end
-        end
-    end
-    return nil, "不是M1果實"
-end
-
-task.spawn(function()
-    while true do
-        if _G.FruitsM1Enable then
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local remote = GetFruitRemote()
-            if hrp and remote then
-                remote:FireServer(-hrp.CFrame.UpVector, 2, true)
-            end
-        end
-        task.wait(_G.FruitsM1DelayValue)
-    end
-end)
-
---------------------------
--- 龍槍 M1 (DragonGun)
---------------------------
-task.spawn(function()
-    local Modules = ReplicatedStorage:WaitForChild("Modules")
-    local DragonNet = Modules:WaitForChild("Net")
-    local ShootGunEvent = DragonNet:WaitForChild("RE/ShootGunEvent")
-    local Validator2 = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Validator2")
-    local getupval = debug.getupvalue or getupvalue
-    local setupval = debug.setupvalue or setupvalue
-    local getupvals = debug.getupvalues or getupvalues
-    local ShootFunction
-    local V_Idx = { v26 = 12, v22 = 13, v25 = 14, v21 = 15, v23 = 16, v24 = 17, v27 = 18 }
-
-    local function InitDragonGun()
-        local success, result = pcall(require, ReplicatedStorage:WaitForChild("Controllers"):WaitForChild("CombatController"))
-        if success and type(result) == "table" and result.Attack then
-            ShootFunction = getupval(result.Attack, 9)
-        end
-    end
-
-    local function GetNextValidator()
-        if not ShootFunction then InitDragonGun() end
-        if not ShootFunction then return 0, 0 end
-        local upvals = getupvals(ShootFunction)
-        if not upvals then return 0, 0 end
-        if upvals[V_Idx.v21] ~= 727595 then
-            for i, v in pairs(upvals) do
-                if v == 727595 then
-                    local offset = i - 15
-                    V_Idx.v21 = i; V_Idx.v22 = 13 + offset; V_Idx.v23 = 16 + offset; V_Idx.v24 = 17 + offset
-                    V_Idx.v26 = 12 + offset; V_Idx.v25 = 14 + offset; V_Idx.v27 = 18 + offset
-                    break
-                end
-            end
-        end
-        local v1 = getupval(ShootFunction, V_Idx.v21)
-        local v2 = getupval(ShootFunction, V_Idx.v22)
-        local v3 = getupval(ShootFunction, V_Idx.v23)
-        local v4 = getupval(ShootFunction, V_Idx.v24)
-        local v5 = getupval(ShootFunction, V_Idx.v25)
-        local v6 = getupval(ShootFunction, V_Idx.v26)
-        local v7 = getupval(ShootFunction, V_Idx.v27)
-        if not (v1 and v2 and v3 and v4 and v5 and v6 and v7) then return 0, 0 end
-        local v8 = v6 * v2
-        local v9 = (v5 * v2 + v6 * v1) % v3
-        v9 = (v9 * v3 + v8) % v4
-        v5 = math.floor(v9 / v3)
-        v6 = v9 - v5 * v3
-        v7 = v7 + 1
-        setupval(ShootFunction, V_Idx.v25, v5); setupval(ShootFunction, V_Idx.v26, v6); setupval(ShootFunction, V_Idx.v27, v7)
-        return math.floor(v9 / v4 * 16777215), v7
-    end
-
-    local function GetClosestDragonTarget()
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then return nil end
-        local closest, dist = nil, math.huge
-        local myPos = root.Position
-
-        -- 僅尋找怪物 (NPC)
-        if _G.AttackMobs then
-            local enemiesFolder = workspace:FindFirstChild("Enemies")
-            if enemiesFolder then
-                for _, enemy in enemiesFolder:GetChildren() do
-                    local eHum = enemy:FindFirstChildOfClass("Humanoid")
-                    local eRoot = enemy:FindFirstChild("HumanoidRootPart")
-                    if eHum and eHum.Health > 0 and eRoot then
-                        local d = (eRoot.Position - myPos).Magnitude
-                        if d < dist then dist = d; closest = eRoot end
-                    end
-                end
-            end
-        end
-
-        return closest
-    end
-
-    while true do
-        task.wait(_G.M1FireInterval)
-        if not _G.DragonGunM1 then continue end
-        pcall(function()
-            local char = LocalPlayer.Character
-            local tool = char and char:FindFirstChildOfClass("Tool")
-            if not tool or tool.ToolTip ~= "Gun" then return end
-            local targetPart = GetClosestDragonTarget()
-            if not targetPart then return end
-            local valCode, valCount = GetNextValidator()
-            if valCode ~= 0 then Validator2:FireServer(valCode, valCount) end
-            tool:SetAttribute("LocalOverheat", 0)
-            tool:SetAttribute("LocalTotalShots", (tool:GetAttribute("LocalTotalShots") or 0) + 1)
-            ShootGunEvent:FireServer(targetPart.Position, { targetPart })
-        end)
-    end
-end)
-
 task.spawn(function()
     while true do
         task.wait(10)
-        if _G.Tweenfruit and not _G.ServerHopping and CanHop() then
+        if _G.Tweenfruit and not _G.ServerHopping then
             local fruitHandle = getClosestFruit()
             if fruitHandle then
                 _G.LastFruitTime = tick()
@@ -1620,12 +927,16 @@ task.spawn(function()
         for _, entry in ipairs(schedule) do
             task.wait(entry.wait)
             if entry.mode == "hop" then
-                WaitForAllTasksDone(300)
+                if GetActiveFruitCount() > 0 then
+                    WaitForAllFruitsPicked(300)
+                end
                 _G.ServerHopping = false
                 StopFruitFlight()
                 ServerCore:FindAndHop("random")
             elseif entry.mode == "rejoin" then
-                WaitForAllTasksDone(300)
+                if GetActiveFruitCount() > 0 then
+                    WaitForAllFruitsPicked(300)
+                end
                 task.wait(4)
                 _G.ServerHopping = false
                 StopFruitFlight()
@@ -1655,7 +966,7 @@ Tabs.Fruit:Dropdown({
     Callback = function(v)
         _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
         SelectTeam()
-        ConfigDirty = true
+        MarkConfigDirty()
     end,
 })
 
@@ -1706,30 +1017,6 @@ Tabs.Fruit:Slider({
     },
     Callback = function(v)
         _G.HopDelayTime = v
-    end
-})
-
-Tabs.Fruit:Section({ Title = "工廠&襲擊" })
-
-Tabs.Fruit:Dropdown({
-    Title = "選擇配置",
-    Multi = false,
-    Values = { "Melee", "Blox Fruit", "Sword", "Gun" },
-    Value = _G.AutoEquip_SelectedType,
-    Callback = function(option)
-        _G.AutoEquip_SelectedType = option
-        if _G.AutoEquip_Enabled then
-            equipByType(_G.AutoEquip_SelectedType)
-        end
-    end
-})
-
-Tabs.Fruit:Toggle({
-    Title = "自動打工廠",
-    Desc = "等待 Core 生成後自動飛行並攻擊",
-    Value = _G.AutoFactory,
-    Callback = function(v)
-        _G.AutoFactory = v
     end
 })
 
