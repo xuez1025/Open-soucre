@@ -11,6 +11,12 @@ local StarterGui = game:GetService("StarterGui")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
+-- Fast Attack Serve
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
+local RegisterHit = Net:WaitForChild("RE/RegisterHit")
+local RemoteSeed = Net:FindFirstChild("seed")
+
 ----------------------------------------
 -- Hook Check
 ----------------------------------------
@@ -127,6 +133,14 @@ _G.SilentAimSkills  = { "Z", "X", "C", "V", "F", "R", "M1 (普攻)" }
 
 local LastSkillPressed = "M1 (普攻)"
 
+--Fast Attack
+_G.FastAttack = false
+_G.AttackDistance = 3000
+
+--Fruit M1
+_G.FruitsM1Enable = false
+_G.FruitsM1DelayValue = 0.05
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -167,6 +181,12 @@ local ConfigKeys = {
     "SilentAimShowLine",
     "SilentAimTargetMobs",
     "SilentAimSkills",
+		--Fast Attack
+		"FastAttack",
+		"AttackDistance",
+		--Fruit M1
+		"FruitsM1Enable",
+		"FruitsM1DelayValue",
 		--自動執行
     "AutoExecute",
 		--快捷鍵
@@ -684,6 +704,198 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
     end
 end)
 
+--Fast Attack
+local Settings = {
+    AttackInterval = 0.01,
+    MaxTargets = 20,
+    AutoScanRemotes = true
+}
+
+local State = {
+    FoundRemote = nil,
+    FoundRemoteId = nil
+}
+
+if Settings.AutoScanRemotes then
+    task.spawn(function()
+        local folders = { 
+            ReplicatedStorage:FindFirstChild("Util"), 
+            ReplicatedStorage:FindFirstChild("Common"), 
+            ReplicatedStorage:FindFirstChild("Remotes"), 
+            ReplicatedStorage:FindFirstChild("Assets"), 
+            ReplicatedStorage:FindFirstChild("FX") 
+        }
+        local function checkChild(child)
+            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
+                State.FoundRemoteId = child:GetAttribute("Id")
+                State.FoundRemote = child
+            end
+        end
+        for _, folder in ipairs(folders) do
+            if folder then
+                for _, child in ipairs(folder:GetChildren()) do checkChild(child) end
+                folder.ChildAdded:Connect(checkChild)
+            end
+        end
+    end)
+end
+
+local function GetTargets()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return {} end
+    local targets = {}
+    local myPos = root.Position
+    
+    local sourceFolders = {
+        Workspace:FindFirstChild("Enemies"),
+        Workspace:FindFirstChild("NPCs"),
+        Workspace:FindFirstChild("Characters")
+    }
+    
+    local function checkModel(model)
+        if not model or model == char then return end
+        local tRoot = model:FindFirstChild("HumanoidRootPart")
+        local tHum = model:FindFirstChild("Humanoid")
+        if tRoot and tHum and tHum.Health > 0 then
+            local dist = (tRoot.Position - myPos).Magnitude
+            if dist <= _G.AttackDistance then
+                table.insert(targets, { 
+                    Model = model, 
+                    Root = tRoot, 
+                    Head = model:FindFirstChild("Head") or tRoot 
+                })
+            end
+        end
+    end
+
+    for _, folder in ipairs(sourceFolders) do
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if #targets >= Settings.MaxTargets then break end
+                checkModel(model)
+            end
+        end
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if #targets >= Settings.MaxTargets then break end
+        if player ~= LocalPlayer and player.Character then
+            checkModel(player.Character)
+        end
+    end
+    
+    return targets
+end
+
+local function PerformAttack()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
+    if not hasTool then return end
+    
+    local targets = GetTargets()
+    if #targets == 0 then return end
+    
+    local mainTarget = targets[1]
+    local hitList = {}
+    for i, target in ipairs(targets) do 
+        table.insert(hitList, {target.Model, target.Root}) 
+    end
+    
+    RegisterAttack:FireServer(0)
+    
+    local fakeHash = tostring(LocalPlayer.UserId):sub(2,4) .. tostring(math.random(10000, 99999))
+    pcall(function()
+        RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
+    end)
+    
+    if State.FoundRemote and State.FoundRemoteId then
+        pcall(function()
+            local seedValue = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
+            local rawName = "RE/RegisterHit"
+            local timestamp = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
+            local encryptedName = string.gsub(rawName, ".", function(c) 
+                return string.char(bit32.bxor(string.byte(c), timestamp)) 
+            end)
+            State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
+        end)
+    end
+end
+
+local manualConnection = nil
+
+local function stopManual()
+    if manualConnection then
+        manualConnection:Disconnect()
+        manualConnection = nil
+    end
+end
+
+local function startManual()
+    if manualConnection then return end
+    manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if _G.FastAttack then return end 
+        
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            pcall(PerformAttack)
+        end
+    end)
+end
+
+if not _G.FastAttack then startManual() end
+
+LocalPlayer.CharacterRemoving:Connect(function() stopManual() end)
+LocalPlayer.CharacterAdded:Connect(function()
+    if not _G.FastAttack then startManual() end
+end)
+
+local isRunning = true
+task.spawn(function()
+    while isRunning do
+        local startTime = tick()
+        
+        if _G.FastAttack then
+            pcall(PerformAttack)
+        end
+        
+        local elapsed = tick() - startTime
+        local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
+        task.wait(waitTime)
+    end
+end)
+
+--Fruit m1
+local function GetFruitRemote()
+    for _, loc in ipairs({ LocalPlayer.Character, LocalPlayer:FindFirstChild("Backpack") }) do
+        if loc then
+            for _, tool in ipairs(loc:GetChildren()) do
+                local remote = tool:IsA("Tool") and tool:FindFirstChild("LeftClickRemote", true)
+                if remote then 
+                    return remote, tool.Name 
+                end
+            end
+        end
+    end
+    return nil, "不是M1果實"
+end
+
+task.spawn(function()
+    while true do
+        if _G.FruitsM1Enable then
+            local char   = LocalPlayer.Character
+            local hrp    = char and char:FindFirstChild("HumanoidRootPart")
+            local remote = GetFruitRemote()
+            if hrp and remote then 
+                remote:FireServer(-hrp.CFrame.UpVector, 2, true) 
+            end
+        end
+        task.wait(_G.FruitsM1DelayValue)
+    end
+end)
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -772,6 +984,30 @@ Tabs.Config:Slider({
     Callback = function(v) 
         _G.SilentAimFOVTransparency = v 
     end 
+})
+
+Tabs.Config:Section({ Title = "M1" })
+
+Tabs.Config:Toggle({
+    Title = "自動攻擊",
+    Value = _G.FastAttack,
+    Callback = function(v)
+        _G.FastAttack = v
+        if _G.FastAttack then
+            stopManual()
+        else
+            startManual()
+        end
+    end
+})
+
+
+Tabs.Config:Toggle({
+    Title = "自動果實M1",
+    Value = _G.FruitsM1Enable,
+    Callback = function(v)
+        _G.FruitsM1Enable = v
+    end
 })
 
 Tabs.Settings:Section({ Title = "重置腳本" })
