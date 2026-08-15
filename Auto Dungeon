@@ -2,6 +2,49 @@
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+----------------------------------------
+-- Hook Check
+----------------------------------------
+local executorName = (identifyexecutor and identifyexecutor()) or "Unknown"
+local lowerName = string.lower(executorName)
+
+local unsupportedList = {"xeno", "solara"}
+local isUnsupportedName = false
+
+for _, name in ipairs(unsupportedList) do
+    if string.find(lowerName, name) then
+        isUnsupportedName = true
+        break
+    end
+end
+
+local isMissingFunctions = (hookmetamethod == nil) or (getrawmetatable == nil) or (setreadonly == nil)
+local disableHook = isUnsupportedName or isMissingFunctions
+
+if disableHook then
+    warn("[Anti-Crash] Detected limited executor (" .. executorName .. "). Silent Aim hooks have been disabled to prevent freezing.")
+    
+    task.spawn(function()
+        task.wait(5)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "⚠️ 執行器限制",
+                Text = "檢測到不支援 Hook 的執行器 (" .. executorName .. ") 已禁用自瞄以防崩潰 其餘功能正常載入",
+                Duration = 15,
+                Icon = "rbxassetid://11419714821"
+            })
+        end)
+    end)
+end
 
 ----------------------------------------
 -- 防重複啟用
@@ -69,6 +112,21 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+--aimbot
+_G.SilentAimEnabled         = false 
+_G.SilentAimShowFOV         = false
+_G.SilentAimFOV             = 150
+_G.SilentAimFOVThickness    = 5
+_G.SilentAimFOVTransparency = 1
+_G.SilentAimFOVMode         = "跟随鼠標"
+_G.SilentAimShowLine        = false
+_G.SilentAimDrawings        = {}
+_G.SilentAimTargetMobs      = true
+
+_G.SilentAimSkills  = { "Z", "X", "C", "V", "F", "R", "M1 (普攻)" }
+
+local LastSkillPressed = "M1 (普攻)"
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -99,9 +157,21 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+    --Aimbot
+    "SilentAimEnabled",
+    "SilentAimShowFOV",
+    "SilentAimFOV",
+    "SilentAimFOVThickness",
+    "SilentAimFOVTransparency",
+    "SilentAimFOVMode",
+    "SilentAimShowLine",
+    "SilentAimTargetMobs",
+    "SilentAimSkills",
+		--自動執行
     "AutoExecute",
+		--快捷鍵
     "CurrentKey",
-    "KeyDisabled"
+    "KeyDisabled",
 }
 
 local function CopyConfigValue(value)
@@ -187,6 +257,433 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+--aimbot
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if UserInputService:GetFocusedTextBox() then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        LastSkillPressed = "M1 (普攻)"
+    elseif input.KeyCode == Enum.KeyCode.Z then
+        LastSkillPressed = "Z"
+    elseif input.KeyCode == Enum.KeyCode.X then
+        LastSkillPressed = "X"
+    elseif input.KeyCode == Enum.KeyCode.C then
+        LastSkillPressed = "C"
+    elseif input.KeyCode == Enum.KeyCode.V then
+        LastSkillPressed = "V"
+    elseif input.KeyCode == Enum.KeyCode.F then
+        LastSkillPressed = "F"
+    elseif input.KeyCode == Enum.KeyCode.R then
+        LastSkillPressed = "R"
+    end
+end)
+
+local function IsSkillSelected(skillName)
+    local skills = _G.SilentAimSkills
+    if not skills then return true end
+    if type(skills) == "table" then
+        if next(skills) == nil then return false end
+
+        if skills[skillName] ~= nil then
+            return skills[skillName] == true
+        end
+
+        for _, v in pairs(skills) do
+            if v == skillName then
+                return true
+            end
+        end
+
+        return false
+    end
+    return true
+end
+
+local function IsCurrentSkillEnabled()
+    return IsSkillSelected(LastSkillPressed)
+end
+
+local function IsAlive(character)
+    if not character then return false end
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    return hum ~= nil and hum.Health > 0 and root ~= nil
+end
+
+local function GetSilentAimOrigin()
+    local p = UserInputService:GetMouseLocation()
+    if _G.SilentAimFOVMode == "屏幕中心" or p.X <= 0 or p.Y <= 0 then
+        local v = Camera.ViewportSize
+        return Vector2.new(v.X / 2, v.Y / 2)
+    end
+    return p
+end
+
+local SnapLineThickness = 2.8
+local RainbowSnapLine = true
+local LaserPulseSpeed = 10
+local BaseLaserColor = Color3.fromRGB(0, 240, 255)
+
+local FovCircle = Drawing.new("Circle")
+FovCircle.NumSides = 96
+FovCircle.Thickness = 1.5
+FovCircle.Color = Color3.fromRGB(255, 255, 255)
+FovCircle.Filled = false
+FovCircle.Transparency = 1
+FovCircle.Visible = false
+table.insert(_G.SilentAimDrawings, FovCircle)
+
+local LaserGlowLayers = {}
+for i = 1, 7 do
+    local glowLine = Drawing.new("Line")
+    glowLine.Visible = false
+    table.insert(_G.SilentAimDrawings, glowLine)
+    table.insert(LaserGlowLayers, glowLine)
+end
+
+local SnapLineCore = Drawing.new("Line")
+SnapLineCore.Visible = false
+table.insert(_G.SilentAimDrawings, SnapLineCore)
+
+local LaserBeads = {}
+for i = 1, 6 do
+    local bead = Drawing.new("Circle")
+    bead.NumSides = 16
+    bead.Filled = true
+    bead.Visible = false
+    table.insert(_G.SilentAimDrawings, bead)
+    table.insert(LaserBeads, bead)
+end
+
+local TargetLockRings = {}
+for i = 1, 4 do
+    local ring = Drawing.new("Circle")
+    ring.NumSides = 48
+    ring.Thickness = (i == 1) and 2.5 or 1.2
+    ring.Filled = false
+    ring.Visible = false
+    table.insert(_G.SilentAimDrawings, ring)
+    table.insert(TargetLockRings, ring)
+end
+
+local TargetLockCenterDot = Drawing.new("Circle")
+TargetLockCenterDot.NumSides = 20
+TargetLockCenterDot.Filled = true
+TargetLockCenterDot.Visible = false
+table.insert(_G.SilentAimDrawings, TargetLockCenterDot)
+
+local TargetCornerBrackets = {}
+for i = 1, 8 do
+    local line = Drawing.new("Line")
+    line.Thickness = 2.2
+    line.Visible = false
+    table.insert(_G.SilentAimDrawings, line)
+    table.insert(TargetCornerBrackets, line)
+end
+
+local currentSilentAimTarget = nil
+local currentSilentAimTargetPos = nil
+local currentTargetDistance = math.huge
+
+local function GetClosestSilentAimTarget()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil, math.huge end
+
+    local closest = nil
+    local shortest = math.huge
+
+    local function check(character)
+        if not IsAlive(character) then return end
+        local part = character:FindFirstChild("HumanoidRootPart")
+        if not part then return end
+
+        local dist = (part.Position - myRoot.Position).Magnitude
+
+        local passFOV = true
+        if _G.SilentAimShowFOV then
+            local origin = GetSilentAimOrigin()
+            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local screenDist = (Vector2.new(pos.X, pos.Y) - origin).Magnitude
+                if screenDist > _G.SilentAimFOV then
+                    passFOV = false
+                end
+            else
+                passFOV = false
+            end
+        end
+
+        if passFOV and dist < shortest then
+            closest = part
+            shortest = dist
+        end
+    end
+
+    if _G.SilentAimTargetMobs then
+        local enemiesFolder = workspace:FindFirstChild("Enemies")
+        if enemiesFolder then
+            for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                check(enemy)
+            end
+        end
+    end
+
+    return closest, shortest
+end
+
+if not _G.SilentAimHooked and not disableHook then
+    _G.SilentAimHooked = true
+
+    task.spawn(function()
+        local MouseModuleInstance = ReplicatedStorage:WaitForChild("Mouse", 5)
+        if MouseModuleInstance then
+            pcall(function()
+                local MouseModule = require(MouseModuleInstance)
+                if typeof(MouseModule) == "table" then
+                    local realStore = {
+                        Hit = rawget(MouseModule, "Hit"),
+                        Target = rawget(MouseModule, "Target")
+                    }
+
+                    local mmt = getrawmetatable(MouseModule) or {}
+                    setreadonly(mmt, false)
+
+                    rawset(MouseModule, "Hit", nil)
+                    rawset(MouseModule, "Target", nil)
+
+                    mmt.__index = function(self, key)
+                        if key == "Hit" then
+                            if _G.SilentAimEnabled and currentSilentAimTargetPos and IsCurrentSkillEnabled() then
+                                return CFrame.new(currentSilentAimTargetPos)
+                            end
+                            return realStore.Hit
+                        elseif key == "Target" then
+                            if _G.SilentAimEnabled and currentSilentAimTarget and IsCurrentSkillEnabled() then
+                                return currentSilentAimTarget
+                            end
+                            return realStore.Target
+                        end
+                        return rawget(self, key)
+                    end
+
+                    mmt.__newindex = function(self, key, value)
+                        if key == "Hit" or key == "Target" then
+                            realStore[key] = value
+                        else
+                            rawset(self, key, value)
+                        end
+                    end
+                    setreadonly(mmt, true)
+                    setmetatable(MouseModule, mmt)
+                end
+            end)
+        end
+    end)
+
+    local gmt = getrawmetatable(game)
+    if gmt then
+        setreadonly(gmt, false)
+        local oldIndex = gmt.__index
+        local mouse = LocalPlayer:GetMouse()
+
+        gmt.__index = newcclosure(function(self, key)
+            if not checkcaller() and _G.SilentAimEnabled and currentSilentAimTargetPos and self == mouse and IsCurrentSkillEnabled() then
+                local targetPos = currentSilentAimTargetPos
+                local camPos = Camera.CFrame.Position
+
+                if key == "Hit" then
+                    return CFrame.new(targetPos)
+                elseif key == "Target" then
+                    return currentSilentAimTarget
+                elseif key == "UnitRay" then
+                    return Ray.new(camPos, (targetPos - camPos).Unit)
+                elseif key == "Origin" then
+                    return CFrame.new(camPos)
+                elseif key == "Direction" then
+                    return (targetPos - camPos).Unit
+                end
+            end
+            return oldIndex(self, key)
+        end)
+        setreadonly(gmt, true)
+    end
+end
+
+local function HideAllLaserDrawings()
+    for _, glow in ipairs(LaserGlowLayers) do glow.Visible = false end
+    SnapLineCore.Visible = false
+    for _, bead in ipairs(LaserBeads) do bead.Visible = false end
+    for _, ring in ipairs(TargetLockRings) do ring.Visible = false end
+    TargetLockCenterDot.Visible = false
+    for _, bracket in ipairs(TargetCornerBrackets) do bracket.Visible = false end
+end
+
+if _G.SilentAimLoop then _G.SilentAimLoop:Disconnect() end
+
+_G.SilentAimLoop = RunService.RenderStepped:Connect(function()
+    local origin = GetSilentAimOrigin()
+    local clockTime = os.clock()
+
+    if _G.SilentAimShowFOV then
+        FovCircle.Visible = true
+        FovCircle.Radius = _G.SilentAimFOV
+        FovCircle.Position = origin
+        FovCircle.Thickness = _G.SilentAimFOVThickness
+        FovCircle.Color = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
+        FovCircle.Transparency = _G.SilentAimFOVTransparency
+    else
+        FovCircle.Visible = false
+    end
+
+    currentSilentAimTarget, currentTargetDistance = GetClosestSilentAimTarget()
+    currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
+    _G.SilentAimTargetPos = currentSilentAimTargetPos
+
+    if _G.SilentAimShowLine and currentSilentAimTargetPos then
+        local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
+        if onScreen then
+            local targetScreenPos = Vector2.new(pos.X, pos.Y)
+            local lineVector = targetScreenPos - origin
+
+            local clampedDist = math.clamp(currentTargetDistance, 10, 300)
+            local distFactor = (clampedDist - 10) / (300 - 10)
+
+            local distanceBaseRadius = math.clamp(38 * (1 - distFactor * 0.5), 14, 45)
+            local glowThicknessScale = 1 + (distFactor * 0.5)
+            local particleSpeedMultiplier = 1.2 + ((1 - distFactor) * 1.8)
+
+            local baseHue = (clockTime * LaserPulseSpeed * 0.06) % 1
+            local pulseWave = math.sin(clockTime * LaserPulseSpeed)
+            local cosPulse = math.cos(clockTime * LaserPulseSpeed * 1.4)
+            local alphaPulse = 0.85 + (pulseWave * 0.15)
+
+            local coreColor, glowColorBase
+            if RainbowSnapLine then
+                coreColor = Color3.fromRGB(255, 255, 255)
+                glowColorBase = Color3.fromHSV(baseHue, 0.85, 1)
+            else
+                local lerpFactor = (pulseWave + 1) / 2
+                glowColorBase = BaseLaserColor:Lerp(Color3.fromRGB(180, 240, 255), lerpFactor * 0.4)
+                coreColor = Color3.fromRGB(245, 255, 255)
+            end
+
+            local glowMultipliers = {14.0, 9.0, 5.5, 3.2, 2.0, 1.3, 0.8}
+            local alphaMultipliers = {0.03, 0.06, 0.12, 0.22, 0.38, 0.60, 0.85}
+
+            for i, glow in ipairs(LaserGlowLayers) do
+                glow.Visible = true
+                glow.From = origin
+                glow.To = targetScreenPos
+                glow.Thickness = SnapLineThickness * glowMultipliers[i] * glowThicknessScale
+
+                if RainbowSnapLine then
+                    local phaseShift = (baseHue + (i * 0.02)) % 1
+                    glow.Color = Color3.fromHSV(phaseShift, 0.8, 1)
+                else
+                    glow.Color = glowColorBase
+                end
+                glow.Transparency = alphaMultipliers[i] * alphaPulse
+            end
+
+            SnapLineCore.Visible = true
+            SnapLineCore.From = origin
+            SnapLineCore.To = targetScreenPos
+            SnapLineCore.Color = coreColor
+            SnapLineCore.Thickness = SnapLineThickness * 0.8
+            SnapLineCore.Transparency = 1.0
+
+            for i, bead in ipairs(LaserBeads) do
+                local speed = (0.4 + (i * 0.1)) * particleSpeedMultiplier
+                local offset = (i - 1) * (1 / #LaserBeads)
+                local progress = (clockTime * speed + offset) % 1
+
+                bead.Visible = true
+                bead.Position = origin + (lineVector * progress)
+
+                local beadPulse = math.sin(clockTime * 20 + i) * 0.5 + 1
+                bead.Radius = SnapLineThickness * (1.1 + beadPulse * 0.6)
+                bead.Color = RainbowSnapLine and Color3.fromHSV((baseHue + progress * 0.3) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
+
+                local fadeMask = math.sin(progress * math.pi)
+                bead.Transparency = 0.95 * fadeMask
+            end
+
+            local currentRadius = distanceBaseRadius + (pulseWave * 2.5)
+
+            TargetLockRings[1].Visible = true
+            TargetLockRings[1].Position = targetScreenPos
+            TargetLockRings[1].Radius = currentRadius
+            TargetLockRings[1].Color = glowColorBase
+            TargetLockRings[1].Transparency = 0.9
+
+            TargetLockRings[2].Visible = true
+            TargetLockRings[2].Position = targetScreenPos
+            TargetLockRings[2].Radius = currentRadius * 1.55 + (cosPulse * 4)
+            TargetLockRings[2].Color = RainbowSnapLine and Color3.fromHSV((baseHue + 0.12) % 1, 0.85, 1) or glowColorBase
+            TargetLockRings[2].Transparency = 0.4 * alphaPulse
+
+            TargetLockRings[3].Visible = true
+            TargetLockRings[3].Position = targetScreenPos
+            TargetLockRings[3].Radius = math.max(3, currentRadius * 0.4 - (pulseWave * 1.5))
+            TargetLockRings[3].Color = Color3.fromRGB(255, 255, 255)
+            TargetLockRings[3].Transparency = 0.95
+
+            TargetLockRings[4].Visible = true
+            TargetLockRings[4].Position = targetScreenPos
+            TargetLockRings[4].Radius = currentRadius * 2.2
+            TargetLockRings[4].Color = glowColorBase
+            TargetLockRings[4].Transparency = 0.15
+
+            TargetLockCenterDot.Visible = true
+            TargetLockCenterDot.Position = targetScreenPos
+            TargetLockCenterDot.Radius = math.clamp(distanceBaseRadius * 0.12, 1.8, 3.5)
+            TargetLockCenterDot.Color = RainbowSnapLine and Color3.fromHSV(baseHue, 1, 1) or Color3.fromRGB(255, 255, 255)
+            TargetLockCenterDot.Transparency = 1.0
+
+            local boxSize = currentRadius * 1.3
+            local bracketLen = boxSize * 0.45
+            local rotation = clockTime * (1.5 + (1 - distFactor))
+
+            local corners = {
+                Vector2.new(-boxSize, -boxSize),
+                Vector2.new(boxSize, -boxSize),
+                Vector2.new(boxSize, boxSize),
+                Vector2.new(-boxSize, boxSize)
+            }
+
+            for i = 1, 4 do
+                local offset = corners[i]
+                local cosR, sinR = math.cos(rotation), math.sin(rotation)
+                local rotX = offset.X * cosR - offset.Y * sinR
+                local rotY = offset.X * sinR + offset.Y * cosR
+                local cornerPos = targetScreenPos + Vector2.new(rotX, rotY)
+
+                local dirX = (i == 1 or i == 4) and 1 or -1
+                local dirY = (i == 1 or i == 2) and 1 or -1
+
+                local lineH = TargetCornerBrackets[(i - 1) * 2 + 1]
+                lineH.Visible = true
+                lineH.From = cornerPos
+                lineH.To = cornerPos + Vector2.new(dirX * bracketLen * cosR, dirX * bracketLen * sinR)
+                lineH.Color = glowColorBase
+                lineH.Transparency = 0.85
+
+                local lineV = TargetCornerBrackets[(i - 1) * 2 + 2]
+                lineV.Visible = true
+                lineV.From = cornerPos
+                lineV.To = cornerPos + Vector2.new(-dirY * bracketLen * sinR, dirY * bracketLen * cosR)
+                lineV.Color = glowColorBase
+                lineV.Transparency = 0.85
+            end
+        else
+            HideAllLaserDrawings()
+        end
+    else
+        HideAllLaserDrawings()
+    end
+end)
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -205,6 +702,78 @@ local Tabs = {
 --------------------------
 -- 元件
 --------------------------
+Tabs.Config:Section({ Title = "Aimbot" })
+
+Tabs.Config:Dropdown({ 
+    Title = "自瞄招式", 
+    Values = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" }, 
+    Value = _G.SilentAimSkills,
+    Multi = true, 
+    Callback = function(v) 
+        _G.SilentAimSkills = v 
+    end 
+})
+
+Tabs.Config:Toggle({ 
+    Title = "開啟自瞄 (技能 & M1)", 
+    Value = _G.SilentAimEnabled, 
+    Locked = disableHook, 
+    LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil, 
+    Callback = function(v) 
+        if disableHook then return end 
+        _G.SilentAimEnabled = v 
+    end 
+})
+
+Tabs.Config:Toggle({ 
+    Title = "顯示射線 (指向最近目標)", 
+    Value = _G.SilentAimShowLine, 
+    Callback = function(v) 
+        _G.SilentAimShowLine = v 
+    end 
+})
+
+Tabs.Config:Toggle({ 
+    Title = "顯示 FOV ", 
+    Value = _G.SilentAimShowFOV, 
+    Callback = function(v) 
+        _G.SilentAimShowFOV = v 
+    end 
+})
+
+Tabs.Config:Dropdown({ 
+    Title = "FOV 圓圈位置", 
+    Values = { "跟随鼠標", "屏幕中心" }, 
+    Value = _G.SilentAimFOVMode, 
+    Callback = function(v) 
+        _G.SilentAimFOVMode = v 
+    end 
+})
+
+Tabs.Config:Slider({ 
+    Title = "FOV 範圍大小", 
+    Value = { Min = 10, Max = 1000, Default = _G.SilentAimFOV }, 
+    Callback = function(v) 
+        _G.SilentAimFOV = v 
+    end 
+})
+
+Tabs.Config:Slider({ 
+    Title = "FOV 線條粗細", 
+    Value = { Min = 1, Max = 10, Default = _G.SilentAimFOVThickness }, 
+    Callback = function(v) 
+        _G.SilentAimFOVThickness = v 
+    end 
+})
+
+Tabs.Config:Slider({ 
+    Title = "FOV 透明度", 
+    Value = { Min = 0, Max = 1, Default = _G.SilentAimFOVTransparency, Increment = 0.1 }, 
+    Callback = function(v) 
+        _G.SilentAimFOVTransparency = v 
+    end 
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
