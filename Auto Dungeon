@@ -29,7 +29,7 @@ local WindUI = loadstring(request({
 
 local Window = WindUI:CreateWindow({
     Title         = "Auto Dungeon",
-    Icon          = "user-check",
+    Icon          = "castle",
     Author        = "by xuez1025",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
@@ -57,7 +57,7 @@ local Window = WindUI:CreateWindow({
         OnlyMobile      = false,
         Draggable       = true,
         OnlyIcon        = false,
-        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+        Color           = ColorSequence.new(Color3.fromHex("#2B003B"), Color3.fromHex("#800080")),
     }
 })
 
@@ -81,7 +81,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoDungeon.file") then
     if readfile("AutoDungeon.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Dungeon"))()
     end
 end]]
 
@@ -198,7 +198,8 @@ end
 -- 分頁
 --------------------------
 local Tabs = {
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+    Config   = Window:Tab({ Title = "配置",  Icon = "wrench"}),
+    Settings = Window:Tab({ Title = "設定", Icon = "settings" }),
 }
 
 --------------------------
