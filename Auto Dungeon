@@ -10,9 +10,16 @@ local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+
+--Dungeon
+local player    = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid  = character:WaitForChild("Humanoid")
+local hrp       = character:WaitForChild("HumanoidRootPart")
 
 -- Fast Attack Serve
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
@@ -149,6 +156,17 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+-- Dungeon
+_G.BringMob          = false
+_G.ActiveTween       = nil
+_G.isMovementActive  = false
+_G.isTeleporting     = false
+_G.MoveMode          = "TP"          -- "TP" | "Tween"
+_G.FlyEnabled        = false         -- 移動追蹤開關
+_G.AutoNextStage     = false         -- 自動下一關
+_G.HoverHeight       = 10            -- 飛行高度
+_G.BringDistance     = 200           -- 聚怪最大距離
+
 --aimbot
 _G.SilentAimEnabled         = false 
 _G.SilentAimShowFOV         = false
@@ -183,9 +201,6 @@ _G.AutoV3_Enabled = true
 _G.AutoV4_Enabled = true
 _G.AutoKenEnabled = false
 _G.RemoveKenEffectEnabled = false
-
---ESP Enemy
-_G.EnemyESPEnabled = false
 
 --低配模式
 _G.LowVisualMode = false
@@ -235,33 +250,40 @@ local ConfigKeys = {
     "SilentAimShowLine",
     "SilentAimTargetMobs",
     "SilentAimSkills",
-		--Fast Attack
-		"FastAttack",
-		"AttackDistance",
-		--Fruit M1
-		"FruitsM1Enable",
-		"FruitsM1DelayValue",
-		--Gun M1
-		"GunM1",
-		"M1FireInterval",
-		"AttackMobs",
-		--自動
-		"AutoBusoEnabled",
-		"AutoV3_Enabled",
-		"AutoV4_Enabled",
-		"AutoKenEnabled",
-		"RemoveKenEffectEnabled",
-		--ESP小怪
-		"EnemyESPEnabled",
-		--低配
-		"LowVisualMode",
-		--自動執行
+    --Fast Attack
+    "FastAttack",
+    "AttackDistance",
+    --Fruit M1
+    "FruitsM1Enable",
+    "FruitsM1DelayValue",
+    --Gun M1
+    "GunM1",
+    "M1FireInterval",
+    "AttackMobs",
+    --自動
+    "AutoBusoEnabled",
+    "AutoV3_Enabled",
+    "AutoV4_Enabled",
+    "AutoKenEnabled",
+    "RemoveKenEffectEnabled",
+    --ESP小怪
+    "EnemyESPEnabled",
+    --低配
+    "LowVisualMode",
+    --自動執行
     "AutoExecute",
-		--AFK
-		"AntiAFK_ENABLED",
-		--快捷鍵
+    --AFK
+    "AntiAFK_ENABLED",
+    --快捷鍵
     "CurrentKey",
     "KeyDisabled",
+    -- 移動 / 聚怪
+    "BringMob",
+    "MoveMode",
+    "FlyEnabled",
+    "AutoNextStage",
+    "HoverHeight",
+    "BringDistance",
 }
 
 local function CopyConfigValue(value)
@@ -347,6 +369,363 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+--Dungeon
+local globalStopTween  -- 前置宣告
+
+local function setPlatformStand(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = state end
+end
+
+local function resetCharPhysics()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Velocity = Vector3.zero
+        end
+    end
+end
+
+if not _G.SetNoclipState then
+    local noclipConn = nil
+    _G.SetNoclipState = function(state)
+        if state then
+            if not noclipConn then
+                noclipConn = RunService.Stepped:Connect(function()
+                    local char = player.Character
+                    if char then
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") and part.CanCollide then
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end)
+            end
+        else
+            if noclipConn then
+                noclipConn:Disconnect()
+                noclipConn = nil
+            end
+        end
+    end
+end
+
+globalStopTween = function()
+    _G.isMovementActive = false
+    _G.isTeleporting    = false
+
+    _G.SetNoclipState(false)
+
+    if _G.ActiveTween then
+        _G.ActiveTween:Cancel()
+        _G.ActiveTween = nil
+    end
+
+    local char = LocalPlayer.Character
+    if char then
+        local HRP = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        if HRP then
+            HRP.AssemblyLinearVelocity  = Vector3.zero
+            HRP.AssemblyAngularVelocity = Vector3.zero
+            local bodyClip = HRP:FindFirstChild("BodyClip")
+            if bodyClip then bodyClip:Destroy() end
+        end
+
+        if hum and hum.Health > 0 then
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+
+        setPlatformStand(false)
+        resetCharPhysics()
+    end
+end
+
+local function globalTweenTo(targetCFrame, callback)
+    local char = LocalPlayer.Character
+    local HRP  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+    if not HRP or not hum or hum.Health <= 0 then return end
+
+    local bodyClip = HRP:FindFirstChild("BodyClip")
+    if not bodyClip then
+        bodyClip        = Instance.new("BodyVelocity")
+        bodyClip.Name   = "BodyClip"
+        bodyClip.Parent = HRP
+    end
+    bodyClip.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyClip.Velocity = Vector3.zero
+
+    HRP.AssemblyLinearVelocity  = Vector3.zero
+    HRP.AssemblyAngularVelocity = Vector3.zero
+    hum:ChangeState(Enum.HumanoidStateType.Physics)
+    setPlatformStand(true)
+
+    local distance = (targetCFrame.Position - HRP.Position).Magnitude
+    local speed    = 300
+
+    if _G.ActiveTween then _G.ActiveTween:Cancel() end
+
+    _G.isMovementActive = true
+    _G.SetNoclipState(true)
+
+    _G.ActiveTween = TweenService:Create(
+        HRP,
+        TweenInfo.new(distance / speed, Enum.EasingStyle.Linear),
+        {CFrame = targetCFrame}
+    )
+
+    _G.ActiveTween:Play()
+
+    local connection
+    connection = _G.ActiveTween.Completed:Connect(function()
+        connection:Disconnect()
+        globalStopTween()
+        if callback then callback() end
+    end)
+end
+
+player.CharacterAdded:Connect(function(char)
+    character = char
+    humanoid  = char:WaitForChild("Humanoid")
+    hrp       = char:WaitForChild("HumanoidRootPart")
+    if globalStopTween then globalStopTween() end
+end)
+
+local function enemiesAlive()
+    local enemies = workspace:FindFirstChild("Enemies")
+    if not enemies then return false end
+    for _, npc in ipairs(enemies:GetChildren()) do
+        if not string.find(string.lower(npc.Name), "boss") and npc.Name ~= "Tyrant of the Skies" then
+            local hum = npc:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then return true end
+        end
+    end
+    return false
+end
+
+local function bossAlive()
+    local boss = workspace:FindFirstChild("Boss")
+    if boss and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 then
+        return true
+    end
+    local enemies = workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, npc in ipairs(enemies:GetChildren()) do
+            if string.find(string.lower(npc.Name), "boss") or npc.Name == "Tyrant of the Skies" then
+                local hum = npc:FindFirstChild("Humanoid")
+                if hum and hum.Health > 0 then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function canTeleport()
+    return not enemiesAlive() and not bossAlive()
+end
+
+local function getClosestExit()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return nil end
+    local dungeon = map:FindFirstChild("Dungeon")
+    if not dungeon then return nil end
+
+    local closest, minDist = nil, math.huge
+    for _, f in ipairs(dungeon:GetChildren()) do
+        if tonumber(f.Name) then
+            local tp = f:FindFirstChild("ExitTeleporter")
+            if tp and tp:FindFirstChild("Root") and hrp then
+                local d = (tp.Root.Position - hrp.Position).Magnitude
+                if d < minDist then
+                    minDist = d
+                    closest = tp.Root
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local isAutoTeleporting = false
+local function teleportToExit(exitRoot)
+    if isAutoTeleporting then return end
+    local char = player.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not hum or hum.Health <= 0 or not root then return end
+
+    isAutoTeleporting = true
+    hum.WalkSpeed = 0
+    hum.JumpPower = 0
+    root.CFrame = exitRoot.CFrame
+    task.wait(0.2)
+    if hum and hum.Health > 0 then
+        hum.WalkSpeed = 16
+        hum.JumpPower = 50
+    end
+    isAutoTeleporting = false
+end
+
+-- 自動過關
+task.spawn(function()
+    while task.wait(1) do
+        if not _G.AutoNextStage then continue end
+        local char = player.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not char or not char:IsDescendantOf(Workspace) or not hum or hum.Health <= 0 then continue end
+        if canTeleport() then
+            local exit = getClosestExit()
+            if exit then teleportToExit(exit) end
+        end
+    end
+end)
+
+local flyConn               = nil
+local lastTweenTargetPos    = nil
+
+local function stopFly()
+    if flyConn then flyConn:Disconnect(); flyConn = nil end
+    _G.FlyEnabled = false
+    globalStopTween()
+    lastTweenTargetPos = nil
+end
+
+local function startFly()
+    if flyConn then return end
+    flyConn = RunService.Heartbeat:Connect(function()
+        local char = player.Character
+        local curHRP = char and char:FindFirstChild("HumanoidRootPart")
+        local hum    = char and char:FindFirstChildOfClass("Humanoid")
+
+        if not curHRP or not hum or hum.Health <= 0 then
+            if _G.isMovementActive then globalStopTween() end
+            lastTweenTargetPos = nil
+            return
+        end
+
+        local closest, dist = nil, math.huge
+        local enemiesFolder = workspace:FindFirstChild("Enemies")
+        if not enemiesFolder then return end
+
+        for _, npc in pairs(enemiesFolder:GetChildren()) do
+            if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 and npc.PrimaryPart then
+                local d = (npc.PrimaryPart.Position - curHRP.Position).Magnitude
+                if d < dist then dist = d; closest = npc end
+            end
+        end
+
+        if closest and closest.PrimaryPart then
+            local tpos = Vector3.new(
+                closest.PrimaryPart.Position.X,
+                closest.PrimaryPart.Position.Y + _G.HoverHeight,
+                closest.PrimaryPart.Position.Z
+            )
+
+            if _G.MoveMode == "TP" then
+                if _G.isMovementActive then globalStopTween() end
+                curHRP.CFrame = CFrame.new(tpos)
+            elseif _G.MoveMode == "Tween" then
+                local targetCFrame = CFrame.new(tpos)
+                if not _G.isMovementActive or not lastTweenTargetPos or (lastTweenTargetPos - tpos).Magnitude > 2 then
+                    lastTweenTargetPos = tpos
+                    globalTweenTo(targetCFrame)
+                end
+            end
+        else
+            if _G.MoveMode == "Tween" and _G.isMovementActive then
+                globalStopTween()
+                lastTweenTargetPos = nil
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.BringMob then
+            pcall(function()
+                sethiddenproperty(player, "SimulationRadius", math.huge)
+            end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.BringMob then
+            pcall(function()
+                local char  = player.Character
+                local hum   = char and char:FindFirstChildOfClass("Humanoid")
+                local pRoot = char and char:FindFirstChild("HumanoidRootPart")
+
+                if not char or not pRoot or not hum or hum.Health <= 0 then return end
+
+                local enemiesFolder = workspace:FindFirstChild("Enemies")
+                if not enemiesFolder then return end
+
+                local validMobs    = {}
+                local totalPosition = Vector3.new(0, 0, 0)
+                local count         = 0
+
+                for _, mob in ipairs(enemiesFolder:GetChildren()) do
+                    if not string.find(mob.Name, "Boss") and mob.Name ~= "Tyrant of the Skies" then
+                        local root = mob:FindFirstChild("HumanoidRootPart")
+                        local mHum = mob:FindFirstChild("Humanoid")
+
+                        if root and mHum and mHum.Health > 0 then
+                            local dist = (root.Position - pRoot.Position).Magnitude
+                            if dist <= _G.BringDistance then
+                                table.insert(validMobs, {root = root, hum = mHum})
+                                totalPosition = totalPosition + root.Position
+                                count = count + 1
+                            end
+                        end
+                    end
+                end
+
+                if count > 0 then
+                    local centerPos  = totalPosition / count
+                    local bringCFrame = CFrame.new(centerPos)
+
+                    for _, target in ipairs(validMobs) do
+                        local root = target.root
+                        local mHum = target.hum
+
+                        root.CFrame = bringCFrame
+
+                        if mHum.WalkSpeed ~= 0 then mHum.WalkSpeed = 0 end
+                        if mHum.JumpPower ~= 0 then mHum.JumpPower = 0 end
+                        if root.CanCollide  then root.CanCollide = false end
+
+                        if mHum:FindFirstChild("Animator") then
+                            mHum.Animator:Destroy()
+                        end
+
+                        if not root:FindFirstChild("Lock") then
+                            local bv           = Instance.new("BodyVelocity")
+                            bv.Parent          = root
+                            bv.Name            = "Lock"
+                            bv.MaxForce        = Vector3.new(100000, 100000, 100000)
+                            bv.Velocity        = Vector3.new(0, 0, 0)
+                        end
+
+                        if mHum:GetState() ~= Enum.HumanoidStateType.Seated then
+                            mHum:ChangeState(11)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
 --aimbot
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if UserInputService:GetFocusedTextBox() then return end
@@ -395,7 +774,7 @@ end
 
 local function IsAlive(character)
     if not character then return false end
-    local hum = character:FindFirstChildOfClass("Humanoid")
+    local hum  = character:FindFirstChildOfClass("Humanoid")
     local root = character:FindFirstChild("HumanoidRootPart")
     return hum ~= nil and hum.Health > 0 and root ~= nil
 end
@@ -410,17 +789,17 @@ local function GetSilentAimOrigin()
 end
 
 local SnapLineThickness = 2.8
-local RainbowSnapLine = true
-local LaserPulseSpeed = 10
-local BaseLaserColor = Color3.fromRGB(0, 240, 255)
+local RainbowSnapLine   = true
+local LaserPulseSpeed   = 10
+local BaseLaserColor    = Color3.fromRGB(0, 240, 255)
 
 local FovCircle = Drawing.new("Circle")
-FovCircle.NumSides = 96
-FovCircle.Thickness = 1.5
-FovCircle.Color = Color3.fromRGB(255, 255, 255)
-FovCircle.Filled = false
+FovCircle.NumSides    = 96
+FovCircle.Thickness   = 1.5
+FovCircle.Color       = Color3.fromRGB(255, 255, 255)
+FovCircle.Filled      = false
 FovCircle.Transparency = 1
-FovCircle.Visible = false
+FovCircle.Visible     = false
 table.insert(_G.SilentAimDrawings, FovCircle)
 
 local LaserGlowLayers = {}
@@ -437,50 +816,50 @@ table.insert(_G.SilentAimDrawings, SnapLineCore)
 
 local LaserBeads = {}
 for i = 1, 6 do
-    local bead = Drawing.new("Circle")
+    local bead    = Drawing.new("Circle")
     bead.NumSides = 16
-    bead.Filled = true
-    bead.Visible = false
+    bead.Filled   = true
+    bead.Visible  = false
     table.insert(_G.SilentAimDrawings, bead)
     table.insert(LaserBeads, bead)
 end
 
 local TargetLockRings = {}
 for i = 1, 4 do
-    local ring = Drawing.new("Circle")
-    ring.NumSides = 48
-    ring.Thickness = (i == 1) and 2.5 or 1.2
-    ring.Filled = false
-    ring.Visible = false
+    local ring      = Drawing.new("Circle")
+    ring.NumSides   = 48
+    ring.Thickness  = (i == 1) and 2.5 or 1.2
+    ring.Filled     = false
+    ring.Visible    = false
     table.insert(_G.SilentAimDrawings, ring)
     table.insert(TargetLockRings, ring)
 end
 
 local TargetLockCenterDot = Drawing.new("Circle")
 TargetLockCenterDot.NumSides = 20
-TargetLockCenterDot.Filled = true
-TargetLockCenterDot.Visible = false
+TargetLockCenterDot.Filled   = true
+TargetLockCenterDot.Visible  = false
 table.insert(_G.SilentAimDrawings, TargetLockCenterDot)
 
 local TargetCornerBrackets = {}
 for i = 1, 8 do
-    local line = Drawing.new("Line")
-    line.Thickness = 2.2
-    line.Visible = false
+    local line       = Drawing.new("Line")
+    line.Thickness   = 2.2
+    line.Visible     = false
     table.insert(_G.SilentAimDrawings, line)
     table.insert(TargetCornerBrackets, line)
 end
 
-local currentSilentAimTarget = nil
+local currentSilentAimTarget    = nil
 local currentSilentAimTargetPos = nil
-local currentTargetDistance = math.huge
+local currentTargetDistance     = math.huge
 
 local function GetClosestSilentAimTarget()
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myRoot then return nil, math.huge end
 
-    local closest = nil
+    local closest  = nil
     local shortest = math.huge
 
     local function check(character)
@@ -505,7 +884,7 @@ local function GetClosestSilentAimTarget()
         end
 
         if passFOV and dist < shortest then
-            closest = part
+            closest  = part
             shortest = dist
         end
     end
@@ -532,14 +911,14 @@ if not _G.SilentAimHooked and not disableHook then
                 local MouseModule = require(MouseModuleInstance)
                 if typeof(MouseModule) == "table" then
                     local realStore = {
-                        Hit = rawget(MouseModule, "Hit"),
+                        Hit    = rawget(MouseModule, "Hit"),
                         Target = rawget(MouseModule, "Target")
                     }
 
                     local mmt = getrawmetatable(MouseModule) or {}
                     setreadonly(mmt, false)
 
-                    rawset(MouseModule, "Hit", nil)
+                    rawset(MouseModule, "Hit",    nil)
                     rawset(MouseModule, "Target", nil)
 
                     mmt.__index = function(self, key)
@@ -575,12 +954,12 @@ if not _G.SilentAimHooked and not disableHook then
     if gmt then
         setreadonly(gmt, false)
         local oldIndex = gmt.__index
-        local mouse = LocalPlayer:GetMouse()
+        local mouse    = LocalPlayer:GetMouse()
 
         gmt.__index = newcclosure(function(self, key)
             if not checkcaller() and _G.SilentAimEnabled and currentSilentAimTargetPos and self == mouse and IsCurrentSkillEnabled() then
                 local targetPos = currentSilentAimTargetPos
-                local camPos = Camera.CFrame.Position
+                local camPos    = Camera.CFrame.Position
 
                 if key == "Hit" then
                     return CFrame.new(targetPos)
@@ -612,15 +991,15 @@ end
 if _G.SilentAimLoop then _G.SilentAimLoop:Disconnect() end
 
 _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
-    local origin = GetSilentAimOrigin()
+    local origin    = GetSilentAimOrigin()
     local clockTime = os.clock()
 
     if _G.SilentAimShowFOV then
-        FovCircle.Visible = true
-        FovCircle.Radius = _G.SilentAimFOV
-        FovCircle.Position = origin
-        FovCircle.Thickness = _G.SilentAimFOVThickness
-        FovCircle.Color = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
+        FovCircle.Visible      = true
+        FovCircle.Radius       = _G.SilentAimFOV
+        FovCircle.Position     = origin
+        FovCircle.Thickness    = _G.SilentAimFOVThickness
+        FovCircle.Color        = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
         FovCircle.Transparency = _G.SilentAimFOVTransparency
     else
         FovCircle.Visible = false
@@ -628,43 +1007,43 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
 
     currentSilentAimTarget, currentTargetDistance = GetClosestSilentAimTarget()
     currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
-    _G.SilentAimTargetPos = currentSilentAimTargetPos
+    _G.SilentAimTargetPos     = currentSilentAimTargetPos
 
     if _G.SilentAimShowLine and currentSilentAimTargetPos then
         local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
         if onScreen then
             local targetScreenPos = Vector2.new(pos.X, pos.Y)
-            local lineVector = targetScreenPos - origin
+            local lineVector      = targetScreenPos - origin
 
-            local clampedDist = math.clamp(currentTargetDistance, 10, 300)
-            local distFactor = (clampedDist - 10) / (300 - 10)
+            local clampedDist    = math.clamp(currentTargetDistance, 10, 300)
+            local distFactor     = (clampedDist - 10) / (300 - 10)
 
-            local distanceBaseRadius = math.clamp(38 * (1 - distFactor * 0.5), 14, 45)
-            local glowThicknessScale = 1 + (distFactor * 0.5)
+            local distanceBaseRadius     = math.clamp(38 * (1 - distFactor * 0.5), 14, 45)
+            local glowThicknessScale     = 1 + (distFactor * 0.5)
             local particleSpeedMultiplier = 1.2 + ((1 - distFactor) * 1.8)
 
-            local baseHue = (clockTime * LaserPulseSpeed * 0.06) % 1
+            local baseHue   = (clockTime * LaserPulseSpeed * 0.06) % 1
             local pulseWave = math.sin(clockTime * LaserPulseSpeed)
-            local cosPulse = math.cos(clockTime * LaserPulseSpeed * 1.4)
+            local cosPulse  = math.cos(clockTime * LaserPulseSpeed * 1.4)
             local alphaPulse = 0.85 + (pulseWave * 0.15)
 
             local coreColor, glowColorBase
             if RainbowSnapLine then
-                coreColor = Color3.fromRGB(255, 255, 255)
+                coreColor     = Color3.fromRGB(255, 255, 255)
                 glowColorBase = Color3.fromHSV(baseHue, 0.85, 1)
             else
                 local lerpFactor = (pulseWave + 1) / 2
-                glowColorBase = BaseLaserColor:Lerp(Color3.fromRGB(180, 240, 255), lerpFactor * 0.4)
-                coreColor = Color3.fromRGB(245, 255, 255)
+                glowColorBase    = BaseLaserColor:Lerp(Color3.fromRGB(180, 240, 255), lerpFactor * 0.4)
+                coreColor        = Color3.fromRGB(245, 255, 255)
             end
 
             local glowMultipliers = {14.0, 9.0, 5.5, 3.2, 2.0, 1.3, 0.8}
             local alphaMultipliers = {0.03, 0.06, 0.12, 0.22, 0.38, 0.60, 0.85}
 
             for i, glow in ipairs(LaserGlowLayers) do
-                glow.Visible = true
-                glow.From = origin
-                glow.To = targetScreenPos
+                glow.Visible   = true
+                glow.From      = origin
+                glow.To        = targetScreenPos
                 glow.Thickness = SnapLineThickness * glowMultipliers[i] * glowThicknessScale
 
                 if RainbowSnapLine then
@@ -676,70 +1055,70 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
                 glow.Transparency = alphaMultipliers[i] * alphaPulse
             end
 
-            SnapLineCore.Visible = true
-            SnapLineCore.From = origin
-            SnapLineCore.To = targetScreenPos
-            SnapLineCore.Color = coreColor
-            SnapLineCore.Thickness = SnapLineThickness * 0.8
+            SnapLineCore.Visible      = true
+            SnapLineCore.From         = origin
+            SnapLineCore.To           = targetScreenPos
+            SnapLineCore.Color        = coreColor
+            SnapLineCore.Thickness    = SnapLineThickness * 0.8
             SnapLineCore.Transparency = 1.0
 
             for i, bead in ipairs(LaserBeads) do
-                local speed = (0.4 + (i * 0.1)) * particleSpeedMultiplier
-                local offset = (i - 1) * (1 / #LaserBeads)
+                local speed    = (0.4 + (i * 0.1)) * particleSpeedMultiplier
+                local offset   = (i - 1) * (1 / #LaserBeads)
                 local progress = (clockTime * speed + offset) % 1
 
-                bead.Visible = true
+                bead.Visible  = true
                 bead.Position = origin + (lineVector * progress)
 
                 local beadPulse = math.sin(clockTime * 20 + i) * 0.5 + 1
-                bead.Radius = SnapLineThickness * (1.1 + beadPulse * 0.6)
-                bead.Color = RainbowSnapLine and Color3.fromHSV((baseHue + progress * 0.3) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
+                bead.Radius     = SnapLineThickness * (1.1 + beadPulse * 0.6)
+                bead.Color      = RainbowSnapLine and Color3.fromHSV((baseHue + progress * 0.3) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
 
-                local fadeMask = math.sin(progress * math.pi)
-                bead.Transparency = 0.95 * fadeMask
+                local fadeMask       = math.sin(progress * math.pi)
+                bead.Transparency    = 0.95 * fadeMask
             end
 
             local currentRadius = distanceBaseRadius + (pulseWave * 2.5)
 
-            TargetLockRings[1].Visible = true
-            TargetLockRings[1].Position = targetScreenPos
-            TargetLockRings[1].Radius = currentRadius
-            TargetLockRings[1].Color = glowColorBase
+            TargetLockRings[1].Visible      = true
+            TargetLockRings[1].Position     = targetScreenPos
+            TargetLockRings[1].Radius       = currentRadius
+            TargetLockRings[1].Color        = glowColorBase
             TargetLockRings[1].Transparency = 0.9
 
-            TargetLockRings[2].Visible = true
-            TargetLockRings[2].Position = targetScreenPos
-            TargetLockRings[2].Radius = currentRadius * 1.55 + (cosPulse * 4)
-            TargetLockRings[2].Color = RainbowSnapLine and Color3.fromHSV((baseHue + 0.12) % 1, 0.85, 1) or glowColorBase
+            TargetLockRings[2].Visible      = true
+            TargetLockRings[2].Position     = targetScreenPos
+            TargetLockRings[2].Radius       = currentRadius * 1.55 + (cosPulse * 4)
+            TargetLockRings[2].Color        = RainbowSnapLine and Color3.fromHSV((baseHue + 0.12) % 1, 0.85, 1) or glowColorBase
             TargetLockRings[2].Transparency = 0.4 * alphaPulse
 
-            TargetLockRings[3].Visible = true
-            TargetLockRings[3].Position = targetScreenPos
-            TargetLockRings[3].Radius = math.max(3, currentRadius * 0.4 - (pulseWave * 1.5))
-            TargetLockRings[3].Color = Color3.fromRGB(255, 255, 255)
+            TargetLockRings[3].Visible      = true
+            TargetLockRings[3].Position     = targetScreenPos
+            TargetLockRings[3].Radius       = math.max(3, currentRadius * 0.4 - (pulseWave * 1.5))
+            TargetLockRings[3].Color        = Color3.fromRGB(255, 255, 255)
             TargetLockRings[3].Transparency = 0.95
 
-            TargetLockRings[4].Visible = true
-            TargetLockRings[4].Position = targetScreenPos
-            TargetLockRings[4].Radius = currentRadius * 2.2
-            TargetLockRings[4].Color = glowColorBase
+            TargetLockRings[4].Visible      = true
+            TargetLockRings[4].Position     = targetScreenPos
+            TargetLockRings[4].Radius       = currentRadius * 2.2
+            TargetLockRings[4].Color        = glowColorBase
             TargetLockRings[4].Transparency = 0.15
 
-            TargetLockCenterDot.Visible = true
-            TargetLockCenterDot.Position = targetScreenPos
-            TargetLockCenterDot.Radius = math.clamp(distanceBaseRadius * 0.12, 1.8, 3.5)
-            TargetLockCenterDot.Color = RainbowSnapLine and Color3.fromHSV(baseHue, 1, 1) or Color3.fromRGB(255, 255, 255)
+            TargetLockCenterDot.Visible      = true
+            TargetLockCenterDot.Position     = targetScreenPos
+            TargetLockCenterDot.Radius       = math.clamp(distanceBaseRadius * 0.12, 1.8, 3.5)
+            TargetLockCenterDot.Color        = RainbowSnapLine and Color3.fromHSV(baseHue, 1, 1) or Color3.fromRGB(255, 255, 255)
             TargetLockCenterDot.Transparency = 1.0
 
-            local boxSize = currentRadius * 1.3
+            local boxSize    = currentRadius * 1.3
             local bracketLen = boxSize * 0.45
-            local rotation = clockTime * (1.5 + (1 - distFactor))
+            local rotation   = clockTime * (1.5 + (1 - distFactor))
 
             local corners = {
                 Vector2.new(-boxSize, -boxSize),
-                Vector2.new(boxSize, -boxSize),
-                Vector2.new(boxSize, boxSize),
-                Vector2.new(-boxSize, boxSize)
+                Vector2.new( boxSize, -boxSize),
+                Vector2.new( boxSize,  boxSize),
+                Vector2.new(-boxSize,  boxSize)
             }
 
             for i = 1, 4 do
@@ -753,17 +1132,17 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
                 local dirY = (i == 1 or i == 2) and 1 or -1
 
                 local lineH = TargetCornerBrackets[(i - 1) * 2 + 1]
-                lineH.Visible = true
-                lineH.From = cornerPos
-                lineH.To = cornerPos + Vector2.new(dirX * bracketLen * cosR, dirX * bracketLen * sinR)
-                lineH.Color = glowColorBase
+                lineH.Visible      = true
+                lineH.From         = cornerPos
+                lineH.To           = cornerPos + Vector2.new(dirX * bracketLen * cosR, dirX * bracketLen * sinR)
+                lineH.Color        = glowColorBase
                 lineH.Transparency = 0.85
 
                 local lineV = TargetCornerBrackets[(i - 1) * 2 + 2]
-                lineV.Visible = true
-                lineV.From = cornerPos
-                lineV.To = cornerPos + Vector2.new(-dirY * bracketLen * sinR, dirY * bracketLen * cosR)
-                lineV.Color = glowColorBase
+                lineV.Visible      = true
+                lineV.From         = cornerPos
+                lineV.To           = cornerPos + Vector2.new(-dirY * bracketLen * sinR, dirY * bracketLen * cosR)
+                lineV.Color        = glowColorBase
                 lineV.Transparency = 0.85
             end
         else
@@ -776,13 +1155,13 @@ end)
 
 --Fast Attack
 local Settings = {
-    AttackInterval = 0.01,
-    MaxTargets = 20,
+    AttackInterval  = 0.01,
+    MaxTargets      = 20,
     AutoScanRemotes = true
 }
 
 local State = {
-    FoundRemote = nil,
+    FoundRemote   = nil,
     FoundRemoteId = nil
 }
 
@@ -798,7 +1177,7 @@ if Settings.AutoScanRemotes then
         local function checkChild(child)
             if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
                 State.FoundRemoteId = child:GetAttribute("Id")
-                State.FoundRemote = child
+                State.FoundRemote   = child
             end
         end
         for _, folder in ipairs(folders) do
@@ -815,7 +1194,7 @@ local function GetTargets()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return {} end
     local targets = {}
-    local myPos = root.Position
+    local myPos   = root.Position
     
     local sourceFolders = {
         Workspace:FindFirstChild("Enemies"),
@@ -826,14 +1205,14 @@ local function GetTargets()
     local function checkModel(model)
         if not model or model == char then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
-        local tHum = model:FindFirstChild("Humanoid")
+        local tHum  = model:FindFirstChild("Humanoid")
         if tRoot and tHum and tHum.Health > 0 then
             local dist = (tRoot.Position - myPos).Magnitude
             if dist <= _G.AttackDistance then
                 table.insert(targets, { 
                     Model = model, 
-                    Root = tRoot, 
-                    Head = model:FindFirstChild("Head") or tRoot 
+                    Root  = tRoot, 
+                    Head  = model:FindFirstChild("Head") or tRoot 
                 })
             end
         end
@@ -848,10 +1227,10 @@ local function GetTargets()
         end
     end
     
-    for _, player in ipairs(Players:GetPlayers()) do
+    for _, p in ipairs(Players:GetPlayers()) do
         if #targets >= Settings.MaxTargets then break end
-        if player ~= LocalPlayer and player.Character then
-            checkModel(player.Character)
+        if p ~= LocalPlayer and p.Character then
+            checkModel(p.Character)
         end
     end
     
@@ -868,7 +1247,7 @@ local function PerformAttack()
     if #targets == 0 then return end
     
     local mainTarget = targets[1]
-    local hitList = {}
+    local hitList    = {}
     for i, target in ipairs(targets) do 
         table.insert(hitList, {target.Model, target.Root}) 
     end
@@ -882,10 +1261,10 @@ local function PerformAttack()
     
     if State.FoundRemote and State.FoundRemoteId then
         pcall(function()
-            local seedValue = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local seedValue   = RemoteSeed and RemoteSeed:InvokeServer() or 1
             local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
-            local rawName = "RE/RegisterHit"
-            local timestamp = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
+            local rawName     = "RE/RegisterHit"
+            local timestamp   = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
             local encryptedName = string.gsub(rawName, ".", function(c) 
                 return string.char(bit32.bxor(string.byte(c), timestamp)) 
             end)
@@ -931,7 +1310,7 @@ task.spawn(function()
             pcall(PerformAttack)
         end
         
-        local elapsed = tick() - startTime
+        local elapsed  = tick() - startTime
         local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
         task.wait(waitTime)
     end
@@ -956,10 +1335,10 @@ task.spawn(function()
     while true do
         if _G.FruitsM1Enable then
             local char   = LocalPlayer.Character
-            local hrp    = char and char:FindFirstChild("HumanoidRootPart")
+            local curHRP = char and char:FindFirstChild("HumanoidRootPart")
             local remote = GetFruitRemote()
-            if hrp and remote then 
-                remote:FireServer(-hrp.CFrame.UpVector, 2, true) 
+            if curHRP and remote then 
+                remote:FireServer(-curHRP.CFrame.UpVector, 2, true) 
             end
         end
         task.wait(_G.FruitsM1DelayValue)
@@ -968,13 +1347,13 @@ end)
 
 -- DragonGun
 task.spawn(function()
-    local Modules = ReplicatedStorage:WaitForChild("Modules")
-    local DragonNet = Modules:WaitForChild("Net")
-    local ShootGunEvent = DragonNet:WaitForChild("RE/ShootGunEvent")
-    local Validator2 = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Validator2")
+    local Modules         = ReplicatedStorage:WaitForChild("Modules")
+    local DragonNet       = Modules:WaitForChild("Net")
+    local ShootGunEvent   = DragonNet:WaitForChild("RE/ShootGunEvent")
+    local Validator2      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Validator2")
     
-    local getupval = debug.getupvalue or getupvalue
-    local setupval = debug.setupvalue or setupvalue
+    local getupval  = debug.getupvalue  or getupvalue
+    local setupval  = debug.setupvalue  or setupvalue
     local getupvals = debug.getupvalues or getupvalues
     
     local ShootFunction
@@ -996,7 +1375,7 @@ task.spawn(function()
         if upvals[V_Idx.v21] ~= 727595 then
             for i, v in pairs(upvals) do
                 if v == 727595 then
-                    local offset = i - 15
+                    local offset  = i - 15
                     V_Idx.v21 = i; V_Idx.v22 = 13 + offset; V_Idx.v23 = 16 + offset; V_Idx.v24 = 17 + offset
                     V_Idx.v26 = 12 + offset; V_Idx.v25 = 14 + offset; V_Idx.v27 = 18 + offset
                     break
@@ -1016,10 +1395,10 @@ task.spawn(function()
         
         local v8 = v6 * v2
         local v9 = (v5 * v2 + v6 * v1) % v3
-        v9 = (v9 * v3 + v8) % v4
-        v5 = math.floor(v9 / v3)
-        v6 = v9 - v5 * v3
-        v7 = v7 + 1
+        v9       = (v9 * v3 + v8) % v4
+        v5       = math.floor(v9 / v3)
+        v6       = v9 - v5 * v3
+        v7       = v7 + 1
         
         setupval(ShootFunction, V_Idx.v25, v5)
         setupval(ShootFunction, V_Idx.v26, v6)
@@ -1040,12 +1419,12 @@ task.spawn(function()
             local enemiesFolder = Workspace:FindFirstChild("Enemies")
             if enemiesFolder then
                 for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-                    local eHum = enemy:FindFirstChildOfClass("Humanoid")
+                    local eHum  = enemy:FindFirstChildOfClass("Humanoid")
                     local eRoot = enemy:FindFirstChild("HumanoidRootPart")
                     if eHum and eHum.Health > 0 and eRoot then
                         local d = (eRoot.Position - myPos).Magnitude
                         if d < dist then 
-                            dist = d
+                            dist    = d
                             closest = eRoot 
                         end
                     end
@@ -1072,8 +1451,8 @@ task.spawn(function()
                 Validator2:FireServer(valCode, valCount) 
             end
             
-            tool:SetAttribute("LocalOverheat", 0)
-            tool:SetAttribute("LocalTotalShots", (tool:GetAttribute("LocalTotalShots") or 0) + 1)
+            tool:SetAttribute("LocalOverheat",    0)
+            tool:SetAttribute("LocalTotalShots",  (tool:GetAttribute("LocalTotalShots") or 0) + 1)
             ShootGunEvent:FireServer(targetPart.Position, { targetPart })
         end)
     end
@@ -1096,7 +1475,7 @@ end)
 -- Auto V3
 local function toggleV3()
     if UserInputService:GetFocusedTextBox() then return end
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.T, false, game)
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.T, false, game)
     task.wait(1)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
 end
@@ -1113,17 +1492,17 @@ end)
 
 -- Auto V4
 local function GetAwakeningRemote()
-    local player = Players.LocalPlayer
-    if not player then return nil end
+    local p = Players.LocalPlayer
+    if not p then return nil end
 
-    local backpack = player:FindFirstChild("Backpack")
-    local awakening = backpack and backpack:FindFirstChild("Awakening")
+    local backpack    = p:FindFirstChild("Backpack")
+    local awakening   = backpack and backpack:FindFirstChild("Awakening")
     if awakening and awakening:FindFirstChild("RemoteFunction") then
         return awakening.RemoteFunction
     end
 
-    local char = player.Character
-    local charAwakening = char and char:FindFirstChild("Awakening")
+    local char           = p.Character
+    local charAwakening  = char and char:FindFirstChild("Awakening")
     if charAwakening and charAwakening:FindFirstChild("RemoteFunction") then
         return charAwakening.RemoteFunction
     end
@@ -1150,7 +1529,7 @@ end)
 -- Auto Ken
 local function toggleKenVision()
     if UserInputService:GetFocusedTextBox() then return end
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.E, false, game)
     task.wait(0.05)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
@@ -1172,7 +1551,7 @@ task.spawn(function()
     while task.wait(0.1) do
         if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
         
-        local kenLeft = LocalPlayer:GetAttribute("KenDodgesLeft")
+        local kenLeft   = LocalPlayer:GetAttribute("KenDodgesLeft")
         local kenActive = LocalPlayer:GetAttribute("KenActive")
         
         if _G.AutoKenEnabled then
@@ -1189,59 +1568,25 @@ task.spawn(function()
     end
 end)
 
--- ESP 小怪
-local function updateEnemyESP()
-    local enemiesFolder = workspace:FindFirstChild("Enemies")
-    if not enemiesFolder then return end
-
-    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-        if enemy:IsA("Model") then
-            local highlight = enemy:FindFirstChild("EnemyESPHighlight")
-            if _G.EnemyESPEnabled then
-                if not highlight then
-                    highlight = Instance.new("Highlight")
-                    highlight.Name = "EnemyESPHighlight"
-                    highlight.FillColor = Color3.fromRGB(255, 50, 50)
-                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    highlight.FillTransparency = 0.5
-                    highlight.OutlineTransparency = 0
-                    highlight.Parent = enemy
-                end
-                highlight.Enabled = true
-            else
-                if highlight then
-                    highlight:Destroy()
-                end
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while task.wait(0.5) do
-        updateEnemyESP()
-    end
-end)
-
 --低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
     
     if _G.LowVisualMode then
         WindUI:Notify({ 
-            Title = "優化系統", 
+            Title   = "優化系統", 
             Content = "低配模式已啟動，正在清理地圖並優化效能...", 
             Duration = 3 
         })
         
         local Lighting = game:GetService("Lighting")
         Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
-        Lighting.Brightness = 1
+        Lighting.FogEnd        = 9e9
+        Lighting.Brightness    = 1
         
         for _, obj in pairs(game:GetDescendants()) do
             if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
-                obj.Material = Enum.Material.SmoothPlastic
+                obj.Material    = Enum.Material.SmoothPlastic
                 obj.Reflectance = 0
             elseif obj:IsA("Decal") or obj:IsA("Texture") then
                 obj:Destroy()
@@ -1255,7 +1600,7 @@ _G.SetLowVisualState = function(state)
         if not _G.LowVisualConnection then
             _G.LowVisualConnection = game.Workspace.DescendantAdded:Connect(function(obj)
                 if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
-                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Material    = Enum.Material.SmoothPlastic
                     obj.Reflectance = 0
                 elseif obj:IsA("Decal") or obj:IsA("Texture") then
                     obj:Destroy()
@@ -1322,80 +1667,150 @@ end
 -- 分頁
 --------------------------
 local Tabs = {
+    Auto     = Window:Tab({ Title = "自動",   Icon = "crosshair" }),
     Config   = Window:Tab({ Title = "配置",  Icon = "wrench"}),
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" }),
+    Settings = Window:Tab({ Title = "設定",  Icon = "settings" }),
 }
 
 --------------------------
 -- 元件
 --------------------------
+Tabs.Auto:Section({ Title = "地下城" })
+
+Tabs.Auto:Toggle({
+    Title    = "總開關",
+    Value    = _G.FlyEnabled,
+    Callback = function(v)
+        _G.FlyEnabled = v
+        if v then
+            startFly()
+        else
+            stopFly()
+        end
+    end
+})
+
+Tabs.Auto:Dropdown({
+    Title    = "TP&Tween",
+    Desc     = "選擇移動方式",
+    Values   = { "TP", "Tween" },
+    Value    = _G.MoveMode,
+    Callback = function(v)
+        _G.MoveMode = v
+        if v == "TP" then
+            globalStopTween()
+        end
+        lastTweenTargetPos = nil
+    end
+})
+
+Tabs.Auto:Slider({
+    Title    = "飛行高度",
+    Desc     = "追蹤時懸停在怪物上方的高度",
+    Value    = { Min = 0, Max = 50, Default = _G.HoverHeight },
+    Callback = function(v)
+        _G.HoverHeight = v
+    end
+})
+
+Tabs.Auto:Section({ Title = "聚怪" })
+
+Tabs.Auto:Toggle({
+    Title    = "Bring NPC",
+    Desc     = "將範圍內的小怪聚集到中心點並凍結",
+    Value    = _G.BringMob,
+    Callback = function(v)
+        _G.BringMob = v
+    end
+})
+
+Tabs.Auto:Slider({
+    Title    = "聚怪距離",
+    Desc     = "只對距玩家此距離內的怪物生效",
+    Value    = { Min = 100, Max = 350, Default = _G.BringDistance },
+    Callback = function(v)
+        _G.BringDistance = v
+    end
+})
+
+Tabs.Auto:Section({ Title = "關卡" })
+
+Tabs.Auto:Toggle({
+    Title    = "自動下一關",
+    Desc     = "清空小怪與 Boss 後自動傳送至出口",
+    Value    = _G.AutoNextStage,
+    Callback = function(v)
+        _G.AutoNextStage = v
+    end
+})
+
 Tabs.Config:Section({ Title = "Aimbot" })
 
 Tabs.Config:Dropdown({ 
-    Title = "自瞄招式", 
-    Values = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" }, 
-    Value = _G.SilentAimSkills,
-    Multi = true, 
+    Title    = "自瞄招式", 
+    Values   = { "M1 (普攻)", "Z", "X", "C", "V", "F", "R" }, 
+    Value    = _G.SilentAimSkills,
+    Multi    = true, 
     Callback = function(v) 
         _G.SilentAimSkills = v 
     end 
 })
 
 Tabs.Config:Toggle({ 
-    Title = "開啟自瞄 (技能 & M1)", 
-    Value = _G.SilentAimEnabled, 
-    Locked = disableHook, 
+    Title      = "開啟自瞄 (技能 & M1)", 
+    Value      = _G.SilentAimEnabled, 
+    Locked     = disableHook, 
     LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil, 
-    Callback = function(v) 
+    Callback   = function(v) 
         if disableHook then return end 
         _G.SilentAimEnabled = v 
     end 
 })
 
 Tabs.Config:Toggle({ 
-    Title = "顯示射線 (指向最近目標)", 
-    Value = _G.SilentAimShowLine, 
+    Title    = "顯示射線 (指向最近目標)", 
+    Value    = _G.SilentAimShowLine, 
     Callback = function(v) 
         _G.SilentAimShowLine = v 
     end 
 })
 
 Tabs.Config:Toggle({ 
-    Title = "顯示 FOV ", 
-    Value = _G.SilentAimShowFOV, 
+    Title    = "顯示 FOV ", 
+    Value    = _G.SilentAimShowFOV, 
     Callback = function(v) 
         _G.SilentAimShowFOV = v 
     end 
 })
 
 Tabs.Config:Dropdown({ 
-    Title = "FOV 圓圈位置", 
-    Values = { "跟随鼠標", "屏幕中心" }, 
-    Value = _G.SilentAimFOVMode, 
+    Title    = "FOV 圓圈位置", 
+    Values   = { "跟随鼠標", "屏幕中心" }, 
+    Value    = _G.SilentAimFOVMode, 
     Callback = function(v) 
         _G.SilentAimFOVMode = v 
     end 
 })
 
 Tabs.Config:Slider({ 
-    Title = "FOV 範圍大小", 
-    Value = { Min = 10, Max = 1000, Default = _G.SilentAimFOV }, 
+    Title    = "FOV 範圍大小", 
+    Value    = { Min = 10, Max = 1000, Default = _G.SilentAimFOV }, 
     Callback = function(v) 
         _G.SilentAimFOV = v 
     end 
 })
 
 Tabs.Config:Slider({ 
-    Title = "FOV 線條粗細", 
-    Value = { Min = 1, Max = 10, Default = _G.SilentAimFOVThickness }, 
+    Title    = "FOV 線條粗細", 
+    Value    = { Min = 1, Max = 10, Default = _G.SilentAimFOVThickness }, 
     Callback = function(v) 
         _G.SilentAimFOVThickness = v 
     end 
 })
 
 Tabs.Config:Slider({ 
-    Title = "FOV 透明度", 
-    Value = { Min = 0, Max = 1, Default = _G.SilentAimFOVTransparency, Increment = 0.1 }, 
+    Title    = "FOV 透明度", 
+    Value    = { Min = 0, Max = 1, Default = _G.SilentAimFOVTransparency, Increment = 0.1 }, 
     Callback = function(v) 
         _G.SilentAimFOVTransparency = v 
     end 
@@ -1404,8 +1819,8 @@ Tabs.Config:Slider({
 Tabs.Config:Section({ Title = "M1" })
 
 Tabs.Config:Toggle({
-    Title = "自動攻擊",
-    Value = _G.FastAttack,
+    Title    = "自動攻擊",
+    Value    = _G.FastAttack,
     Callback = function(v)
         _G.FastAttack = v
         if _G.FastAttack then
@@ -1416,21 +1831,20 @@ Tabs.Config:Toggle({
     end
 })
 
-
 Tabs.Config:Toggle({
-    Title = "自動果實 M1",
-    Value = _G.FruitsM1Enable,
+    Title    = "自動果實 M1",
+    Value    = _G.FruitsM1Enable,
     Callback = function(v)
         _G.FruitsM1Enable = v
     end
 })
 
 Tabs.Config:Toggle({
-    Title = "自動槍 M1",
-    Value = _G.GunM1,
-    Locked = disableHook,
+    Title      = "自動槍 M1",
+    Value      = _G.GunM1,
+    Locked     = disableHook,
     LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil,
-    Callback = function(v) 
+    Callback   = function(v) 
         if disableHook then return end 
         _G.GunM1 = v
     end
@@ -1438,10 +1852,10 @@ Tabs.Config:Toggle({
 
 Tabs.Config:Slider({
     Title = "槍 M1 發射間隔(限龍炮)",
-    Step = 0.001,
+    Step  = 0.001,
     Value = {
-        Min = 0.001,
-        Max = 0.2,
+        Min     = 0.001,
+        Max     = 0.2,
         Default = _G.M1FireInterval
     },
     Callback = function(v)
@@ -1452,65 +1866,56 @@ Tabs.Config:Slider({
 Tabs.Config:Section({ Title = "自動" })
 
 Tabs.Config:Toggle({
-    Title = "Auto Buso",
-    Desc = "自動開啟武裝色",
-    Value = _G.AutoBusoEnabled,
+    Title    = "Auto Buso",
+    Desc     = "自動開啟武裝色",
+    Value    = _G.AutoBusoEnabled,
     Callback = function(v)
         _G.AutoBusoEnabled = v
     end
 })
 
 Tabs.Config:Toggle({
-    Title = "Auto V3",
-    Desc = "自動開啟V3",
-    Value = _G.AutoV3_Enabled,
+    Title    = "Auto V3",
+    Desc     = "自動開啟V3",
+    Value    = _G.AutoV3_Enabled,
     Callback = function(v)
         _G.AutoV3_Enabled = v
     end
 })
 
 Tabs.Config:Toggle({
-    Title = "Auto V4",
-    Desc = "自動開啟V4",
-    Value = _G.AutoV4_Enabled,
+    Title    = "Auto V4",
+    Desc     = "自動開啟V4",
+    Value    = _G.AutoV4_Enabled,
     Callback = function(v)
         _G.AutoV4_Enabled = v
     end
 })
 
 Tabs.Config:Toggle({
-    Title = "Auto Ken",
-    Desc = "自動開啟見聞色",
-    Value = _G.AutoKenEnabled,
+    Title    = "Auto Ken",
+    Desc     = "自動開啟見聞色",
+    Value    = _G.AutoKenEnabled,
     Callback = function(v)
         _G.AutoKenEnabled = v
     end
 })
 
 Tabs.Config:Toggle({
-    Title = "Remove Ken",
-    Desc = "移除見聞色效果",
-    Value = _G.RemoveKenEffectEnabled,
+    Title    = "Remove Ken",
+    Desc     = "移除見聞色效果",
+    Value    = _G.RemoveKenEffectEnabled,
     Callback = function(v)
         _G.RemoveKenEffectEnabled = v
-    end
-})
-
-Tabs.Config:Toggle({
-    Title = "ESP 小怪",
-    Value = _G.EnemyESPEnabled,
-    Callback = function(v)
-        _G.EnemyESPEnabled = v
-        updateEnemyESP()
     end
 })
 
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
-    Title = "將所有配置恢復初始",
-    Icon = "trash-2",
-    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Title    = "將所有配置恢復初始",
+    Icon     = "trash-2",
+    Desc     = "標記為待重置 下次啟動腳本時改為初始設定",
     Callback = function()
         local ok = pcall(function()
             if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
@@ -1523,13 +1928,13 @@ Tabs.Settings:Button({
         
         if ok then
             WindUI:Notify({
-                Title = "配置等待重置",
+                Title   = "配置等待重置",
                 Content = "下次啟動腳本後將完全生效 當前功能不受影響",
                 Duration = 4
             })
         else
             WindUI:Notify({
-                Title = "重置失敗",
+                Title   = "重置失敗",
                 Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
                 Duration = 4
             })
@@ -1540,9 +1945,9 @@ Tabs.Settings:Button({
 Tabs.Settings:Section({ Title = "畫質" })
 
 Tabs.Settings:Toggle({
-    Title = "低配模式",
-    Desc = "大幅優化效能",
-    Value = _G.LowVisualMode,
+    Title    = "低配模式",
+    Desc     = "大幅優化效能",
+    Value    = _G.LowVisualMode,
     Callback = function(v)
         _G.SetLowVisualState(v)
     end
@@ -1551,9 +1956,9 @@ Tabs.Settings:Toggle({
 Tabs.Settings:Section({ Title = "設定" })
 
 Tabs.Settings:Toggle({ 
-    Title = "換服後自動執行",
-    Desc = "切換伺服器時自動重新載入",
-    Value = _G.AutoExecute,
+    Title    = "換服後自動執行",
+    Desc     = "切換伺服器時自動重新載入",
+    Value    = _G.AutoExecute,
     Callback = function(v)
         _G.AutoExecute = v
         
@@ -1562,13 +1967,13 @@ Tabs.Settings:Toggle({
                 writefile("AutoDungeon.file", "true")
                 queue_on_teleport(ScriptLoadstring)
                 WindUI:Notify({
-                    Title = "通知",
+                    Title   = "通知",
                     Content = "已開啟自動執行",
                     Duration = 3
                 })
             else
                 WindUI:Notify({
-                    Title = "支援錯誤",
+                    Title   = "支援錯誤",
                     Content = "你目前的注入器不支援",
                     Duration = 3
                 })
@@ -1578,7 +1983,7 @@ Tabs.Settings:Toggle({
                 delfile("AutoDungeon.file")
             end
             WindUI:Notify({
-                Title = "通知",
+                Title   = "通知",
                 Content = "已關閉自動執行",
                 Duration = 3
             })
@@ -1587,9 +1992,9 @@ Tabs.Settings:Toggle({
 })
 
 Tabs.Settings:Toggle({ 
-    Title = "Anti AFK", 
-    Desc = "防止閒置被踢出", 
-    Value = _G.AntiAFK_ENABLED,
+    Title    = "Anti AFK", 
+    Desc     = "防止閒置被踢出", 
+    Value    = _G.AntiAFK_ENABLED,
     Callback = function(v) 
         _G.AntiAFK_ENABLED = v
         if _G.AntiAFK_ENABLED then 
@@ -1601,9 +2006,9 @@ Tabs.Settings:Toggle({
 })
 
 Tabs.Settings:Keybind({ 
-    Title = "快捷鍵", 
-    Desc = "可更改", 
-    Value = _G.CurrentKey,
+    Title    = "快捷鍵", 
+    Desc     = "可更改", 
+    Value    = _G.CurrentKey,
     Callback = function(v)
         _G.CurrentKey = v
         
@@ -1614,9 +2019,9 @@ Tabs.Settings:Keybind({
 })
 
 Tabs.Settings:Toggle({
-    Title = "停用快捷鍵",
-    Desc = "開啟後將禁用快捷鍵",
-    Value = _G.KeyDisabled,
+    Title    = "停用快捷鍵",
+    Desc     = "開啟後將禁用快捷鍵",
+    Value    = _G.KeyDisabled,
     Callback = function(state)
         _G.KeyDisabled = state
         
@@ -1638,12 +2043,16 @@ task.spawn(function()
             if not isfile("Hub.file") then
                 writefile("Hub.file", "true")
             end
-
             queue_on_teleport(ScriptLoadstring)
         end
     else
         if queue_on_teleport and isfile("Hub.file") then
             delfile("Hub.file")
         end
+    end
+
+    -- 若存檔時 FlyEnabled 為 true，啟動追蹤
+    if _G.FlyEnabled then
+        startFly()
     end
 end)
