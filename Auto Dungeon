@@ -60,6 +60,30 @@ if disableHook then
 end
 
 ----------------------------------------
+-- 遊戲檢測
+----------------------------------------
+local ALLOWED_GAME_ID  = 994732206
+local ALLOWED_PLACE_ID = 73902483975735
+
+local currentGameId  = game.GameId
+local currentPlaceId = game.PlaceId
+
+if currentGameId ~= ALLOWED_GAME_ID or currentPlaceId ~= ALLOWED_PLACE_ID then
+    task.spawn(function()
+        task.wait(3)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "❌ 不支援",
+                Text = "此腳本僅在地下城才可開啟",
+                Duration = 10,
+                Icon = "rbxassetid://11419714821"
+            })
+        end)
+    end)
+    return
+end
+
+----------------------------------------
 -- 防重複啟用
 ----------------------------------------
 if getgenv().AutoDungeon then
@@ -1165,7 +1189,7 @@ task.spawn(function()
     end
 end)
 
--- ESP 核心邏輯
+-- ESP 小怪
 local function updateEnemyESP()
     local enemiesFolder = workspace:FindFirstChild("Enemies")
     if not enemiesFolder then return end
@@ -1193,7 +1217,6 @@ local function updateEnemyESP()
     end
 end
 
--- 背景持續監控新生成的敵人或狀態變化
 task.spawn(function()
     while task.wait(0.5) do
         updateEnemyESP()
