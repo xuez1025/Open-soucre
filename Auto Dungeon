@@ -20,6 +20,10 @@ local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
 local RegisterHit = Net:WaitForChild("RE/RegisterHit")
 local RemoteSeed = Net:FindFirstChild("seed")
 
+--AFK
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+
 ----------------------------------------
 -- Hook Check
 ----------------------------------------
@@ -156,6 +160,13 @@ _G.AutoV4_Enabled = true
 _G.AutoKenEnabled = false
 _G.RemoveKenEffectEnabled = false
 
+--ESP Enemy
+_G.EnemyESPEnabled = false
+
+--低配模式
+_G.LowVisualMode = false
+_G.LowVisualConnection = nil
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -171,6 +182,10 @@ local ScriptLoadstring = [[if isfile("AutoDungeon.file") then
         loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Dungeon"))()
     end
 end]]
+
+--AFK
+_G.AntiAFK_ENABLED = true
+_G.AntiAFK_Connection = nil
 
 --快捷鍵
 _G.CurrentKey = "G"
@@ -212,8 +227,14 @@ local ConfigKeys = {
 		"AutoV4_Enabled",
 		"AutoKenEnabled",
 		"RemoveKenEffectEnabled",
+		--ESP小怪
+		"EnemyESPEnabled",
+		--低配
+		"LowVisualMode",
 		--自動執行
     "AutoExecute",
+		--AFK
+		"AntiAFK_ENABLED",
 		--快捷鍵
     "CurrentKey",
     "KeyDisabled",
@@ -1144,11 +1165,134 @@ task.spawn(function()
     end
 end)
 
+-- ESP 核心邏輯
+local function updateEnemyESP()
+    local enemiesFolder = workspace:FindFirstChild("Enemies")
+    if not enemiesFolder then return end
+
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        if enemy:IsA("Model") then
+            local highlight = enemy:FindFirstChild("EnemyESPHighlight")
+            if _G.EnemyESPEnabled then
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "EnemyESPHighlight"
+                    highlight.FillColor = Color3.fromRGB(255, 50, 50)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
+                    highlight.Parent = enemy
+                end
+                highlight.Enabled = true
+            else
+                if highlight then
+                    highlight:Destroy()
+                end
+            end
+        end
+    end
+end
+
+-- 背景持續監控新生成的敵人或狀態變化
+task.spawn(function()
+    while task.wait(0.5) do
+        updateEnemyESP()
+    end
+end)
+
+--低配模式
+_G.SetLowVisualState = function(state)
+    _G.LowVisualMode = state
+    
+    if _G.LowVisualMode then
+        WindUI:Notify({ 
+            Title = "優化系統", 
+            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
+            Duration = 3 
+        })
+        
+        local Lighting = game:GetService("Lighting")
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        
+        for _, obj in pairs(game:GetDescendants()) do
+            if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.Reflectance = 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj:Destroy()
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            elseif obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("DepthOfFieldEffect") or obj:IsA("SunRaysEffect") then
+                obj.Enabled = false
+            end
+        end
+        
+        if not _G.LowVisualConnection then
+            _G.LowVisualConnection = game.Workspace.DescendantAdded:Connect(function(obj)
+                if obj:IsA("Part") or obj:IsA("CornerWedgePart") or obj:IsA("TrussPart") or obj:IsA("WedgePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj:Destroy()
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
+        end
+    else
+        if _G.LowVisualConnection then
+            _G.LowVisualConnection:Disconnect()
+            _G.LowVisualConnection = nil
+        end
+    end
+end
+
+if _G.LowVisualMode then
+    _G.SetLowVisualState(true)
+end
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
 if _G.AutoExecute and queue_func then
     queue_func(ScriptLoadstring)
+end
+
+--AFK
+local function EnableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end)
+
+    if getconnections then
+        for _, connection in pairs(getconnections(LocalPlayer.Idled)) do
+            if connection.Disable then 
+                connection:Disable()
+            elseif connection.Disconnect then 
+                connection:Disconnect() 
+            end
+        end
+    end
+end
+
+local function DisableAntiAFK()
+    if _G.AntiAFK_Connection then 
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil 
+    end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
 end
 
 --------------------------
@@ -1329,6 +1473,15 @@ Tabs.Config:Toggle({
     end
 })
 
+Tabs.Config:Toggle({
+    Title = "ESP 小怪",
+    Value = _G.EnemyESPEnabled,
+    Callback = function(v)
+        _G.EnemyESPEnabled = v
+        updateEnemyESP()
+    end
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
@@ -1358,6 +1511,17 @@ Tabs.Settings:Button({
                 Duration = 4
             })
         end
+    end
+})
+
+Tabs.Settings:Section({ Title = "畫質" })
+
+Tabs.Settings:Toggle({
+    Title = "低配模式",
+    Desc = "大幅優化效能",
+    Value = _G.LowVisualMode,
+    Callback = function(v)
+        _G.SetLowVisualState(v)
     end
 })
 
@@ -1396,6 +1560,20 @@ Tabs.Settings:Toggle({
                 Duration = 3
             })
         end
+    end
+})
+
+Tabs.Settings:Toggle({ 
+    Title = "Anti AFK", 
+    Desc = "防止閒置被踢出", 
+    Value = _G.AntiAFK_ENABLED,
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
+            EnableAntiAFK() 
+        else 
+            DisableAntiAFK() 
+        end 
     end
 })
 
