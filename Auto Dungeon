@@ -161,11 +161,14 @@ _G.BringMob          = false
 _G.ActiveTween       = nil
 _G.isMovementActive  = false
 _G.isTeleporting     = false
-_G.MoveMode          = "TP"          -- "TP" | "Tween"
+_G.MoveMode          = "Tween"          -- "TP" | "Tween"
 _G.FlyEnabled        = false         -- 移動追蹤開關
 _G.AutoNextStage     = false         -- 自動下一關
 _G.HoverHeight       = 10            -- 飛行高度
 _G.BringDistance     = 200           -- 聚怪最大距離
+
+--大佛
+_G.BuddhaMode = "普通模式"
 
 --aimbot
 _G.SilentAimEnabled         = false 
@@ -234,7 +237,7 @@ _G.KeyDisabled = false
 -- 配置自動保存
 ----------------------------------------
 local ConfigFolder = "AutoDungeon_Config"
-local ConfigFile = ConfigFolder .. "/settings.json"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
 local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
@@ -724,6 +727,85 @@ task.spawn(function()
             end)
         end
     end
+end)
+
+--大佛
+local lastTransformAttempt = 0
+
+local function isBuddhaTransformed()
+	local character = LocalPlayer.Character
+	if not character then return false end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return false end
+	
+	if humanoid.HipHeight > 5 then
+		return true
+	end
+	
+	if character:GetScale() > 1.5 then
+		return true
+	end
+	
+	return false
+end
+
+local function triggerBuddhaTransform()
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	local buddhaTool = (backpack and backpack:FindFirstChild("Buddha-Buddha")) or character:FindFirstChild("Buddha-Buddha")
+	
+	if not buddhaTool then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid and buddhaTool.Parent ~= character then
+		humanoid:EquipTool(buddhaTool)
+		task.wait(0.15)
+	end
+	
+	local remoteEvent = buddhaTool:FindFirstChild("RemoteEvent")
+	local pos1 = Vector3.new(-339.2312316894531, 198.39112854003906, 20.792236328125)
+	local pos2 = Vector3.new(-338.5541076660156, 198.39112854003906, 18.80804443359375)
+	
+	pcall(function()
+		if remoteEvent then
+			remoteEvent:FireServer(true)
+			remoteEvent:FireServer(pos1)
+			remoteEvent:FireServer(pos1)
+		end
+		
+		if humanoid then
+			for _, child in ipairs(humanoid:GetChildren()) do
+				if child:IsA("RemoteFunction") then
+					child:InvokeServer("Z")
+				elseif child:IsA("RemoteEvent") then
+					child:FireServer("Z")
+				end
+			end
+		end
+		
+		if remoteEvent then
+			remoteEvent:FireServer(pos2)
+			remoteEvent:FireServer(false)
+		end
+	end)
+end
+
+task.spawn(function()
+	while task.wait(0.3) do
+		if not LocalPlayer or not LocalPlayer.Character then continue end
+		
+		local transformed = isBuddhaTransformed()
+		
+		if not transformed then
+			if _G.BuddhaMode == "大佛模式" and (tick() - lastTransformAttempt > 3) then
+				lastTransformAttempt = tick()
+				task.spawn(triggerBuddhaTransform)
+			end
+		end
+	end
 end)
 
 --aimbot
@@ -1742,6 +1824,20 @@ Tabs.Auto:Toggle({
     Callback = function(v)
         _G.AutoNextStage = v
     end
+})
+
+Tabs.Auto:Dropdown({
+	Title = "大佛模式選擇",
+	Desc = "切換普通模式或大佛模式",
+	Values = {"普通模式", "大佛模式"},
+	Value = _G.BuddhaMode,
+	Callback = function(v)
+		_G.BuddhaMode = v
+		if v == "大佛模式" then
+			lastTransformAttempt = tick()
+			task.spawn(triggerBuddhaTransform)
+		end
+	end
 })
 
 Tabs.Config:Section({ Title = "Aimbot" })
