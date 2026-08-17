@@ -381,7 +381,7 @@ _G.KeyDisabled = false
 -- [FIX 4] 配置自動保存
 ----------------------------------------
 local ConfigFolder = "AutoBounty_Config"
-local ConfigFile = ConfigFolder .. "/settings.json"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
 local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
@@ -562,6 +562,12 @@ local function IsServerAllowed(info)
     local maxB = tonumber(_G.HopMaxBounty) or math.huge
 
     if info.Players < minP or info.Players > maxP then
+        return false
+    end
+
+    -- 排除已滿伺服器（人數 >= 伺服器上限）
+    local maxPlayers = tonumber(info.MaxPlayers) or 0
+    if maxPlayers > 0 and info.Players >= maxPlayers then
         return false
     end
 
