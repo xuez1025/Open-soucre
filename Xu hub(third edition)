@@ -13,6 +13,7 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local mouse = LocalPlayer:GetMouse()
+local MarketplaceService = game:GetService("MarketplaceService")
 
 --Teleport
 local remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
