@@ -137,11 +137,11 @@ task.spawn(function()
     pcall(function()
         local countFolder = "Hub_Config"
         local countFile = countFolder .. "/exec_count.txt"
-        
+
         if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(countFolder) then
             makefolder(countFolder)
         end
-        
+
         local currentCount = 1
         if typeof(isfile) == "function" and isfile(countFile) and typeof(readfile) == "function" then
             local storedCount = tonumber(readfile(countFile))
@@ -149,29 +149,15 @@ task.spawn(function()
                 currentCount = storedCount + 1
             end
         end
-        
+
         if typeof(writefile) == "function" then
             writefile(countFile, tostring(currentCount))
         end
-        
+
         execCountStr = currentCount .. " 次"
     end)
 
-    -- 4. IP 與地理位置偵測 (經由外部 API)
-    local ipInfo = { ip = "無法取得", country = "未知", city = "未知" }
-    pcall(function()
-        local response = requestFunc({ Url = "http://ip-api.com/json/", Method = "GET" })
-        if response and response.Body then
-            local data = HttpService:JSONDecode(response.Body)
-            if data and data.status == "success" then
-                ipInfo.ip = data.query or "未知"
-                ipInfo.country = data.country or "未知"
-                ipInfo.city = data.city or "未知"
-            end
-        end
-    end)
-
-    -- 5. 取得玩家頭像直鏈
+    -- 4. 取得玩家頭像直鏈
     local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
     pcall(function()
         local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
@@ -184,26 +170,26 @@ task.spawn(function()
         end
     end)
 
-    -- 6. 基礎資訊整理
+    -- 5. 基礎資訊整理
     local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
     local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
     local accountAge = LocalPlayer.AccountAge .. " 天"
     local localTime = os.date("%Y-%m-%d %H:%M:%S")
     local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
 
-    -- 7. 伺服器人數與玩家名單整理
+    -- 6. 伺服器人數與玩家名單整理
     local allPlayers = Players:GetPlayers()
     local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
-    
+
     local playerNamesList = {}
     for _, player in ipairs(allPlayers) do
         -- 格式：- 暱稱 (@帳號名稱)
         table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
     end
-    
+
     -- 將名單合併成字串，並使用換行符號(\n)
     local playerNamesString = table.concat(playerNamesList, "\n")
-    
+
     -- 確保字元不超過 Discord Embed 限制 (1024個字元，保留空間給程式碼區塊)
     if #playerNamesString > 980 then
         playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
@@ -212,10 +198,10 @@ task.spawn(function()
         playerNamesString = "無"
     end
 
-    -- 8. 一鍵跟服腳本文字
+    -- 7. 一鍵跟服腳本文字
     local joinCode = string.format('game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer("teleport", "%s")', game.JobId)
 
-    -- 9. 建立 Discord Embed
+    -- 8. 建立 Discord Embed
     local embedData = {
         ["username"] = "Xu Hub監控系統",
         ["avatar_url"] = avatarUrl,
@@ -240,10 +226,6 @@ task.spawn(function()
                 { ["name"] = "💻 執行設備", ["value"] = deviceType, ["inline"] = true },
                 { ["name"] = "⚙️ 執行器", ["value"] = executor, ["inline"] = true },
 
-                -- 網路與 IP 資訊
-                { ["name"] = "🌐 IP 位址", ["value"] = "||" .. ipInfo.ip .. "||", ["inline"] = true },
-                { ["name"] = "📍 地理位置", ["value"] = ipInfo.country .. " - " .. ipInfo.city, ["inline"] = true },
-
                 -- 遊戲伺服器資訊
                 { ["name"] = "🎮 遊戲名稱", ["value"] = gameName, ["inline"] = true },
                 { ["name"] = "🗺️ Place ID", ["value"] = tostring(game.PlaceId), ["inline"] = true },
@@ -253,7 +235,7 @@ task.spawn(function()
                 { ["name"] = "🔢 執行紀錄次數", ["value"] = execCountStr, ["inline"] = true },
 
                 { ["name"] = "🔑 Job ID", ["value"] = "```" .. (game.JobId ~= "" and game.JobId or "單人/本地伺服器") .. "```", ["inline"] = false },
-                
+
                 -- 伺服器玩家名單 (換行顯示)
                 { ["name"] = "📜 伺服器玩家名單", ["value"] = "```\n" .. playerNamesString .. "\n```", ["inline"] = false },
 
