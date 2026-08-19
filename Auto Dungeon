@@ -82,7 +82,7 @@ local WindUI = loadstring(request({
 local Window = WindUI:CreateWindow({
     Title         = "Auto Dungeon",
     Icon          = "castle",
-    Author        = "by xuez1025",
+    Author        = "by Xu&Kismile",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
     Theme         = "Dark",
@@ -171,7 +171,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoDungeon.file") then
     if readfile("AutoDungeon.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Dungeon"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/autodungeon"))()
     end
 end]]
 
@@ -439,20 +439,22 @@ player.CharacterAdded:Connect(function(char)
     if globalStopTween then globalStopTween() end
 end)
 
---忽略的小怪 (友軍 / Enemies 前 3 個子物件)
-local IgnoreFlyMobs = { ["Blank Buddy"] = true }
+local FriendlyMobPrefixes = { "Blank Buddy" }
 
-local function isIgnoredFlyMob(npc)
+local function isFriendlyMob(npc)
     if not npc then return true end
-    if IgnoreFlyMobs[npc.Name] == true then return true end
-
-    -- 忽略 workspace.Enemies:GetChildren()[1] ~ [3]
-    local enemiesFolder = workspace:FindFirstChild("Enemies")
-    if enemiesFolder then
-        local children = enemiesFolder:GetChildren()
-        for i = 1, math.min(#children, 3) do
-            if children[i] == npc then return true end
+    local name = tostring(npc.Name)
+    for i = 1, #FriendlyMobPrefixes do
+        local prefix = FriendlyMobPrefixes[i]
+        if #name >= #prefix and string.sub(name, 1, #prefix) == prefix then
+            return true
         end
+    end
+    -- 兜底: 遊戲若以屬性標記友軍也一併忽略
+    local getAttr = npc.GetAttribute
+    if type(getAttr) == "function" then
+        local ok, val = pcall(getAttr, npc, "Friendly")
+        if ok and val == true then return true end
     end
     return false
 end
@@ -469,32 +471,101 @@ local function isLastKillBoss(npc)
     return npc and LastKillBosses[npc.Name] == true
 end
 
-local function enemiesAlive()
-    local enemies = workspace:FindFirstChild("Enemies")
-    if not enemies then return false end
-    for _, npc in ipairs(enemies:GetChildren()) do
-        if isIgnoredFlyMob(npc) then continue end -- 忽略友軍 不阻擋下一關
-        if not string.find(string.lower(npc.Name), "boss") and npc.Name ~= "Tyrant of the Skies" then
-            local hum = npc:FindFirstChild("Humanoid")
-            if hum and hum.Health > 0 then return true end
+-- 存活敵人追蹤器: 事件更新 + 定期校正 取代每秒全量掃描
+-- Count: 存活敵人數量 (過關判斷) / List: 存活敵人模型快取 (移動目標)
+local EnemyTracker = { Count = 0, List = {} }
+
+local function addToEnemyList(model)
+    for _, m in ipairs(EnemyTracker.List) do
+        if m == model then return end
+    end
+    EnemyTracker.List[#EnemyTracker.List + 1] = model
+end
+
+local function removeFromEnemyList(model)
+    for i = #EnemyTracker.List, 1, -1 do
+        if EnemyTracker.List[i] == model then
+            table.remove(EnemyTracker.List, i)
+            return
         end
     end
-    return false
+end
+
+local function resyncEnemyTracker()
+    local list = {}
+    local total = 0
+    local enemies = workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, npc in ipairs(enemies:GetChildren()) do
+            if isFriendlyMob(npc) then continue end
+            local hum = npc:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                total = total + 1
+                list[#list + 1] = npc
+            end
+        end
+    end
+    EnemyTracker.Count = total
+    EnemyTracker.List = list
+end
+
+local function bindEnemyWatcher(folder)
+    if not folder then return end
+    folder.DescendantAdded:Connect(function(desc)
+        if not desc:IsA("Humanoid") then return end
+        local npc = desc.Parent
+        if isFriendlyMob(npc) then return end
+        if desc.Health > 0 then
+            EnemyTracker.Count = EnemyTracker.Count + 1
+            addToEnemyList(npc)
+        end
+        desc.Died:Connect(function()
+            if EnemyTracker.Count > 0 then EnemyTracker.Count = EnemyTracker.Count - 1 end
+            removeFromEnemyList(npc)
+        end)
+    end)
+    folder.DescendantRemoving:Connect(function(desc)
+        if desc:IsA("Humanoid") and desc.Health > 0 and EnemyTracker.Count > 0 then
+            EnemyTracker.Count = EnemyTracker.Count - 1
+            removeFromEnemyList(desc.Parent)
+        end
+    end)
+end
+
+local enemiesFolder = workspace:FindFirstChild("Enemies")
+resyncEnemyTracker()
+bindEnemyWatcher(enemiesFolder)
+
+workspace.ChildAdded:Connect(function(child)
+    if child.Name == "Enemies" then
+        resyncEnemyTracker()
+        bindEnemyWatcher(child)
+    end
+end)
+
+-- 定期校正 防止事件遺漏造成計數漂移
+task.spawn(function()
+    while task.wait(3) do
+        resyncEnemyTracker()
+    end
+end)
+
+local function enemiesAlive()
+    return EnemyTracker.Count > 0
 end
 
 local function bossAlive()
     local boss = workspace:FindFirstChild("Boss")
-    if boss and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 then
-        return true
-    end
-    local enemies = workspace:FindFirstChild("Enemies")
-    if enemies then
-        for _, npc in ipairs(enemies:GetChildren()) do
-            if string.find(string.lower(npc.Name), "boss") or npc.Name == "Tyrant of the Skies" then
-                local hum = npc:FindFirstChild("Humanoid")
-                if hum and hum.Health > 0 then return true end
-            end
-        end
+    if not boss then return false end
+
+    -- Boss 本身是模型 (含 Humanoid)
+    local hum = boss:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health > 0 then return true end
+
+    -- Boss 是資料夾 (內含 Boss 模型)
+    for _, child in ipairs(boss:GetChildren()) do
+        local h = child:FindFirstChildOfClass("Humanoid")
+        if h and h.Health > 0 then return true end
     end
     return false
 end
@@ -564,6 +635,8 @@ end)
 
 local flyConn               = nil
 local lastTweenTargetPos    = nil
+local TargetScanInterval    = 0.000001
+local nextTargetScan        = 0
 
 local function stopFly()
     if flyConn then flyConn:Disconnect(); flyConn = nil end
@@ -591,21 +664,22 @@ local function startFly()
             return
         end
 
+        -- 使用事件維護的快取清單 不必每幀重掃 Enemies 資料夾
+        if os.clock() < nextTargetScan then return end
+        nextTargetScan = os.clock() + TargetScanInterval
+
         local closest, dist = nil, math.huge
         local bossClosest, bossDist = nil, math.huge
-        local enemiesFolder = workspace:FindFirstChild("Enemies")
-        if not enemiesFolder then return end
 
-        for _, npc in pairs(enemiesFolder:GetChildren()) do
-            if isIgnoredFlyMob(npc) then continue end -- 忽略友軍
-            if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 and npc.PrimaryPart then
-                local d = (npc.PrimaryPart.Position - curHRP.Position).Magnitude
-                if isLastKillBoss(npc) then
-                    -- Boss 最後打: 單獨比較 沒有其他小怪時才飛向 Boss
-                    if d < bossDist then bossDist = d; bossClosest = npc end
-                elseif d < dist then
-                    dist = d; closest = npc
-                end
+        for _, npc in ipairs(EnemyTracker.List) do
+            local primary = npc.PrimaryPart
+            if not primary then continue end
+            local d = (primary.Position - curHRP.Position).Magnitude
+            if isLastKillBoss(npc) then
+                -- Boss 最後打: 單獨比較 沒有其他小怪時才飛向 Boss
+                if d < bossDist then bossDist = d; bossClosest = npc end
+            elseif d < dist then
+                dist = d; closest = npc
             end
         end
 
@@ -811,7 +885,7 @@ local function GetTargets()
     local enemiesFolder  = Workspace:FindFirstChild("Enemies")
     if enemiesFolder then
         for _, model in ipairs(enemiesFolder:GetChildren()) do
-            if isIgnoredFlyMob(model) then continue end -- 忽略友軍 不阻擋打 Boss
+            if isFriendlyMob(model) then continue end -- 忽略友軍 不阻擋打 Boss
             local tHum = model:FindFirstChild("Humanoid")
             if tHum and tHum.Health > 0 and not isLastKillBoss(model) then
                 hasNormalEnemy = true
