@@ -617,7 +617,7 @@ end
 
 local ScriptLoadstring = [[if isfile("TopPVP.file") then
     if readfile("TopPVP.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/xuhub"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20hub(third%20edition)"))()
     end
 end]]
 
