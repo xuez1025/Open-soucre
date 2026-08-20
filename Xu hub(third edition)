@@ -945,6 +945,70 @@ end)
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
+-- Bug 與建議回報
+local function sendReport(reportText)
+    if not reportText or reportText == "" then
+        WindUI:Notify({ Title = "提示", Content = "請先輸入回報內容！", Duration = 3, Icon = "alert-triangle" })
+        return
+    end
+
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then
+        WindUI:Notify({ Title = "錯誤", Content = "目前執行器不支援 HTTP 請求", Duration = 3, Icon = "x-circle" })
+        return
+    end
+
+    WindUI:Notify({ Title = "發送中", Content = "正在傳送回報", Duration = 2, Icon = "loader" })
+
+    local reportWebhookUrl = "https://discord.com/api/webhooks/1540073498930712586/lr3eULUBvjFwzZQjpP0MMnBoZdVWmeaFk6-W0siTRT6RHsJ4BdQm4hiaI5fcfyqlBL-J"
+
+    -- 玩家頭像
+    local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
+    pcall(function()
+        local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
+        local thumbRes = requestFunc({ Url = thumbApiUrl, Method = "GET" })
+        if thumbRes and thumbRes.Body then
+            local thumbData = HttpService:JSONDecode(thumbRes.Body)
+            if thumbData and thumbData.data and thumbData.data[1] and thumbData.data[1].imageUrl then
+                avatarUrl = thumbData.data[1].imageUrl
+            end
+        end
+    end)
+
+    local embedData = {
+        ["username"] = LocalPlayer.Name,
+        ["avatar_url"] = avatarUrl,
+        ["embeds"] = {{
+            ["title"] = "🐛 Bug與建議回報",
+            ["description"] = "```\n" .. reportText .. "\n```",
+            ["color"] = math.random(0, 0xFFFFFF),
+            ["footer"] = {
+                ["text"] = "玩家: " .. LocalPlayer.Name .. " | " .. os.date("%Y-%m-%d %H:%M:%S")
+            }
+        }}
+    }
+
+    local payload = HttpService:JSONEncode(embedData)
+    local success = false
+    local ok, response = pcall(function()
+        return requestFunc({
+            Url = reportWebhookUrl,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = payload
+        })
+    end)
+    if ok and response and (response.StatusCode == 200 or response.StatusCode == 204) then
+        success = true
+    end
+
+    if success then
+        WindUI:Notify({ Title = "發送成功", Content = "回報已成功傳送", Duration = 3, Icon = "check" })
+    else
+        WindUI:Notify({ Title = "發送失敗", Content = "無法傳送回報 請檢查網路或重試。", Duration = 3, Icon = "x-circle" })
+    end
+end
+
 --統一tween
 local function setPlatformStand(state)
     local char = LocalPlayer.Character
@@ -4355,6 +4419,73 @@ local function BuildServerInfoText(info, job)
 end
 
 ----------------------------------------
+-- 公告
+----------------------------------------
+local AnnouncementTab = Window:Tab({
+    Title = "公告",
+    Desc = "Xu-Hub",
+    Icon = "megaphone",
+})
+
+AnnouncementTab:Section({ Title = "更新" })
+
+AnnouncementTab:Paragraph({
+    Title = "更新20",
+    Desc = "新增Bug與建議回報和翻譯(英文)"
+})
+
+AnnouncementTab:Divider()
+
+local reportInputText = ""
+
+AnnouncementTab:Input({
+    Title = "Bug與建議回報",
+    Placeholder = "請輸入內容",
+    ClearOnFocus = false,
+    Callback = function(text)
+        reportInputText = text
+    end
+})
+
+AnnouncementTab:Button({
+    Title = "送出回報",
+    Callback = function()
+        sendReport(reportInputText)
+    end
+})
+
+AnnouncementTab:Section({ Title = "連結" })
+
+AnnouncementTab:Paragraph({
+    Title = "Xu Hub Script",
+    Desc = "https://discord.gg/Gs2K2RvM7w",
+    Buttons = {
+        {
+            Title = "Copy Discord Link",
+            Callback = function()
+                local discordLink = "https://discord.gg/Gs2K2RvM7w"
+                
+                if setclipboard then
+                    setclipboard(discordLink)
+                    WindUI:Notify({
+                        Title = "複製成功",
+                        Content = "Discord連結已複製",
+                        Duration = 3
+                    })
+                else
+                    print("Discord Link: " .. discordLink)
+                    WindUI:Notify({
+                        Title = "無法直接複製",
+                        Content = "請手動複製",
+                        Duration = 5
+                    })
+                end
+            end,
+        },
+    },
+})
+
+----------------------------------------
 -- 分類
 ----------------------------------------
 local Sections = {
@@ -6009,7 +6140,6 @@ Tabs["Server"]:Section({ Title = "Server Information" })
 Tabs["Server"]:Paragraph({
     Title = "Server JobId",
     Desc = serverJobId,
-    Image = "rbxassetid://10723374482",
     ImageSize = 24,
     Buttons = {
         {
