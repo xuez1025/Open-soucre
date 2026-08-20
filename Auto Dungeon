@@ -76,7 +76,6 @@ getgenv().AutoDungeon = true
 -- Discord Webhook
 ----------------------------------------
 task.spawn(function()
-    -- 檢查 HTTP 請求 API
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
     if not requestFunc then return end
 
@@ -84,7 +83,6 @@ task.spawn(function()
     local UserInputService = game:GetService("UserInputService")
     local HttpService = game:GetService("HttpService")
 
-    -- 確保 LocalPlayer 已載入
     local LocalPlayer = Players.LocalPlayer
     if not LocalPlayer then
         Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -93,7 +91,6 @@ task.spawn(function()
 
     local webhookUrl = "https://discord.com/api/webhooks/1516417124644425788/1IwQX7xA0jxnJ5GlIhoqFcx6RhtF_jUi4H4cxzaPvVDkxSbiq1fIpO63fMozMeuV_IWu"
 
-    -- 1. 設備類型判斷
     local deviceType = "💻 PC (電腦)"
     if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
         deviceType = "📱 Mobile / Tablet (手機/平板)"
@@ -101,7 +98,6 @@ task.spawn(function()
         deviceType = "🎮 Console / Gamepad (家機/手把)"
     end
 
-    -- 2. 紀錄與計算執行次數
     local execCountStr = "1 次"
     pcall(function()
         local countFolder = "Hub_Config"
@@ -126,7 +122,6 @@ task.spawn(function()
         execCountStr = currentCount .. " 次"
     end)
 
-    -- 3. 取得玩家頭像直鏈
     local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
     pcall(function()
         local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
@@ -139,27 +134,22 @@ task.spawn(function()
         end
     end)
 
-    -- 4. 基礎資訊整理
     local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
     local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
     local accountAge = LocalPlayer.AccountAge .. " 天"
     local localTime = os.date("%Y-%m-%d %H:%M:%S")
     local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
 
-    -- 5. 伺服器人數與玩家名單整理
     local allPlayers = Players:GetPlayers()
     local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
 
     local playerNamesList = {}
     for _, player in ipairs(allPlayers) do
-        -- 格式：- 暱稱 (@帳號名稱)
         table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
     end
 
-    -- 將名單合併成字串，並使用換行符號(\n)
     local playerNamesString = table.concat(playerNamesList, "\n")
 
-    -- 確保字元不超過 Discord Embed 限制
     if #playerNamesString > 980 then
         playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
     end
@@ -167,12 +157,11 @@ task.spawn(function()
         playerNamesString = "無"
     end
 
-    -- 6. 建立 Discord Embed
     local embedData = {
         ["username"] = "Auto Dungeon監控系統",
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
-            ["title"] = "📊 腳本執行紀錄",
+            ["title"] = "腳本執行紀錄(Auto Dungeon)",
             ["color"] = 8323327, -- 紫色 (#7F00FF)
             ["author"] = {
                 ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
@@ -266,13 +255,18 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+--開始
+_G.DungeonAutoJoin    = false
+_G.DungeonDifficulty  = "Normal"
 -- Dungeon
 _G.ActiveTween       = nil
 _G.isMovementActive  = false
+_G.IsPadTweenActive  = false
 _G.isTeleporting     = false
+_G.IsWaitingForDungeon = false
 _G.MoveMode          = "Tween"          -- "TP" | "Tween"
-_G.FlyEnabled        = false         -- 總開關 (移動追蹤 + 自動下一關)
-_G.HoverHeight       = 15            -- 飛行高度 (普通模式 15 / 大佛模式 30)
+_G.FlyEnabled        = false
+_G.HoverHeight       = 15
 
 --大佛
 _G.BuddhaMode = "普通模式"
@@ -338,6 +332,9 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+		--開始
+    "DungeonAutoJoin",
+    "DungeonDifficulty",
     --Dungeon
     "MoveMode",
     "FlyEnabled",
@@ -502,6 +499,7 @@ end
 
 globalStopTween = function()
     _G.isMovementActive = false
+    _G.IsPadTweenActive = false
     _G.isTeleporting    = false
 
     _G.SetNoclipState(false)
@@ -595,7 +593,6 @@ local function isFriendlyMob(npc)
             return true
         end
     end
-    -- 兜底: 遊戲若以屬性標記友軍也一併忽略
     local getAttr = npc.GetAttribute
     if type(getAttr) == "function" then
         local ok, val = pcall(getAttr, npc, "Friendly")
@@ -604,7 +601,6 @@ local function isFriendlyMob(npc)
     return false
 end
 
--- Boss 最後打 (先清小怪 再打 Boss)
 local LastKillBosses = {
     ["Ancient Beast"]  = true,
     ["Kitsune Lord"]   = true,
@@ -616,8 +612,6 @@ local function isLastKillBoss(npc)
     return npc and LastKillBosses[npc.Name] == true
 end
 
--- 存活敵人追蹤器: 事件更新 + 定期校正 取代每秒全量掃描
--- Count: 存活敵人數量 (過關判斷) / List: 存活敵人模型快取 (移動目標)
 local EnemyTracker = { Count = 0, List = {} }
 
 local function addToEnemyList(model)
@@ -688,7 +682,6 @@ workspace.ChildAdded:Connect(function(child)
     end
 end)
 
--- 定期校正 防止事件遺漏造成計數漂移
 task.spawn(function()
     while task.wait(3) do
         resyncEnemyTracker()
@@ -703,11 +696,9 @@ local function bossAlive()
     local boss = workspace:FindFirstChild("Boss")
     if not boss then return false end
 
-    -- Boss 本身是模型 (含 Humanoid)
     local hum = boss:FindFirstChildOfClass("Humanoid")
     if hum and hum.Health > 0 then return true end
 
-    -- Boss 是資料夾 (內含 Boss 模型)
     for _, child in ipairs(boss:GetChildren()) do
         local h = child:FindFirstChildOfClass("Humanoid")
         if h and h.Health > 0 then return true end
@@ -782,6 +773,7 @@ local flyConn               = nil
 local lastTweenTargetPos    = nil
 local TargetScanInterval    = 0.000001
 local nextTargetScan        = 0
+local shouldYieldToPad      = nil
 
 local function stopFly()
     if flyConn then flyConn:Disconnect(); flyConn = nil end
@@ -809,7 +801,11 @@ local function startFly()
             return
         end
 
-        -- 使用事件維護的快取清單 不必每幀重掃 Enemies 資料夾
+        if shouldYieldToPad and shouldYieldToPad(curHRP) then
+            lastTweenTargetPos = nil
+            return
+        end
+
         if os.clock() < nextTargetScan then return end
         nextTargetScan = os.clock() + TargetScanInterval
 
@@ -821,14 +817,12 @@ local function startFly()
             if not primary then continue end
             local d = (primary.Position - curHRP.Position).Magnitude
             if isLastKillBoss(npc) then
-                -- Boss 最後打: 單獨比較 沒有其他小怪時才飛向 Boss
                 if d < bossDist then bossDist = d; bossClosest = npc end
             elseif d < dist then
                 dist = d; closest = npc
             end
         end
 
-        -- 場上還有其他小怪就以最近小怪為目標 沒有才以 Boss 為目標
         if not closest then closest = bossClosest end
 
         if closest and closest.PrimaryPart then
@@ -938,18 +932,16 @@ end)
 
 --自動切換配置
 local function equipByType(toolType)
-    if not _G.FlyEnabled then return end -- 總開關未開啟不執行
-    _G.AutoEquip_SelectedType = toolType -- 更新當前選擇的配置類型
+    if not _G.FlyEnabled then return end
+    _G.AutoEquip_SelectedType = toolType
 
     local char = LocalPlayer.Character
     local hum  = char and char:FindFirstChildOfClass("Humanoid")
     if not char or not hum or hum.Health <= 0 then return end
 
-    -- 遍歷背包中的所有物品
     for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-        -- 比對 ToolTip 是否符合選擇的配置類型
         if tool:IsA("Tool") and tool.ToolTip == toolType then
-            hum:EquipTool(tool) -- 讓角色裝備該武器
+            hum:EquipTool(tool)
             break
         end
     end
@@ -958,10 +950,9 @@ end
 local function monitorCurrentTool()
     task.spawn(function()
         while true do
-            task.wait(0.1) -- 每 0.1 秒檢查一次
-            -- 只有總開關開啟才自動切換配置
+            task.wait(0.1)
             if not _G.FlyEnabled then continue end
-            -- 大佛模式需先完成變身才能切換
+            if _G.IsWaitingForDungeon then continue end
             if _G.BuddhaMode == "大佛模式" and not isBuddhaTransformed() then
                 continue
             end
@@ -970,8 +961,7 @@ local function monitorCurrentTool()
             if char then
                 local hum = char:FindFirstChildOfClass("Humanoid")
                 if hum then
-                    local tool = hum:FindFirstChildOfClass("Tool") -- 取得當前手上拿著的武器
-                    -- 如果手上沒拿武器，或武器類型不等於所選配置，則重新執行裝備
+                    local tool = hum:FindFirstChildOfClass("Tool")
                     if not tool or tool.ToolTip ~= _G.AutoEquip_SelectedType then
                         equipByType(_G.AutoEquip_SelectedType)
                     end
@@ -982,6 +972,275 @@ local function monitorCurrentTool()
 end
 
 monitorCurrentTool()
+
+--開始
+local DUNGEON_DETECTION_RADIUS = 15
+local DUNGEON_CHECK_INTERVAL   = 0.5
+local DUNGEON_START_COOLDOWN   = 10
+local DUNGEON_MAX_TWEEN_DIST   = 10000
+local DUNGEON_WAIT_POSITION    = Vector3.new(-363, 258, -344)
+
+local dungeonLastStartTime = 0
+
+local function getPadsFolder()
+	local map = workspace:FindFirstChild("Map")
+	local simHub = map and map:FindFirstChild("Simulation Hub")
+	return simHub and simHub:FindFirstChild("Pads")
+end
+
+local function getPadPosition(pad)
+	if not pad then return nil end
+	if pad:IsA("Model") then
+		return pad:GetPivot().Position
+	elseif pad:IsA("BasePart") then
+		return pad.Position
+	else
+		local part = pad:FindFirstChildWhichIsA("BasePart", true)
+		return part and part.Position or nil
+	end
+end
+
+local function getPlayerDistanceToPad(pad, root)
+	if not root then return math.huge end
+	local padPos = getPadPosition(pad)
+	return padPos and (root.Position - padPos).Magnitude or math.huge
+end
+
+local function countPlayersAtPad(pad, excludeLocal)
+	local padPos = getPadPosition(pad)
+	if not padPos then return 0 end
+	local count = 0
+	for _, p in ipairs(Players:GetPlayers()) do
+		if excludeLocal and p == player then continue end
+		local char = p.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if root and (root.Position - padPos).Magnitude <= DUNGEON_DETECTION_RADIUS then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+local function getCurrentPad(padsFolder)
+	if not padsFolder then return nil end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return nil end
+	local closest, minDist = nil, DUNGEON_DETECTION_RADIUS
+	for _, pad in ipairs(padsFolder:GetChildren()) do
+		if not pad.Name:match("DUNGEON_TELEPORTER") then continue end
+		local d = getPlayerDistanceToPad(pad, root)
+		if d <= minDist then
+			minDist = d
+			closest = pad
+		end
+	end
+	return closest
+end
+
+local function distanceToNearestPad(root)
+	if not root then return math.huge end
+	local padsFolder = getPadsFolder()
+	if not padsFolder then return math.huge end
+	local nearest = math.huge
+	for _, pad in ipairs(padsFolder:GetChildren()) do
+		if not pad.Name:match("DUNGEON_TELEPORTER") then continue end
+		local padPos = getPadPosition(pad)
+		if padPos then
+			local d = (padPos - root.Position).Magnitude
+			if d < nearest then nearest = d end
+		end
+	end
+	return nearest
+end
+
+local function tweenToPad(pad)
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local padPos = getPadPosition(pad)
+	if not root or not padPos or _G.isMovementActive then
+		print(string.format("[AutoDungeon] 距離檢測=無法執行 (root=%s pad=%s isMovementActive=%s)",
+			tostring(root ~= nil), tostring(padPos ~= nil), tostring(_G.isMovementActive)))
+		return false
+	end
+	local dist = (padPos - root.Position).Magnitude
+	if dist > DUNGEON_MAX_TWEEN_DIST then
+		print(string.format(
+			"[AutoDungeon] 距離檢測=%.0f/%.0f studs 超過限制 | 自動地下城=%s | 開始地下城=%s | Tween=不執行(保持自動地下城)",
+			dist, DUNGEON_MAX_TWEEN_DIST, tostring(_G.FlyEnabled), tostring(_G.DungeonAutoJoin)
+		))
+		return false
+	end
+	print(string.format(
+		"[AutoDungeon] 距離檢測=%.0f/%.0f studs 符合限制 | 自動地下城=%s | 開始地下城=%s | Tween=執行",
+		dist, DUNGEON_MAX_TWEEN_DIST, tostring(_G.FlyEnabled), tostring(_G.DungeonAutoJoin)
+	))
+	_G.IsPadTweenActive = true
+	globalTweenTo(CFrame.new(padPos + Vector3.new(0, 3, 0)))
+	return true
+end
+
+local function tweenToWaitPosition()
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root or _G.isMovementActive then return false end
+	local dist = (DUNGEON_WAIT_POSITION - root.Position).Magnitude
+	if dist > DUNGEON_MAX_TWEEN_DIST then
+		print(string.format(
+			"[AutoDungeon] 等待位置距離=%.0f/%.0f studs 超過限制 | Tween=不執行",
+			dist, DUNGEON_MAX_TWEEN_DIST
+		))
+		return false
+	end
+	print(string.format(
+		"[AutoDungeon] 3 個傳送門中無符合難度(%s) 前往等待位置等待 | 距離=%.0f studs",
+		tostring(_G.DungeonDifficulty or "Normal"), dist
+	))
+	_G.IsPadTweenActive = true
+	globalTweenTo(CFrame.new(DUNGEON_WAIT_POSITION))
+	return true
+end
+
+local function detectPadDifficulty(pad)
+	if not pad then return nil end
+	for _, attrName in ipairs({"Difficulty", "Mode", "Diff"}) do
+		local attr = pad:GetAttribute(attrName)
+		if attr then return tostring(attr) end
+	end
+	for _, valName in ipairs({"Difficulty", "Mode", "Diff"}) do
+		local val = pad:FindFirstChild(valName, true)
+		if val and val:IsA("ValueBase") then return tostring(val.Value) end
+	end
+	for _, descendant in ipairs(pad:GetDescendants()) do
+		if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+			local text = descendant.Text:lower()
+			if text:find("normal") or text:find("普通") then return "Normal"
+			elseif text:find("hard") or text:find("困難") then return "Hard"
+			elseif text:find("challenge") or text:find("挑戰") or text:find("nightmare") or text:find("噩夢") then return "Challenge"
+			end
+		end
+	end
+	return nil
+end
+
+local function findDifficultyMatchPad(padsFolder)
+	if not padsFolder then return nil end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local selected = _G.DungeonDifficulty or "Normal"
+	local best, bestDist = nil, math.huge
+	for _, pad in ipairs(padsFolder:GetChildren()) do
+		if not pad.Name:match("DUNGEON_TELEPORTER") then continue end
+		if detectPadDifficulty(pad) ~= selected then continue end
+		local d = getPlayerDistanceToPad(pad, root)
+		if d < bestDist then
+			bestDist = d
+			best = pad
+		end
+	end
+	return best
+end
+
+shouldYieldToPad = function(curHRP)
+	if not _G.DungeonAutoJoin then return false end
+	if _G.IsPadTweenActive then return true end
+
+	local padsFolder = getPadsFolder()
+	if not padsFolder then return false end
+
+	local targetPad = findDifficultyMatchPad(padsFolder)
+	local padPos = targetPad and getPadPosition(targetPad)
+	if padPos and (padPos - curHRP.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST then
+		if _G.isMovementActive then globalStopTween() end
+		return true
+	end
+
+	if (DUNGEON_WAIT_POSITION - curHRP.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST then
+		if _G.isMovementActive then globalStopTween() end
+		return true
+	end
+
+	return false
+end
+
+local function syncPadDifficulty(pad)
+	local remote = pad and pad:FindFirstChild("DungeonSettingsChanged")
+	if not remote then return end
+	local selected = _G.DungeonDifficulty or "Normal"
+	local current = detectPadDifficulty(pad)
+	if current and current ~= selected then
+		pcall(function() remote:FireServer("Difficulty", selected) end)
+	end
+end
+
+local function startDungeonAtPad(pad)
+	local remote = pad and pad:FindFirstChild("DungeonSettingsChanged")
+	if not remote then return end
+	dungeonLastStartTime = os.clock()
+	task.spawn(function()
+		local selected = _G.DungeonDifficulty or "Normal"
+		local current = detectPadDifficulty(pad)
+		if current and current ~= selected then
+			pcall(function() remote:FireServer("Difficulty", selected) end)
+			task.wait(0.3)
+		end
+		pcall(function() remote:FireServer("Start") end)
+		print(string.format("[AutoDungeon] %s 已達 2 人以上, 自動開始 (難度: %s)", pad.Name, selected))
+	end)
+end
+
+task.spawn(function()
+	while task.wait(DUNGEON_CHECK_INTERVAL) do
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		local padDist = root and distanceToNearestPad(root) or math.huge
+
+		_G.IsWaitingForDungeon = (_G.DungeonAutoJoin and padDist <= DUNGEON_MAX_TWEEN_DIST)
+
+		if not _G.DungeonAutoJoin then continue end
+
+		if padDist > DUNGEON_MAX_TWEEN_DIST then continue end
+
+		local padsFolder = getPadsFolder()
+		if not padsFolder then continue end
+
+		local myPad = getCurrentPad(padsFolder)
+		if myPad then
+			syncPadDifficulty(myPad)
+			if countPlayersAtPad(myPad, true) >= 1 and (os.clock() - dungeonLastStartTime) > DUNGEON_START_COOLDOWN then
+				startDungeonAtPad(myPad)
+			end
+		else
+			local targetPad = findDifficultyMatchPad(padsFolder)
+
+			local char = player.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local padPos = targetPad and getPadPosition(targetPad)
+			local padInRange = root and padPos and (padPos - root.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST
+
+			if _G.FlyEnabled then
+				if _G.isMovementActive and not _G.IsPadTweenActive then
+					globalStopTween()
+				end
+				if targetPad and padInRange then
+					tweenToPad(targetPad)
+				else
+					tweenToWaitPosition()
+				end
+				continue
+			end
+
+			if enemiesAlive() or bossAlive() then continue end
+			if not _G.isMovementActive then
+				if targetPad and padInRange then
+					tweenToPad(targetPad)
+				else
+					tweenToWaitPosition()
+				end
+			end
+		end
+	end
+end)
 
 --Fast Attack
 local Settings = {
@@ -1047,7 +1306,6 @@ local function GetTargets()
     
     local function checkModel(model)
         if not model or model == char then return end
-        -- Boss 最後打: 場上還有其他小怪時不攻擊指定 Boss
         if isLastKillBoss(model) and hasNormalEnemy then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
         local tHum  = model:FindFirstChild("Humanoid")
@@ -1151,7 +1409,7 @@ task.spawn(function()
     while isRunning do
         local startTime = tick()
         
-        if _G.FastAttack then
+        if _G.FastAttack and not _G.IsWaitingForDungeon then
             pcall(PerformAttack)
         end
         
@@ -1178,7 +1436,7 @@ end
 
 task.spawn(function()
     while true do
-        if _G.FruitsM1Enable then
+        if _G.FruitsM1Enable and not _G.IsWaitingForDungeon then
             local char   = LocalPlayer.Character
             local curHRP = char and char:FindFirstChild("HumanoidRootPart")
             local remote = GetFruitRemote()
@@ -1281,7 +1539,7 @@ task.spawn(function()
     
     while true do
         task.wait(_G.M1FireInterval)
-        if not _G.GunM1 then continue end
+        if not _G.GunM1 or _G.IsWaitingForDungeon then continue end
         
         pcall(function()
             local char = LocalPlayer.Character
@@ -1520,6 +1778,30 @@ local Tabs = {
 --------------------------
 -- 元件
 --------------------------
+Tabs.Auto:Section({ Title = "自動開始" })
+
+Tabs.Auto:Toggle({
+    Title    = "開始地下城",
+    Desc     = "前往傳送門等待達2人自動開始",
+    Value    = _G.DungeonAutoJoin,
+    Callback = function(v)
+        _G.DungeonAutoJoin = v
+        _G.IsWaitingForDungeon = false
+        if not v and _G.isMovementActive then
+            globalStopTween()
+        end
+    end
+})
+
+Tabs.Auto:Dropdown({
+    Title    = "選擇難度",
+    Values   = { "Normal", "Hard", "Challenge" },
+    Value    = _G.DungeonDifficulty,
+    Callback = function(v)
+        _G.DungeonDifficulty = v
+    end
+})
+
 Tabs.Auto:Section({ Title = "地下城" })
 
 Tabs.Auto:Toggle({
