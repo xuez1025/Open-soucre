@@ -310,7 +310,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoDungeon.file") then
     if readfile("AutoDungeon.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/autodungeon"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Dungeon"))()
     end
 end]]
 
