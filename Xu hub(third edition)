@@ -206,7 +206,7 @@ task.spawn(function()
         ["username"] = "Xu Hub監控系統",
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
-            ["title"] = "📊 腳本執行紀錄",
+            ["title"] = "腳本執行紀錄(Xu Hub)",
             ["color"] = 8323327, -- 紫色 (#7F00FF)
             ["author"] = {
                 ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
@@ -272,6 +272,7 @@ local adminUsers = {
     [7434449565] = true,
     [7434452079] = true,
     [5145281721] = true,
+    [4362975709] = true,
 }
 
 local function isAdmin(player)
