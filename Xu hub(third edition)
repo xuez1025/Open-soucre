@@ -948,7 +948,7 @@ end)
 -- Bug 與建議回報
 local function sendReport(reportText)
     if not reportText or reportText == "" then
-        WindUI:Notify({ Title = "提示", Content = "請先輸入回報內容！", Duration = 3, Icon = "alert-triangle" })
+        WindUI:Notify({ Title = "提示", Content = "請先輸入回報內容！", Duration = 3, })
         return
     end
 
@@ -979,7 +979,7 @@ local function sendReport(reportText)
         ["username"] = LocalPlayer.Name,
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
-            ["title"] = "🐛 Bug與建議回報",
+            ["title"] = "💬 新通知",
             ["description"] = "```\n" .. reportText .. "\n```",
             ["color"] = math.random(0, 0xFFFFFF),
             ["footer"] = {
