@@ -979,7 +979,7 @@ local function sendReport(reportText)
         ["username"] = LocalPlayer.Name,
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
-            ["title"] = "💬 新通知",
+            ["title"] = "💬 Xu Hub新通知",
             ["description"] = "```\n" .. reportText .. "\n```",
             ["color"] = math.random(0, 0xFFFFFF),
             ["footer"] = {
