@@ -4431,7 +4431,7 @@ AnnouncementTab:Section({ Title = "更新" })
 
 AnnouncementTab:Paragraph({
     Title = "更新20",
-    Desc = "新增Bug與建議回報和翻譯(英文)"
+    Desc = "新增Bug與建議回報"
 })
 
 AnnouncementTab:Divider()
