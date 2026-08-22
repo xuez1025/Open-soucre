@@ -76,6 +76,7 @@ getgenv().AutoDungeon = true
 -- Discord Webhook
 ----------------------------------------
 task.spawn(function()
+    -- 檢查 HTTP 請求 API
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
     if not requestFunc then return end
 
@@ -83,6 +84,7 @@ task.spawn(function()
     local UserInputService = game:GetService("UserInputService")
     local HttpService = game:GetService("HttpService")
 
+    -- 確保 LocalPlayer 已載入
     local LocalPlayer = Players.LocalPlayer
     if not LocalPlayer then
         Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -91,6 +93,7 @@ task.spawn(function()
 
     local webhookUrl = "https://discord.com/api/webhooks/1516417124644425788/1IwQX7xA0jxnJ5GlIhoqFcx6RhtF_jUi4H4cxzaPvVDkxSbiq1fIpO63fMozMeuV_IWu"
 
+    -- 1. 設備類型判斷
     local deviceType = "💻 PC (電腦)"
     if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
         deviceType = "📱 Mobile / Tablet (手機/平板)"
@@ -98,6 +101,7 @@ task.spawn(function()
         deviceType = "🎮 Console / Gamepad (家機/手把)"
     end
 
+    -- 2. 紀錄與計算執行次數
     local execCountStr = "1 次"
     pcall(function()
         local countFolder = "Hub_Config"
@@ -122,6 +126,7 @@ task.spawn(function()
         execCountStr = currentCount .. " 次"
     end)
 
+    -- 3. 取得玩家頭像直鏈
     local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
     pcall(function()
         local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
@@ -134,22 +139,27 @@ task.spawn(function()
         end
     end)
 
+    -- 4. 基礎資訊整理
     local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
     local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
     local accountAge = LocalPlayer.AccountAge .. " 天"
     local localTime = os.date("%Y-%m-%d %H:%M:%S")
     local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
 
+    -- 5. 伺服器人數與玩家名單整理
     local allPlayers = Players:GetPlayers()
     local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
 
     local playerNamesList = {}
     for _, player in ipairs(allPlayers) do
+        -- 格式：- 暱稱 (@帳號名稱)
         table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
     end
 
+    -- 將名單合併成字串，並使用換行符號(\n)
     local playerNamesString = table.concat(playerNamesList, "\n")
 
+    -- 確保字元不超過 Discord Embed 限制
     if #playerNamesString > 980 then
         playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
     end
@@ -157,6 +167,7 @@ task.spawn(function()
         playerNamesString = "無"
     end
 
+    -- 6. 建立 Discord Embed
     local embedData = {
         ["username"] = "Auto Dungeon監控系統",
         ["avatar_url"] = avatarUrl,
@@ -250,6 +261,10 @@ local Window = WindUI:CreateWindow({
 --UI被關閉可重複執行
 Window:OnDestroy(function()
     getgenv().AutoDungeon = nil
+    if getgenv().cardScanTask then
+        task.cancel(getgenv().cardScanTask)
+        getgenv().cardScanTask = nil
+    end
 end)
 
 ----------------------------------------
@@ -258,21 +273,26 @@ end)
 --開始
 _G.DungeonAutoJoin    = false
 _G.DungeonDifficulty  = "Normal"
+
 -- Dungeon
 _G.ActiveTween       = nil
 _G.isMovementActive  = false
-_G.IsPadTweenActive  = false
+_G.IsPadTweenActive  = false     -- 標記傳送門 tween 進行中 (與飛行 tween 區分)
 _G.isTeleporting     = false
-_G.IsWaitingForDungeon = false
 _G.MoveMode          = "Tween"          -- "TP" | "Tween"
-_G.FlyEnabled        = false
-_G.HoverHeight       = 15
+_G.FlyEnabled        = false         -- 總開關 (移動追蹤 + 自動下一關)
+_G.HoverHeight       = 15            -- 飛行高度 (普通模式 15 / 大佛模式 30)
 
 --大佛
 _G.BuddhaMode = "普通模式"
 
 --自動切換配置
 _G.AutoEquip_SelectedType = "Melee"
+
+-- 自動選卡
+_G.AutoCard_Enabled = false
+_G.AutoCard_ModeIndex = 1
+_G.AutoCard_AltClick = false
 
 --Fast Attack
 _G.FastAttack = true
@@ -310,7 +330,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoDungeon.file") then
     if readfile("AutoDungeon.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Dungeon"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/autodungeon"))()
     end
 end]]
 
@@ -342,6 +362,10 @@ local ConfigKeys = {
 		"BuddhaMode",
     --自動切換配置
     "AutoEquip_SelectedType",
+    --自動選卡
+    "AutoCard_Enabled",
+    "AutoCard_ModeIndex",
+    "AutoCard_AltClick",
     --Fast Attack
     "FastAttack",
     "AttackDistance",
@@ -773,7 +797,7 @@ local flyConn               = nil
 local lastTweenTargetPos    = nil
 local TargetScanInterval    = 0.000001
 local nextTargetScan        = 0
-local shouldYieldToPad      = nil
+local shouldYieldToPad      = nil  -- 後續賦值: 範圍內時讓飛行讓出控制權給傳送門 tween
 
 local function stopFly()
     if flyConn then flyConn:Disconnect(); flyConn = nil end
@@ -801,6 +825,7 @@ local function startFly()
             return
         end
 
+        -- 「開始地下城」+「自動地下城」同時開啟且在範圍內: 飛行讓出控制權給傳送門 tween
         if shouldYieldToPad and shouldYieldToPad(curHRP) then
             lastTweenTargetPos = nil
             return
@@ -932,8 +957,8 @@ end)
 
 --自動切換配置
 local function equipByType(toolType)
-    if not _G.FlyEnabled then return end
-    _G.AutoEquip_SelectedType = toolType
+    if not _G.FlyEnabled then return end -- 總開關未開啟不執行
+    _G.AutoEquip_SelectedType = toolType -- 更新當前選擇的配置類型
 
     local char = LocalPlayer.Character
     local hum  = char and char:FindFirstChildOfClass("Humanoid")
@@ -941,7 +966,7 @@ local function equipByType(toolType)
 
     for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
         if tool:IsA("Tool") and tool.ToolTip == toolType then
-            hum:EquipTool(tool)
+            hum:EquipTool(tool) -- 讓角色裝備該武器
             break
         end
     end
@@ -950,9 +975,8 @@ end
 local function monitorCurrentTool()
     task.spawn(function()
         while true do
-            task.wait(0.1)
+            task.wait(0.1) -- 每 0.1 秒檢查一次
             if not _G.FlyEnabled then continue end
-            if _G.IsWaitingForDungeon then continue end
             if _G.BuddhaMode == "大佛模式" and not isBuddhaTransformed() then
                 continue
             end
@@ -961,7 +985,7 @@ local function monitorCurrentTool()
             if char then
                 local hum = char:FindFirstChildOfClass("Humanoid")
                 if hum then
-                    local tool = hum:FindFirstChildOfClass("Tool")
+                    local tool = hum:FindFirstChildOfClass("Tool") -- 取得當前手上拿著的武器
                     if not tool or tool.ToolTip ~= _G.AutoEquip_SelectedType then
                         equipByType(_G.AutoEquip_SelectedType)
                     end
@@ -974,11 +998,10 @@ end
 monitorCurrentTool()
 
 --開始
-local DUNGEON_DETECTION_RADIUS = 15
-local DUNGEON_CHECK_INTERVAL   = 0.5
-local DUNGEON_START_COOLDOWN   = 10
-local DUNGEON_MAX_TWEEN_DIST   = 10000
-local DUNGEON_WAIT_POSITION    = Vector3.new(-363, 258, -344)
+local DUNGEON_DETECTION_RADIUS = 15   -- 感應範圍距離 (單位)
+local DUNGEON_CHECK_INTERVAL   = 0.5  -- 後台檢查頻率 (秒)
+local DUNGEON_START_COOLDOWN   = 10   -- 觸發開始後的冷卻時間 (秒)
+local DUNGEON_MAX_TWEEN_DIST   = 10000 -- 距離限制: 超過此距離不 tween 到傳送門
 
 local dungeonLastStartTime = 0
 
@@ -1021,6 +1044,23 @@ local function countPlayersAtPad(pad, excludeLocal)
 	return count
 end
 
+local function findEmptyPad(padsFolder)
+	if not padsFolder then return nil end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local best, bestDist = nil, math.huge
+	for _, pad in ipairs(padsFolder:GetChildren()) do
+		if not pad.Name:match("DUNGEON_TELEPORTER") then continue end
+		if countPlayersAtPad(pad, true) > 0 then continue end
+		local d = getPlayerDistanceToPad(pad, root)
+		if d < bestDist then
+			bestDist = d
+			best = pad
+		end
+	end
+	return best
+end
+
 local function getCurrentPad(padsFolder)
 	if not padsFolder then return nil end
 	local char = player.Character
@@ -1036,22 +1076,6 @@ local function getCurrentPad(padsFolder)
 		end
 	end
 	return closest
-end
-
-local function distanceToNearestPad(root)
-	if not root then return math.huge end
-	local padsFolder = getPadsFolder()
-	if not padsFolder then return math.huge end
-	local nearest = math.huge
-	for _, pad in ipairs(padsFolder:GetChildren()) do
-		if not pad.Name:match("DUNGEON_TELEPORTER") then continue end
-		local padPos = getPadPosition(pad)
-		if padPos then
-			local d = (padPos - root.Position).Magnitude
-			if d < nearest then nearest = d end
-		end
-	end
-	return nearest
 end
 
 local function tweenToPad(pad)
@@ -1077,27 +1101,6 @@ local function tweenToPad(pad)
 	))
 	_G.IsPadTweenActive = true
 	globalTweenTo(CFrame.new(padPos + Vector3.new(0, 3, 0)))
-	return true
-end
-
-local function tweenToWaitPosition()
-	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	if not root or _G.isMovementActive then return false end
-	local dist = (DUNGEON_WAIT_POSITION - root.Position).Magnitude
-	if dist > DUNGEON_MAX_TWEEN_DIST then
-		print(string.format(
-			"[AutoDungeon] 等待位置距離=%.0f/%.0f studs 超過限制 | Tween=不執行",
-			dist, DUNGEON_MAX_TWEEN_DIST
-		))
-		return false
-	end
-	print(string.format(
-		"[AutoDungeon] 3 個傳送門中無符合難度(%s) 前往等待位置等待 | 距離=%.0f studs",
-		tostring(_G.DungeonDifficulty or "Normal"), dist
-	))
-	_G.IsPadTweenActive = true
-	globalTweenTo(CFrame.new(DUNGEON_WAIT_POSITION))
 	return true
 end
 
@@ -1141,26 +1144,26 @@ local function findDifficultyMatchPad(padsFolder)
 	return best
 end
 
+-- 飛行讓出機制: 開始地下城開啟且距離傳送門在限制內時回傳 true, 讓飛行停止移動並把控制權交給傳送門 tween
 shouldYieldToPad = function(curHRP)
 	if not _G.DungeonAutoJoin then return false end
-	if _G.IsPadTweenActive then return true end
+	if _G.IsPadTweenActive then return true end -- 傳送門 tween 進行中, 飛行不得干擾
 
 	local padsFolder = getPadsFolder()
 	if not padsFolder then return false end
-
-	local targetPad = findDifficultyMatchPad(padsFolder)
-	local padPos = targetPad and getPadPosition(targetPad)
-	if padPos and (padPos - curHRP.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST then
-		if _G.isMovementActive then globalStopTween() end
-		return true
+	local targetPad = findEmptyPad(padsFolder)
+	if not targetPad then
+		targetPad = findDifficultyMatchPad(padsFolder)
 	end
+	if not targetPad then return false end
 
-	if (DUNGEON_WAIT_POSITION - curHRP.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST then
-		if _G.isMovementActive then globalStopTween() end
-		return true
-	end
+	local padPos = getPadPosition(targetPad)
+	if not padPos then return false end
+	if (padPos - curHRP.Position).Magnitude > DUNGEON_MAX_TWEEN_DIST then return false end
 
-	return false
+	-- 距離在限制內: 停止飛行移動, 讓出控制權
+	if _G.isMovementActive then globalStopTween() end
+	return true
 end
 
 local function syncPadDifficulty(pad)
@@ -1191,15 +1194,7 @@ end
 
 task.spawn(function()
 	while task.wait(DUNGEON_CHECK_INTERVAL) do
-		local char = player.Character
-		local root = char and char:FindFirstChild("HumanoidRootPart")
-		local padDist = root and distanceToNearestPad(root) or math.huge
-
-		_G.IsWaitingForDungeon = (_G.DungeonAutoJoin and padDist <= DUNGEON_MAX_TWEEN_DIST)
-
 		if not _G.DungeonAutoJoin then continue end
-
-		if padDist > DUNGEON_MAX_TWEEN_DIST then continue end
 
 		local padsFolder = getPadsFolder()
 		if not padsFolder then continue end
@@ -1211,36 +1206,235 @@ task.spawn(function()
 				startDungeonAtPad(myPad)
 			end
 		else
-			local targetPad = findDifficultyMatchPad(padsFolder)
+			local targetPad = findEmptyPad(padsFolder)
+			if not targetPad then
+				targetPad = findDifficultyMatchPad(padsFolder)
+			end
 
 			local char = player.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart")
 			local padPos = targetPad and getPadPosition(targetPad)
-			local padInRange = root and padPos and (padPos - root.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST
+			local inRange = root and padPos and (padPos - root.Position).Magnitude <= DUNGEON_MAX_TWEEN_DIST
 
-			if _G.FlyEnabled then
+			-- 兩個開關同時開啟且距離在 10000 studs 內: 優先 tween 到傳送門 (即使飛行中/場上有怪)
+			if _G.FlyEnabled and inRange then
 				if _G.isMovementActive and not _G.IsPadTweenActive then
 					globalStopTween()
 				end
-				if targetPad and padInRange then
-					tweenToPad(targetPad)
-				else
-					tweenToWaitPosition()
-				end
+				tweenToPad(targetPad)
 				continue
 			end
 
+			-- 超出範圍或自動地下城未開啟: 維持原邏輯 (距離判斷由 tweenToPad 內部控管)
 			if enemiesAlive() or bossAlive() then continue end
 			if not _G.isMovementActive then
-				if targetPad and padInRange then
-					tweenToPad(targetPad)
-				else
-					tweenToWaitPosition()
-				end
+				if targetPad then tweenToPad(targetPad) end
 			end
 		end
 	end
 end)
+
+----------------------------------------
+-- 自動選卡
+----------------------------------------
+local GuiService = game:GetService("GuiService")
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local MATCH_RULES = {
+    [1]  = {"Unbreakable", {}},
+    [2]  = {"Fortress", {}},
+    [3]  = {"Lifesteal", {}},
+    [4]  = {"Armor", {}},
+    [5]  = {"Sniper", {}},
+    [6]  = {"HYPER!", {}},
+    [7]  = {"Fruit M1 Speed", {}},
+    [8]  = {"Fruit", {"Cooldown", "M1", "Meter", "Speed"}},
+    [9]  = {"Sword", {"Cooldown"}},
+    [10] = {"Melee", {"Cooldown"}},
+    [11] = {"Gun", {"Cooldown"}},
+    [12] = {"Defense", {}},
+    [13] = {"Race Meter", {}},
+    [14] = {"Fruit Meter", {}},
+    [15] = {"All Cooldowns", {}},
+    [16] = {"Fruit Cooldowns", {"(Z Skill)", "(X Skill)", "(C Skill)", "(V Skill)"}},
+    [17] = {"Sword Cooldowns", {"(Z Skill)", "(X Skill)"}},
+    [18] = {"Melee Cooldowns", {"(Z Skill)", "(X Skill)", "(C Skill)"}},
+    [19] = {"Gun Cooldowns", {"(Z Skill)", "(X Skill)"}},
+    [20] = {"Fruit Cooldown (Z Skill)", {}},
+    [21] = {"Fruit Cooldown (X Skill)", {}},
+    [22] = {"Fruit Cooldown (C Skill)", {}},
+    [23] = {"Fruit Cooldown (V Skill)", {}},
+    [24] = {"Sword Cooldown (Z Skill)", {}},
+    [25] = {"Sword Cooldown (X Skill)", {}},
+    [26] = {"Melee Cooldown (Z Skill)", {}},
+    [27] = {"Melee Cooldown (X Skill)", {}},
+    [28] = {"Melee Cooldown (C Skill)", {}},
+    [29] = {"Gun Cooldown (Z Skill)", {}},
+    [30] = {"Gun Cooldown (X Skill)", {}},
+    [31] = {"Overflow", {}},
+    [32] = {"Shadow", {}},
+    [33] = {"Size", {}},
+    [34] = {"Skyjumps", {}},
+    [35] = {"Healing Constructs", {}},
+}
+
+local MODES = {
+    {name = "Melee",      priority = { 10, 6, 3, 4, 1, 2, 12, 31, 13, 15, 18, 26, 27, 28, 32, 34 }},
+    {name = "Blox fruit", priority = { 8, 7, 6, 3, 4, 1, 2, 12, 31, 13, 14, 15, 16, 20, 21, 22, 23, 32, 34 }},
+    {name = "Sword",      priority = { 9, 6, 3, 4, 1, 2, 12, 31, 13, 15, 17, 24, 25, 34 }},
+    {name = "Gun",        priority = { 11, 5, 6, 3, 4, 1, 2, 12, 31, 13, 15, 19, 29, 30, 32, 34 }},
+}
+
+local modeNames = {"Melee", "Blox fruit", "Sword", "Gun"}
+
+local runtimeState = {
+    hasLifesteal = false
+}
+
+local function clickCard(card)
+    -- 1. 常規 firesignal 觸發
+    pcall(function()
+        firesignal(card.InputBegan)
+        firesignal(card.Activated)
+        firesignal(card.MouseButton1Click)
+        firesignal(card.MouseButton1Down)
+    end)
+    pcall(function()
+        for _, child in ipairs(card:GetDescendants()) do
+            if child:IsA("TextButton") or child:IsA("ImageButton") then
+                firesignal(child.Activated)
+                firesignal(child.MouseButton1Click)
+                firesignal(child.InputBegan)
+                firesignal(child.MouseButton1Down)
+            end
+        end
+    end)
+
+    if not _G.AutoCard_AltClick then return end
+
+    -- 2. 備用物理點擊邏輯 (修正坐標計算與模擬輸入)
+    pcall(function()
+        local guiInset = GuiService:GetGuiInset()
+        local centerX = card.AbsolutePosition.X + card.AbsoluteSize.X / 2
+        local centerY = card.AbsolutePosition.Y + card.AbsoluteSize.Y / 2 + guiInset.Y
+
+        -- VirtualInputManager 模擬點擊
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+        task.wait(0.05)
+        VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+
+        -- VirtualUser 模擬點擊補償
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(centerX, centerY))
+        task.wait(0.05)
+        VirtualUser:Button1Up(Vector2.new(centerX, centerY))
+    end)
+end
+
+local function matchCard(allText)
+    local orderedRules = {
+        35, 34, 33, 32, 31,
+        20, 21, 22, 23, 24, 25,
+        26, 27, 28, 29, 30,
+        15, 16, 17, 18, 19,
+        13, 14,
+        7,
+        6,
+        1, 2, 3, 4, 5,
+        8, 9, 10, 11, 12,
+    }
+    for _, i in ipairs(orderedRules) do
+        local rule     = MATCH_RULES[i]
+        local keyword  = rule[1]
+        local excludes = rule[2]
+        if allText:find(keyword, 1, true) then
+            local excluded = false
+            for _, ex in ipairs(excludes) do
+                if allText:find(ex, 1, true) then
+                    excluded = true
+                    break
+                end
+            end
+            if not excluded then return i end
+        end
+    end
+    return nil
+end
+
+local function findGameCards()
+    local cards = {}
+    for _, gui in ipairs(PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            for _, obj in ipairs(gui:GetDescendants()) do
+                if obj:IsA("Frame") and obj.Visible
+                   and obj.Parent == gui
+                   and tonumber(obj.Name) then
+                    local texts = {}
+                    for _, child in ipairs(obj:GetDescendants()) do
+                        if child:IsA("TextLabel") and child.Visible and child.Text ~= "" then
+                            local clean = child.Text:gsub("<[^>]+>", "")
+                            if clean ~= "" then table.insert(texts, clean) end
+                        end
+                    end
+                    local allText      = table.concat(texts, " ")
+                    local matchedIndex = matchCard(allText)
+                    table.insert(cards, {object = obj, texts = texts, keywordIndex = matchedIndex})
+                end
+            end
+        end
+    end
+    return cards
+end
+
+local function getBestCard(cards)
+    if #cards == 0 then return nil end
+    local mode = MODES[_G.AutoCard_ModeIndex] or MODES[1]
+
+    if not runtimeState.hasLifesteal then
+        for _, card in ipairs(cards) do
+            if card.keywordIndex == 3 then return card end
+        end
+    end
+
+    for _, priorityNum in ipairs(mode.priority) do
+        for _, card in ipairs(cards) do
+            if card.keywordIndex == priorityNum then return card end
+        end
+    end
+
+    return cards[1]
+end
+
+local function doScan()
+    local cards = findGameCards()
+    if #cards == 0 then return end
+    local best = getBestCard(cards)
+    if best then
+        clickCard(best.object)
+        if best.keywordIndex == 3 then runtimeState.hasLifesteal = true end
+        local name = best.keywordIndex and MATCH_RULES[best.keywordIndex][1] or "?"
+        print("[AutoCard] 自動選擇: [#" .. (best.keywordIndex or "?") .. "] " .. name)
+    end
+end
+
+getgenv().cardScanTask = nil
+local function startCardAuto()
+    if getgenv().cardScanTask then return end
+    getgenv().cardScanTask = task.spawn(function()
+        while _G.AutoCard_Enabled do
+            pcall(doScan)
+            task.wait(0.5)
+        end
+        getgenv().cardScanTask = nil
+    end)
+end
+
+local function stopCardAuto()
+    if getgenv().cardScanTask then
+        task.cancel(getgenv().cardScanTask)
+        getgenv().cardScanTask = nil
+    end
+end
 
 --Fast Attack
 local Settings = {
@@ -1306,6 +1500,7 @@ local function GetTargets()
     
     local function checkModel(model)
         if not model or model == char then return end
+        -- Boss 最後打: 場上還有其他小怪時不攻擊指定 Boss
         if isLastKillBoss(model) and hasNormalEnemy then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
         local tHum  = model:FindFirstChild("Humanoid")
@@ -1409,7 +1604,7 @@ task.spawn(function()
     while isRunning do
         local startTime = tick()
         
-        if _G.FastAttack and not _G.IsWaitingForDungeon then
+        if _G.FastAttack then
             pcall(PerformAttack)
         end
         
@@ -1436,7 +1631,7 @@ end
 
 task.spawn(function()
     while true do
-        if _G.FruitsM1Enable and not _G.IsWaitingForDungeon then
+        if _G.FruitsM1Enable then
             local char   = LocalPlayer.Character
             local curHRP = char and char:FindFirstChild("HumanoidRootPart")
             local remote = GetFruitRemote()
@@ -1539,7 +1734,7 @@ task.spawn(function()
     
     while true do
         task.wait(_G.M1FireInterval)
-        if not _G.GunM1 or _G.IsWaitingForDungeon then continue end
+        if not _G.GunM1 then continue end
         
         pcall(function()
             local char = LocalPlayer.Character
@@ -1786,7 +1981,6 @@ Tabs.Auto:Toggle({
     Value    = _G.DungeonAutoJoin,
     Callback = function(v)
         _G.DungeonAutoJoin = v
-        _G.IsWaitingForDungeon = false
         if not v and _G.isMovementActive then
             globalStopTween()
         end
@@ -1856,6 +2050,40 @@ Tabs.Auto:Dropdown({
         if _G.FlyEnabled and (_G.BuddhaMode ~= "大佛模式" or isBuddhaTransformed()) then
             equipByType(v)
         end
+    end
+})
+
+Tabs.Auto:Section({ Title = "選卡片" })
+
+Tabs.Auto:Toggle({
+    Title = "自動選卡",
+    Value = _G.AutoCard_Enabled,
+    Callback = function(state)
+        _G.AutoCard_Enabled = state
+        if state then startCardAuto() else stopCardAuto() end
+    end
+})
+
+Tabs.Auto:Dropdown({
+    Title = "卡片選擇",
+    Values = modeNames,
+    Value = modeNames[_G.AutoCard_ModeIndex] or "Melee",
+    Callback = function(v)
+        for i, name in ipairs(modeNames) do
+            if name == v then
+                _G.AutoCard_ModeIndex = i
+                break
+            end
+        end
+    end
+})
+
+Tabs.Auto:Toggle({
+    Title = "使用備用點擊方式",
+    Desc     = "供無法選擇卡片的執行器",
+    Value = _G.AutoCard_AltClick,
+    Callback = function(state)
+        _G.AutoCard_AltClick = state
     end
 })
 
@@ -2096,5 +2324,9 @@ task.spawn(function()
 
     if _G.FlyEnabled then
         startFly()
+    end
+
+    if _G.AutoCard_Enabled then
+        startCardAuto()
     end
 end)
