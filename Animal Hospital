@@ -4,6 +4,9 @@
 local HttpService = game:GetService("HttpService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -36,6 +39,18 @@ _G.ThirdPerson = false
 --ESP物品需求
 _G.ESP_NeededItems = false
 
+--ESP鬼魂
+_G.GhostESPEnabled = false
+
+--ESP躲藏者
+_G.HiderESPEnabled = false
+
+--黑鬼
+_G.TallMonsterESPEnabled = false
+
+--ESP所有NPC（排除ghost/hider/tall monster）
+_G.NPCESPEnabled = false
+
 -- 自動執行設定
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -66,12 +81,15 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+    "InstantPrompts",
+    "ThirdPerson",
+    "ESP_NeededItems",
+		"GhostESPEnabled",
+		"HiderESPEnabled",
+    "NPCESPEnabled",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled",
-    "InstantPrompts",
-    "ThirdPerson",
-    "ESP_NeededItems"
 }
 
 local function CopyConfigValue(value)
@@ -196,6 +214,7 @@ local Window = WindUI:CreateWindow({
 Window:OnDestroy(function()
     getgenv().AnimalHospitalLoaded = nil
     clearESP()
+    clearNPCESP()
 end)
 
 ----------------------------------------
@@ -311,13 +330,25 @@ local function clearESP()
     espObjects = {}
 end
 
+-- 生成帶有各房號專屬顏色的 RichText 格式字串
+local function generateColoredLabel(roomList)
+    local labelText = ""
+    for _, roomNum in ipairs(roomList) do
+        local color = ROOM_COLORS[roomNum] or DEFAULT_COLOR
+        local r = math.floor(color.R * 255)
+        local g = math.floor(color.G * 255)
+        local b = math.floor(color.B * 255)
+        labelText = labelText .. string.format('<font color="rgb(%d,%d,%d)">[%d]</font>', r, g, b, roomNum)
+    end
+    return labelText
+end
+
 local function getNeededItemsFromRooms()
     local neededItems = {}
     local roomsFolder = workspace:FindFirstChild("Rooms")
     
     if not roomsFolder then return neededItems end
 
-    -- 同時獲取 Medical 與 Emergency 資料夾
     local departmentFolders = {
         roomsFolder:FindFirstChild("Medical"),
         roomsFolder:FindFirstChild("Emergency")
@@ -337,14 +368,12 @@ local function getNeededItemsFromRooms()
 
                     if inv then
                         for _, child in ipairs(inv:GetChildren()) do
-                            -- 過濾掉 UI 版面控制組件
                             if not child:IsA("UIGridLayout") and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
                                 local itemName = child.Name
                                 if not neededItems[itemName] then
                                     neededItems[itemName] = {}
                                 end
                                 
-                                -- 避免跨區重複記錄相同房號
                                 if not table.find(neededItems[itemName], roomNum) then
                                     table.insert(neededItems[itemName], roomNum)
                                 end
@@ -377,11 +406,7 @@ local function getTargets(neededItems)
                 for itemName, roomList in pairs(neededItems) do
                     local folder = itemsFolder:FindFirstChild(itemName)
                     if folder then
-                        local labelText = ""
-                        for _, roomNum in ipairs(roomList) do
-                            labelText = labelText .. "[" .. tostring(roomNum) .. "]"
-                        end
-
+                        local labelText = generateColoredLabel(roomList)
                         local primaryRoom = roomList[1]
                         local themeColor = ROOM_COLORS[primaryRoom] or DEFAULT_COLOR
 
@@ -408,11 +433,7 @@ local function getTargets(neededItems)
                 for itemName, roomList in pairs(neededItems) do
                     local heldItem = child:FindFirstChild(itemName)
                     if heldItem and (heldItem:IsA("BasePart") or heldItem:IsA("Model") or heldItem:IsA("Tool")) then
-                        local labelText = ""
-                        for _, roomNum in ipairs(roomList) do
-                            labelText = labelText .. "[" .. tostring(roomNum) .. "]"
-                        end
-
+                        local labelText = generateColoredLabel(roomList)
                         local primaryRoom = roomList[1]
                         local themeColor = ROOM_COLORS[primaryRoom] or DEFAULT_COLOR
 
@@ -457,8 +478,8 @@ local function applyESP(targetData)
     local textLabel = Instance.new("TextLabel")
     textLabel.Size = UDim2.new(1, 0, 1, 0)
     textLabel.BackgroundTransparency = 1
+    textLabel.RichText = true -- 啟用 RichText 讓不同文字獨立套用色彩標籤
     textLabel.Text = labelText
-    textLabel.TextColor3 = themeColor
     textLabel.TextStrokeTransparency = 0
     textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     textLabel.Font = Enum.Font.SourceSansBold
@@ -490,6 +511,166 @@ task.spawn(function()
         task.wait(1.5)
     end
     clearESP()
+end)
+
+--ESP鬼魂&躲藏者
+local function applyESP(target, color, labelText)
+    if not target:FindFirstChild("XuESP_Highlight") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "XuESP_Highlight"
+        highlight.FillColor = color
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.6
+        highlight.OutlineTransparency = 0.1
+        highlight.Parent = target
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "XuESP_Tag"
+        billboard.Size = UDim2.new(0, 100, 0, 20)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = target
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "👻 " .. labelText
+        textLabel.TextColor3 = color
+        textLabel.TextStrokeTransparency = 0.2
+        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 11
+        textLabel.Parent = billboard
+    end
+end
+
+local function removeESP(target)
+    local highlight = target:FindFirstChild("XuESP_Highlight")
+    if highlight then highlight:Destroy() end
+    local billboard = target:FindFirstChild("XuESP_Tag")
+    if billboard then billboard:Destroy() end
+end
+
+-- 畫面幀更新事件
+RunService.RenderStepped:Connect(function()
+    local npcFolder = workspace:FindFirstChild("NPCs")
+    if npcFolder then
+        local children = npcFolder:GetChildren()
+        for i = 1, #children do
+            local npc = children[i]
+            if npc then
+                if npc.Name == "Ghost" then
+                    if _G.GhostESPEnabled then
+                        applyESP(npc, Color3.fromRGB(170, 0, 255), "Ghost")
+                    else
+                        removeESP(npc)
+                    end
+                elseif npc.Name == "hider" then
+                    if _G.HiderESPEnabled then
+                        applyESP(npc, Color3.fromRGB(0, 255, 150), "Hider")
+                    else
+                        removeESP(npc)
+                    end
+                elseif npc.Name == "TallMonster" then -- 新增 TallMonster 檢測
+                    if _G.TallMonsterESPEnabled then
+                        applyESP(npc, Color3.fromRGB(255, 50, 50), "Tall Monster") -- 預設亮紅色
+                    else
+                        removeESP(npc)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+--ESP所有NPC（排除已由上方處理的 Ghost / Hider / Tall Monster）
+local espHighlights = {}
+
+-- 排除名單（自動忽略包含這些名稱的 NPC）
+local EXCLUDED_NAMES = {"ghost", "hider", "tall monster", "tallmonster"}
+
+local function isExcluded(npc)
+    local nameLower = string.lower(npc.Name)
+    for _, filter in ipairs(EXCLUDED_NAMES) do
+        if string.find(nameLower, filter) then
+            return true
+        end
+    end
+    return false
+end
+
+-- 判斷是否為 Skinwalker
+local function checkSkinwalker(npc)
+    local attr = npc:GetAttribute("Skinwalker")
+    if attr == true or attr == "enabled" or attr == "Skinwalker" then return true end
+
+    local child = npc:FindFirstChild("Skinwalker")
+    if child then
+        if child:IsA("BoolValue") and child.Value == true then return true end
+        if (child:IsA("Script") or child:IsA("LocalScript")) and child.Enabled == true then return true end
+    end
+    return false
+end
+
+local function clearNPCESP()
+    for _, highlight in pairs(espHighlights) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    espHighlights = {}
+end
+
+-- ESP 主更新邏輯
+local function updateNPCESP()
+    if not _G.NPCESPEnabled then
+        clearNPCESP()
+        return
+    end
+
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    local targets = npcsFolder and npcsFolder:GetChildren() or Workspace:GetChildren()
+    local validNPCs = {}
+
+    for _, npc in ipairs(targets) do
+        if npc:IsA("Model") and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildOfClass("Humanoid")) then
+            if not isExcluded(npc) then
+                validNPCs[npc] = true
+                local isSkinwalker = checkSkinwalker(npc)
+
+                -- 色彩設定: Skinwalker 為紅色，普通 NPC 為綠色
+                local targetColor = isSkinwalker and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50)
+
+                if not espHighlights[npc] then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Adornee = npc
+                    highlight.FillColor = targetColor
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.Parent = CoreGui
+                    espHighlights[npc] = highlight
+                else
+                    espHighlights[npc].FillColor = targetColor
+                end
+            end
+        end
+    end
+
+    -- 清理死亡或銷毀實體的 ESP
+    for npc, highlight in pairs(espHighlights) do
+        if not npc.Parent or not validNPCs[npc] then
+            highlight:Destroy()
+            espHighlights[npc] = nil
+        end
+    end
+end
+
+-- 後台持續掃描（每秒一次）
+task.spawn(function()
+    while getgenv().AnimalHospitalLoaded do
+        updateNPCESP()
+        task.wait(1)
+    end
 end)
 
 --------------------------
@@ -529,6 +710,39 @@ Tabs.Main:Toggle({
     Callback = function(v)
         _G.ESP_NeededItems = v
         updateESP()
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "ESP Ghost",
+    Value = _G.GhostESPEnabled,
+    Callback = function(v)
+        _G.GhostESPEnabled = v
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "ESP Hider",
+    Value = _G.HiderESPEnabled,
+    Callback = function(v)
+        _G.HiderESPEnabled = v
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "ESP Tall Monster",
+    Value = _G.TallMonsterESPEnabled,
+    Callback = function(v)
+        _G.TallMonsterESPEnabled = v
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "ESP 所有NPC",
+    Value = _G.NPCESPEnabled,
+    Callback = function(v)
+        _G.NPCESPEnabled = v
+        updateNPCESP()
     end
 })
 
