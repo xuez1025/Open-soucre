@@ -36,8 +36,11 @@ _G.InstantPrompts = false
 --第三人稱
 _G.ThirdPerson = false
 
---ESP物品需求
-_G.ESP_NeededItems = false
+--ESP總開關
+_G.NPCESPEnabled = false
+
+--ESP Skinwalker
+_G.SkinwalkerESPEnabled = false
 
 --ESP鬼魂
 _G.GhostESPEnabled = false
@@ -48,8 +51,8 @@ _G.HiderESPEnabled = false
 --黑鬼
 _G.TallMonsterESPEnabled = false
 
---ESP所有NPC（排除ghost/hider/tall monster）
-_G.NPCESPEnabled = false
+--ESP物品需求
+_G.ESP_NeededItems = false
 
 -- 自動執行設定
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -87,6 +90,7 @@ local ConfigKeys = {
 		"GhostESPEnabled",
 		"HiderESPEnabled",
     "NPCESPEnabled",
+    "SkinwalkerESPEnabled",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled",
@@ -305,6 +309,162 @@ local function teleportTo(target)
     end
 end
 
+--ESP鬼魂&躲藏者
+local function applyESP(target, color, labelText)
+    if not target:FindFirstChild("XuESP_Highlight") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "XuESP_Highlight"
+        highlight.FillColor = color
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.6
+        highlight.OutlineTransparency = 0.1
+        highlight.Parent = target
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "XuESP_Tag"
+        billboard.Size = UDim2.new(0, 100, 0, 20)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = target
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "👻 " .. labelText
+        textLabel.TextColor3 = color
+        textLabel.TextStrokeTransparency = 0.2
+        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 11
+        textLabel.Parent = billboard
+    end
+end
+
+local function removeESP(target)
+    local highlight = target:FindFirstChild("XuESP_Highlight")
+    if highlight then highlight:Destroy() end
+    local billboard = target:FindFirstChild("XuESP_Tag")
+    if billboard then billboard:Destroy() end
+end
+
+RunService.RenderStepped:Connect(function()
+    local npcFolder = workspace:FindFirstChild("NPCs")
+    if npcFolder then
+        local children = npcFolder:GetChildren()
+        for i = 1, #children do
+            local npc = children[i]
+            if npc then
+                if npc.Name == "Ghost" then
+                    if _G.NPCESPEnabled and _G.GhostESPEnabled then
+                        applyESP(npc, Color3.fromRGB(170, 0, 255), "Ghost")
+                    else
+                        removeESP(npc)
+                    end
+                elseif npc.Name == "hider" then
+                    if _G.NPCESPEnabled and _G.HiderESPEnabled then
+                        applyESP(npc, Color3.fromRGB(0, 255, 150), "Hider")
+                    else
+                        removeESP(npc)
+                    end
+                elseif npc.Name == "TallMonster" then -- 新增 TallMonster 檢測
+                    if _G.NPCESPEnabled and _G.TallMonsterESPEnabled then
+                        applyESP(npc, Color3.fromRGB(255, 50, 50), "Tall Monster") -- 預設亮紅色
+                    else
+                        removeESP(npc)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+local espHighlights = {}
+
+local EXCLUDED_NAMES = {"ghost", "hider", "tall monster", "tallmonster"}
+
+local function isExcluded(npc)
+    local nameLower = string.lower(npc.Name)
+    for _, filter in ipairs(EXCLUDED_NAMES) do
+        if string.find(nameLower, filter) then
+            return true
+        end
+    end
+    return false
+end
+
+-- 判斷是否為 Skinwalker
+local function checkSkinwalker(npc)
+    local attr = npc:GetAttribute("Skinwalker")
+    if attr == true or attr == "enabled" or attr == "Skinwalker" then return true end
+
+    local child = npc:FindFirstChild("Skinwalker")
+    if child then
+        if child:IsA("BoolValue") and child.Value == true then return true end
+        if (child:IsA("Script") or child:IsA("LocalScript")) and child.Enabled == true then return true end
+    end
+    return false
+end
+
+local function clearNPCESP()
+    for _, highlight in pairs(espHighlights) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    espHighlights = {}
+end
+
+-- ESP
+local function updateNPCESP()
+    if not _G.NPCESPEnabled then
+        clearNPCESP()
+        return
+    end
+
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    local targets = npcsFolder and npcsFolder:GetChildren() or Workspace:GetChildren()
+    local validNPCs = {}
+
+    for _, npc in ipairs(targets) do
+        if npc:IsA("Model") and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildOfClass("Humanoid")) then
+            if not isExcluded(npc) then
+                validNPCs[npc] = true
+                local isSkinwalker = checkSkinwalker(npc) and _G.SkinwalkerESPEnabled
+
+                -- 色彩設定: Skinwalker 為紅色（需開啟 Skinwalker toggle），普通 NPC 為綠色
+                local targetColor = isSkinwalker and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50)
+
+                if not espHighlights[npc] then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Adornee = npc
+                    highlight.FillColor = targetColor
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.Parent = CoreGui
+                    espHighlights[npc] = highlight
+                else
+                    espHighlights[npc].FillColor = targetColor
+                end
+            end
+        end
+    end
+
+    for npc, highlight in pairs(espHighlights) do
+        if not npc.Parent or not validNPCs[npc] then
+            highlight:Destroy()
+            espHighlights[npc] = nil
+        end
+    end
+end
+
+-- 後台持續掃描（每秒一次）
+task.spawn(function()
+    while getgenv().AnimalHospitalLoaded do
+        updateNPCESP()
+        task.wait(1)
+    end
+end)
+
 --ESP物品需求
 local ROOM_COLORS = {
     [1] = Color3.fromRGB(255, 75, 75),   -- Room 1: 鮮紅色
@@ -330,7 +490,6 @@ local function clearESP()
     espObjects = {}
 end
 
--- 生成帶有各房號專屬顏色的 RichText 格式字串
 local function generateColoredLabel(roomList)
     local labelText = ""
     for _, roomNum in ipairs(roomList) do
@@ -396,7 +555,6 @@ local function getTargets(neededItems)
     local targets = {}
     local wsChildren = workspace:GetChildren()
 
-    -- 搜尋地圖內的 Items 資料夾
     for i = 1, math.min(100, #wsChildren) do
         local child = wsChildren[i]
 
@@ -425,7 +583,6 @@ local function getTargets(neededItems)
         end)
     end
 
-    -- 搜尋 Workspace 內（含玩家身上角色模型）的需求物品
     for i = 1, #wsChildren do
         local child = wsChildren[i]
         pcall(function()
@@ -513,166 +670,6 @@ task.spawn(function()
     clearESP()
 end)
 
---ESP鬼魂&躲藏者
-local function applyESP(target, color, labelText)
-    if not target:FindFirstChild("XuESP_Highlight") then
-        local highlight = Instance.new("Highlight")
-        highlight.Name = "XuESP_Highlight"
-        highlight.FillColor = color
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        highlight.FillTransparency = 0.6
-        highlight.OutlineTransparency = 0.1
-        highlight.Parent = target
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "XuESP_Tag"
-        billboard.Size = UDim2.new(0, 100, 0, 20)
-        billboard.StudsOffset = Vector3.new(0, 3, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = target
-
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(1, 0, 1, 0)
-        textLabel.BackgroundTransparency = 1
-        textLabel.Text = "👻 " .. labelText
-        textLabel.TextColor3 = color
-        textLabel.TextStrokeTransparency = 0.2
-        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        textLabel.Font = Enum.Font.GothamBold
-        textLabel.TextSize = 11
-        textLabel.Parent = billboard
-    end
-end
-
-local function removeESP(target)
-    local highlight = target:FindFirstChild("XuESP_Highlight")
-    if highlight then highlight:Destroy() end
-    local billboard = target:FindFirstChild("XuESP_Tag")
-    if billboard then billboard:Destroy() end
-end
-
--- 畫面幀更新事件
-RunService.RenderStepped:Connect(function()
-    local npcFolder = workspace:FindFirstChild("NPCs")
-    if npcFolder then
-        local children = npcFolder:GetChildren()
-        for i = 1, #children do
-            local npc = children[i]
-            if npc then
-                if npc.Name == "Ghost" then
-                    if _G.GhostESPEnabled then
-                        applyESP(npc, Color3.fromRGB(170, 0, 255), "Ghost")
-                    else
-                        removeESP(npc)
-                    end
-                elseif npc.Name == "hider" then
-                    if _G.HiderESPEnabled then
-                        applyESP(npc, Color3.fromRGB(0, 255, 150), "Hider")
-                    else
-                        removeESP(npc)
-                    end
-                elseif npc.Name == "TallMonster" then -- 新增 TallMonster 檢測
-                    if _G.TallMonsterESPEnabled then
-                        applyESP(npc, Color3.fromRGB(255, 50, 50), "Tall Monster") -- 預設亮紅色
-                    else
-                        removeESP(npc)
-                    end
-                end
-            end
-        end
-    end
-end)
-
---ESP所有NPC（排除已由上方處理的 Ghost / Hider / Tall Monster）
-local espHighlights = {}
-
--- 排除名單（自動忽略包含這些名稱的 NPC）
-local EXCLUDED_NAMES = {"ghost", "hider", "tall monster", "tallmonster"}
-
-local function isExcluded(npc)
-    local nameLower = string.lower(npc.Name)
-    for _, filter in ipairs(EXCLUDED_NAMES) do
-        if string.find(nameLower, filter) then
-            return true
-        end
-    end
-    return false
-end
-
--- 判斷是否為 Skinwalker
-local function checkSkinwalker(npc)
-    local attr = npc:GetAttribute("Skinwalker")
-    if attr == true or attr == "enabled" or attr == "Skinwalker" then return true end
-
-    local child = npc:FindFirstChild("Skinwalker")
-    if child then
-        if child:IsA("BoolValue") and child.Value == true then return true end
-        if (child:IsA("Script") or child:IsA("LocalScript")) and child.Enabled == true then return true end
-    end
-    return false
-end
-
-local function clearNPCESP()
-    for _, highlight in pairs(espHighlights) do
-        if highlight and highlight.Parent then
-            highlight:Destroy()
-        end
-    end
-    espHighlights = {}
-end
-
--- ESP 主更新邏輯
-local function updateNPCESP()
-    if not _G.NPCESPEnabled then
-        clearNPCESP()
-        return
-    end
-
-    local npcsFolder = Workspace:FindFirstChild("NPCs")
-    local targets = npcsFolder and npcsFolder:GetChildren() or Workspace:GetChildren()
-    local validNPCs = {}
-
-    for _, npc in ipairs(targets) do
-        if npc:IsA("Model") and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildOfClass("Humanoid")) then
-            if not isExcluded(npc) then
-                validNPCs[npc] = true
-                local isSkinwalker = checkSkinwalker(npc)
-
-                -- 色彩設定: Skinwalker 為紅色，普通 NPC 為綠色
-                local targetColor = isSkinwalker and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50)
-
-                if not espHighlights[npc] then
-                    local highlight = Instance.new("Highlight")
-                    highlight.Adornee = npc
-                    highlight.FillColor = targetColor
-                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    highlight.FillTransparency = 0.5
-                    highlight.Parent = CoreGui
-                    espHighlights[npc] = highlight
-                else
-                    espHighlights[npc].FillColor = targetColor
-                end
-            end
-        end
-    end
-
-    -- 清理死亡或銷毀實體的 ESP
-    for npc, highlight in pairs(espHighlights) do
-        if not npc.Parent or not validNPCs[npc] then
-            highlight:Destroy()
-            espHighlights[npc] = nil
-        end
-    end
-end
-
--- 後台持續掃描（每秒一次）
-task.spawn(function()
-    while getgenv().AnimalHospitalLoaded do
-        updateNPCESP()
-        task.wait(1)
-    end
-end)
-
 --------------------------
 -- 分頁與 UI 元件
 --------------------------
@@ -703,13 +700,23 @@ Tabs.Main:Toggle({
     end
 })
 
+Tabs.Main:Section({ Title = "ESP" })
 
 Tabs.Main:Toggle({
-    Title = "ESP 需求物品",
-    Value = _G.ESP_NeededItems,
+    Title = "ESP All NPC",
+	Type = "Checkbox",
+    Value = _G.NPCESPEnabled,
     Callback = function(v)
-        _G.ESP_NeededItems = v
-        updateESP()
+        _G.NPCESPEnabled = v
+        updateNPCESP()
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "ESP Skinwalker",
+    Value = _G.SkinwalkerESPEnabled,
+    Callback = function(v)
+        _G.SkinwalkerESPEnabled = v
     end
 })
 
@@ -738,11 +745,11 @@ Tabs.Main:Toggle({
 })
 
 Tabs.Main:Toggle({
-    Title = "ESP 所有NPC",
-    Value = _G.NPCESPEnabled,
+    Title = "ESP 需求物品",
+    Value = _G.ESP_NeededItems,
     Callback = function(v)
-        _G.NPCESPEnabled = v
-        updateNPCESP()
+        _G.ESP_NeededItems = v
+        updateESP()
     end
 })
 
