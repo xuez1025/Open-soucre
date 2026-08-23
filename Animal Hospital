@@ -25,10 +25,11 @@ end
 getgenv().AnimalHospitalLoaded = true
 
 --------------------------
--- 變數與 ESP 設定
+-- 變數
 --------------------------
 --秒互動
 _G.InstantPrompts = false
+
 --第三人稱
 _G.ThirdPerson = false
 
@@ -312,28 +313,43 @@ end
 
 local function getNeededItemsFromRooms()
     local neededItems = {}
-    local medicalFolder = workspace:FindFirstChild("Rooms") and workspace.Rooms:FindFirstChild("Medical")
+    local roomsFolder = workspace:FindFirstChild("Rooms")
+    
+    if not roomsFolder then return neededItems end
 
-    if not medicalFolder then return neededItems end
+    -- 同時獲取 Medical 與 Emergency 資料夾
+    local departmentFolders = {
+        roomsFolder:FindFirstChild("Medical"),
+        roomsFolder:FindFirstChild("Emergency")
+    }
 
-    for roomNum = 1, 8 do
-        local room = medicalFolder:FindFirstChild("Room" .. roomNum)
-        if room then
-            local inv = room:FindFirstChild("Minigame") 
-                and room.Minigame:FindFirstChild("TV")
-                and room.Minigame.TV:FindFirstChild("Screen")
-                and room.Minigame.TV.Screen:FindFirstChild("UI")
-                and room.Minigame.TV.Screen.UI:FindFirstChild("Report")
-                and room.Minigame.TV.Screen.UI.Report:FindFirstChild("inv")
+    for _, dept in ipairs(departmentFolders) do
+        if dept then
+            for roomNum = 1, 8 do
+                local room = dept:FindFirstChild("Room" .. roomNum)
+                if room then
+                    local inv = room:FindFirstChild("Minigame") 
+                        and room.Minigame:FindFirstChild("TV")
+                        and room.Minigame.TV:FindFirstChild("Screen")
+                        and room.Minigame.TV.Screen:FindFirstChild("UI")
+                        and room.Minigame.TV.Screen.UI:FindFirstChild("Report")
+                        and room.Minigame.TV.Screen.UI.Report:FindFirstChild("inv")
 
-            if inv then
-                for _, child in ipairs(inv:GetChildren()) do
-                    if not child:IsA("UIGridLayout") and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
-                        local itemName = child.Name
-                        if not neededItems[itemName] then
-                            neededItems[itemName] = {}
+                    if inv then
+                        for _, child in ipairs(inv:GetChildren()) do
+                            -- 過濾掉 UI 版面控制組件
+                            if not child:IsA("UIGridLayout") and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+                                local itemName = child.Name
+                                if not neededItems[itemName] then
+                                    neededItems[itemName] = {}
+                                end
+                                
+                                -- 避免跨區重複記錄相同房號
+                                if not table.find(neededItems[itemName], roomNum) then
+                                    table.insert(neededItems[itemName], roomNum)
+                                end
+                            end
                         end
-                        table.insert(neededItems[itemName], roomNum)
                     end
                 end
             end
@@ -530,6 +546,29 @@ Tabs.Teleport:Section({ Title = "房間列表與燈號偵測" })
 
 local RoomButtons = {}
 
+-- 取得房間物件（自動相容 Medical 與 Emergency 區域）
+local function getRoomObject(roomName, index)
+    local rooms = workspace:FindFirstChild("Rooms")
+    if not rooms then return nil end
+
+    -- 6~8 號房預設位於 Emergency，1~5 號房位於 Medical
+    if index >= 6 then
+        local emergency = rooms:FindFirstChild("Emergency")
+        if emergency and emergency:FindFirstChild(roomName) then
+            return emergency[roomName]
+        end
+    else
+        local medical = rooms:FindFirstChild("Medical")
+        if medical and medical:FindFirstChild(roomName) then
+            return medical[roomName]
+        end
+    end
+
+    -- 備用交叉搜尋（避免未解鎖或地圖結構變動導致無法定位）
+    return (rooms:FindFirstChild("Medical") and rooms.Medical:FindFirstChild(roomName))
+        or (rooms:FindFirstChild("Emergency") and rooms.Emergency:FindFirstChild(roomName))
+end
+
 for i = 1, 8 do
     local roomName = "Room" .. i
     RoomButtons[i] = Tabs.Teleport:Button({
@@ -537,7 +576,7 @@ for i = 1, 8 do
         Desc = "狀態: 檢測中...",
         Callback = function()
             local target = (workspace:FindFirstChild("Areas") and workspace.Areas:FindFirstChild(roomName))
-                or (workspace:FindFirstChild("Rooms") and workspace.Rooms:FindFirstChild("Medical") and workspace.Rooms.Medical:FindFirstChild(roomName))
+                or getRoomObject(roomName, i)
             teleportTo(target)
         end
     })
@@ -564,9 +603,7 @@ task.spawn(function()
             local roomName = "Room" .. i
             local statusStr = "⚪ 尚未解鎖"
 
-            local rooms = workspace:FindFirstChild("Rooms")
-            local medical = rooms and rooms:FindFirstChild("Medical")
-            local roomObj = medical and medical:FindFirstChild(roomName)
+            local roomObj = getRoomObject(roomName, i)
             local mainSign = roomObj and roomObj:FindFirstChild("MainSign")
             local light = mainSign and mainSign:FindFirstChild("Light")
 
@@ -576,11 +613,9 @@ task.spawn(function()
             end
 
             local btn = RoomButtons[i]
-            if btn then
+            if btn and btn.SetDesc then
                 pcall(function()
-                    if btn.SetDesc then
-                        btn:SetDesc("狀態: " .. statusStr)
-                    end
+                    btn:SetDesc("狀態: " .. statusStr)
                 end)
             end
         end
