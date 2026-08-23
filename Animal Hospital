@@ -8,6 +8,8 @@ local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local LocalPlayer = Players.LocalPlayer
 
 ----------------------------------------
@@ -35,6 +37,9 @@ _G.InstantPrompts = false
 
 --第三人稱
 _G.ThirdPerson = false
+
+--理智全滿
+_G.SanityFull = false
 
 --ESP總開關
 _G.NPCESPEnabled = false
@@ -86,6 +91,7 @@ local ConfigDirty = false
 local ConfigKeys = {
     "InstantPrompts",
     "ThirdPerson",
+    "SanityFull",
     "ESP_NeededItems",
 		"GhostESPEnabled",
 		"HiderESPEnabled",
@@ -266,16 +272,93 @@ local function toggleInstantPrompts(state)
 end
 
 -- 第三人稱視角
+local ThirdPersonLoop
+
+local function applyThirdPerson()
+    LocalPlayer.CameraMode = Enum.CameraMode.Classic
+    LocalPlayer.CameraMinZoomDistance = 10
+    LocalPlayer.CameraMaxZoomDistance = 128
+end
+
+local function startThirdPerson()
+    if ThirdPersonLoop then return end
+    applyThirdPerson()
+    ThirdPersonLoop = RunService.RenderStepped:Connect(function()
+        applyThirdPerson()
+    end)
+end
+
+local function stopThirdPerson()
+    if ThirdPersonLoop then
+        ThirdPersonLoop:Disconnect()
+        ThirdPersonLoop = nil
+    end
+    LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+    LocalPlayer.CameraMinZoomDistance = 0.5
+    LocalPlayer.CameraMaxZoomDistance = 128
+end
+
 local function toggleThirdPerson(state)
     _G.ThirdPerson = state
     if state then
-        LocalPlayer.CameraMode = Enum.CameraMode.Classic
-        LocalPlayer.CameraMinZoomDistance = 10
-        LocalPlayer.CameraMaxZoomDistance = 128
+        startThirdPerson()
     else
-        LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
-        LocalPlayer.CameraMinZoomDistance = 0.5
-        LocalPlayer.CameraMaxZoomDistance = 128
+        stopThirdPerson()
+    end
+end
+
+-- 理智全滿
+local SanityLoopRunning = false
+local SanityConnections = {}
+local SanityLib
+
+local function startSanityFull()
+    if SanityLoopRunning then return end
+    SanityLoopRunning = true
+
+    local function keepSanityFull()
+        LocalPlayer:SetAttribute("Sanity", 100)
+    end
+
+    -- 嘗試掛載遊戲 Lib 的 "PlayerLostSanity"，失敗不影響主功能
+    if not SanityLib then
+        pcall(function()
+            SanityLib = require(ReplicatedStorage:WaitForChild("Lib"))
+        end)
+    end
+    if SanityLib then
+        pcall(function()
+            SanityLib.Inject("PlayerLostSanity", keepSanityFull)
+        end)
+    end
+
+    table.insert(SanityConnections, LocalPlayer:GetAttributeChangedSignal("Sanity"):Connect(keepSanityFull))
+    table.insert(SanityConnections, RunService.Heartbeat:Connect(keepSanityFull))
+    keepSanityFull()
+end
+
+local function stopSanityFull()
+    if not SanityLoopRunning then return end
+    SanityLoopRunning = false
+
+    for _, conn in ipairs(SanityConnections) do
+        conn:Disconnect()
+    end
+    table.clear(SanityConnections)
+
+    if SanityLib then
+        pcall(function()
+            SanityLib.Uninject("PlayerLostSanity")
+        end)
+    end
+end
+
+local function toggleSanityFull(state)
+    _G.SanityFull = state
+    if state then
+        startSanityFull()
+    else
+        stopSanityFull()
     end
 end
 
@@ -700,6 +783,15 @@ Tabs.Main:Toggle({
     end
 })
 
+Tabs.Main:Toggle({
+    Title = "理智全滿",
+    Desc = "不確定是否失效",
+    Value = _G.SanityFull,
+    Callback = function(v)
+        toggleSanityFull(v)
+    end
+})
+
 Tabs.Main:Section({ Title = "ESP" })
 
 Tabs.Main:Toggle({
@@ -918,6 +1010,7 @@ task.spawn(function()
 
     if _G.InstantPrompts then toggleInstantPrompts(true) end
     if _G.ThirdPerson then toggleThirdPerson(true) end
+    if _G.SanityFull then toggleSanityFull(true) end
 
     if _G.AutoExecute then
         if queue_on_teleport then
