@@ -25,48 +25,38 @@ end
 getgenv().AnimalHospitalLoaded = true
 
 --------------------------
--- WindUI 載入
+-- 變數與 ESP 設定
 --------------------------
-local WindUI = loadstring(request({
-    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
-}).Body)()
+_G.InstantPrompts = false
+_G.ThirdPerson = false
 
-local Window = WindUI:CreateWindow({
-    Title         = "Animal Hospital",
-    Icon          = "user-check",
-    Author        = "by xuez1025",
-    Size          = UDim2.fromOffset(600, 400),
-    Transparent   = true,
-    Theme         = "Dark",
-    User = {
-        Enabled   = true,
-        Anonymous = false,
-        Callback  = function()
-            WindUI:Notify({ 
-                Title = LocalPlayer.Name, 
-                Content = "ID: " .. LocalPlayer.UserId, 
-                Duration = 3 
-            })
-        end
-    },
-    Acrylic       = false,
-    HideSearchBar = false,
-    SideBarWidth  = 200,
-    OpenButton = {
-        Title           = "Animal Hospital",
-        CornerRadius    = UDim.new(1, 0),
-        StrokeThickness = 3,
-        Enabled         = true,
-        OnlyMobile      = false,
-        Draggable       = true,
-        OnlyIcon        = false,
-        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
-    }
-})
+-- 獨立 ESP 開關變數 (10項物品)
+_G.ESP_Herbs = false
+_G.ESP_Medicine = false
+_G.ESP_MapleSyrup = false
+_G.ESP_CoughSyrup = false
+_G.ESP_Bandages = false
+_G.ESP_Ointment = false
+_G.ESP_Medkit = false
+_G.ESP_Thermo = false
+_G.ESP_IVDrops = false
+_G.ESP_EyeDrops = false
 
-----------------------------------------
--- 變數與核心功能邏輯
-----------------------------------------
+-- ESP 物品名稱與顏色映射 table
+local ITEM_CONFIGS = {
+    ["Herbs"]       = { Var = "ESP_Herbs",      Color = Color3.fromRGB(46, 204, 113) },
+    ["Medicine"]    = { Var = "ESP_Medicine",   Color = Color3.fromRGB(46, 204, 113) },
+    ["Maple Syrup"] = { Var = "ESP_MapleSyrup",  Color = Color3.fromRGB(230, 126, 34) },
+    ["Cough Syrup"] = { Var = "ESP_CoughSyrup",  Color = Color3.fromRGB(230, 126, 34) },
+    ["Bandages"]    = { Var = "ESP_Bandages",    Color = Color3.fromRGB(255, 255, 255) },
+    ["Ointment"]    = { Var = "ESP_Ointment",    Color = Color3.fromRGB(255, 255, 255) },
+    ["Medkit"]      = { Var = "ESP_Medkit",      Color = Color3.fromRGB(231, 76, 60) },
+    ["Thermo"]      = { Var = "ESP_Thermo",      Color = Color3.fromRGB(231, 76, 60) },
+    ["IV Drops"]    = { Var = "ESP_IVDrops",     Color = Color3.fromRGB(52, 152, 219) },
+    ["Eye Drops"]   = { Var = "ESP_EyeDrops",    Color = Color3.fromRGB(52, 152, 219) }
+}
+
+-- 自動執行設定
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
 if isfile and isfile("AnimalHospital.file") then
@@ -78,106 +68,13 @@ end
 
 local ScriptLoadstring = [[if isfile("AnimalHospital.file") then
     if readfile("AnimalHospital.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Animal%20Hospital"))()
     end
 end]]
 
+-- 快捷鍵設定
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
-_G.InstantPrompts = false
-_G.ThirdPerson = false
-
--- 傳送核心邏輯（保持角色直立）
-local function teleportTo(target)
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        WindUI:Notify({ Title = "傳送失敗", Content = "角色尚未載入！", Duration = 3 })
-        return
-    end
-
-    if typeof(target) == "Instance" then
-        local targetPos
-        if target:IsA("Model") then
-            targetPos = target:GetPivot().Position
-        elseif target:IsA("BasePart") then
-            targetPos = target.Position
-        end
-
-        if targetPos then
-            local finalPos = targetPos + Vector3.new(0, -15, 0)
-            local _, currentYaw, _ = hrp.CFrame:ToOrientation()
-            hrp.CFrame = CFrame.new(finalPos) * CFrame.Angles(0, currentYaw, 0)
-            WindUI:Notify({ Title = "傳送成功", Content = "已傳送至 " .. target.Name, Duration = 2 })
-        else
-            WindUI:Notify({ Title = "傳送失敗", Content = "找不到目標位置！", Duration = 3 })
-        end
-    else
-        WindUI:Notify({ Title = "傳送失敗", Content = "找不到目標位置！", Duration = 3 })
-    end
-end
-
--- 快速互動 (Instant Prompts) 邏輯
-local SavedPrompts = {}
-local ppsLoop1, ppsLoop2
-
-local function startInstantPrompts()
-    if ppsLoop1 or ppsLoop2 then return end
-
-    ppsLoop1 = ProximityPromptService.PromptShown:Connect(function(prompt)
-        if SavedPrompts[prompt] then return end
-        SavedPrompts[prompt] = prompt.HoldDuration
-        prompt.HoldDuration = 0
-    end)
-
-    ppsLoop2 = ProximityPromptService.PromptHidden:Connect(function(prompt)
-        if not SavedPrompts[prompt] then return end
-        prompt.HoldDuration = SavedPrompts[prompt]
-        SavedPrompts[prompt] = nil
-    end)
-end
-
-local function stopInstantPrompts()
-    if ppsLoop1 then ppsLoop1:Disconnect() ppsLoop1 = nil end
-    if ppsLoop2 then ppsLoop2:Disconnect() ppsLoop2 = nil end
-
-    for prompt, duration in pairs(SavedPrompts) do
-        if prompt and prompt.Parent then
-            prompt.HoldDuration = duration
-        end
-    end
-    table.clear(SavedPrompts)
-end
-
-local function toggleInstantPrompts(state)
-    _G.InstantPrompts = state
-    if state then
-        startInstantPrompts()
-    else
-        stopInstantPrompts()
-    end
-end
-
--- 第三人稱視角邏輯
-local function toggleThirdPerson(state)
-    _G.ThirdPerson = state
-    if state then
-        LocalPlayer.CameraMode = Enum.CameraMode.Classic
-        LocalPlayer.CameraMinZoomDistance = 10
-        LocalPlayer.CameraMaxZoomDistance = 128
-    else
-        LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
-        LocalPlayer.CameraMinZoomDistance = 0.5
-        LocalPlayer.CameraMaxZoomDistance = 128
-    end
-end
-
--- UI 關閉還原
-Window:OnDestroy(function()
-    stopInstantPrompts()
-    toggleThirdPerson(false)
-    getgenv().AnimalHospitalLoaded = nil
-end)
 
 ----------------------------------------
 -- 配置自動保存
@@ -193,7 +90,17 @@ local ConfigKeys = {
     "CurrentKey",
     "KeyDisabled",
     "InstantPrompts",
-    "ThirdPerson"
+    "ThirdPerson",
+    "ESP_Herbs",
+    "ESP_Medicine",
+    "ESP_MapleSyrup",
+    "ESP_CoughSyrup",
+    "ESP_Bandages",
+    "ESP_Ointment",
+    "ESP_Medkit",
+    "ESP_Thermo",
+    "ESP_IVDrops",
+    "ESP_EyeDrops"
 }
 
 local function CopyConfigValue(value)
@@ -275,22 +182,250 @@ task.spawn(function()
 end)
 
 --------------------------
--- 分頁與元件
+-- WindUI 載入與初始化
+--------------------------
+local WindUI = loadstring(request({
+    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+}).Body)()
+
+local Window = WindUI:CreateWindow({
+    Title         = "Animal Hospital",
+    Icon          = "paw-print",
+    Author        = "by xuez1025",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            WindUI:Notify({ 
+                Title = LocalPlayer.Name, 
+                Content = "ID: " .. LocalPlayer.UserId, 
+                Duration = 3 
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Animal Hospital",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#11998E"), Color3.fromHex("#38EF7D")),
+    }
+})
+
+----------------------------------------
+-- 功能核心邏輯
+----------------------------------------
+-- 快速互動
+local SavedPrompts = {}
+local ppsLoop1, ppsLoop2
+
+local function startInstantPrompts()
+    if ppsLoop1 or ppsLoop2 then return end
+
+    ppsLoop1 = ProximityPromptService.PromptShown:Connect(function(prompt)
+        if SavedPrompts[prompt] then return end
+        SavedPrompts[prompt] = prompt.HoldDuration
+        prompt.HoldDuration = 0
+    end)
+
+    ppsLoop2 = ProximityPromptService.PromptHidden:Connect(function(prompt)
+        if not SavedPrompts[prompt] then return end
+        prompt.HoldDuration = SavedPrompts[prompt]
+        SavedPrompts[prompt] = nil
+    end)
+end
+
+local function stopInstantPrompts()
+    if ppsLoop1 then ppsLoop1:Disconnect() ppsLoop1 = nil end
+    if ppsLoop2 then ppsLoop2:Disconnect() ppsLoop2 = nil end
+
+    for prompt, duration in pairs(SavedPrompts) do
+        if prompt and prompt.Parent then
+            prompt.HoldDuration = duration
+        end
+    end
+    table.clear(SavedPrompts)
+end
+
+local function toggleInstantPrompts(state)
+    _G.InstantPrompts = state
+    if state then
+        startInstantPrompts()
+    else
+        stopInstantPrompts()
+    end
+end
+
+-- 第三人稱視角
+local function toggleThirdPerson(state)
+    _G.ThirdPerson = state
+    if state then
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMinZoomDistance = 10
+        LocalPlayer.CameraMaxZoomDistance = 128
+    else
+        LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMaxZoomDistance = 128
+    end
+end
+
+-- 傳送房間
+local function teleportTo(target)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        WindUI:Notify({ Title = "傳送失敗", Content = "角色尚未載入！", Duration = 3 })
+        return
+    end
+
+    if typeof(target) == "Instance" then
+        local targetPos
+        if target:IsA("Model") then
+            targetPos = target:GetPivot().Position
+        elseif target:IsA("BasePart") then
+            targetPos = target.Position
+        end
+
+        if targetPos then
+            local finalPos = targetPos + Vector3.new(0, -15, 0)
+            local _, currentYaw, _ = hrp.CFrame:ToOrientation()
+            hrp.CFrame = CFrame.new(finalPos) * CFrame.Angles(0, currentYaw, 0)
+            WindUI:Notify({ Title = "傳送成功", Content = "已傳送至 " .. target.Name, Duration = 2 })
+        else
+            WindUI:Notify({ Title = "傳送失敗", Content = "找不到目標位置！", Duration = 3 })
+        end
+    else
+        WindUI:Notify({ Title = "傳送失敗", Content = "找不到目標位置！", Duration = 3 })
+    end
+end
+
+----------------------------------------
+-- ESP 核心機制 (獨立十項)
+----------------------------------------
+local espObjects = {}
+
+local function clearESP()
+    for _, item in ipairs(espObjects) do
+        if item and item.Parent then
+            item:Destroy()
+        end
+    end
+    espObjects = {}
+end
+
+local function applyESP(targetData)
+    local target = targetData.instance
+    if not target or not target.Parent then return end
+    
+    local labelText = targetData.label
+    local themeColor = targetData.color
+
+    -- Highlight 外框高亮
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight"
+    highlight.Adornee = target
+    highlight.FillColor = themeColor
+    highlight.OutlineColor = Color3.fromRGB(0, 0, 0)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = target
+    table.insert(espObjects, highlight)
+
+    -- 3D 文字標籤
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Billboard"
+    billboard.Adornee = target
+    billboard.Size = UDim2.new(0, 100, 0, 30)
+    billboard.StudsOffset = Vector3.new(0, 2, 0)
+    billboard.AlwaysOnTop = true
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = labelText
+    textLabel.TextColor3 = themeColor
+    textLabel.TextStrokeTransparency = 0
+    textLabel.Font = Enum.Font.SourceSansBold
+    textLabel.TextSize = 14
+    textLabel.Parent = billboard
+
+    billboard.Parent = target
+    table.insert(espObjects, billboard)
+end
+
+local function updateESP()
+    clearESP()
+    
+    local wsChildren = workspace:GetChildren()
+    for i = 1, math.min(100, #wsChildren) do
+        local child = wsChildren[i]
+        pcall(function()
+            local items = child:FindFirstChild("Items")
+            if items then
+                for itemName, cfg in pairs(ITEM_CONFIGS) do
+                    -- 檢查該物品對應的獨立開關是否開啟
+                    if _G[cfg.Var] then
+                        local folder = items:FindFirstChild(itemName)
+                        if folder then
+                            for _, item in ipairs(folder:GetChildren()) do
+                                if item:IsA("BasePart") or item:IsA("Model") then
+                                    applyESP({
+                                        instance = item,
+                                        label = itemName,
+                                        color = cfg.Color
+                                    })
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- 背景循環定時刷新 ESP 狀態
+task.spawn(function()
+    while getgenv().AnimalHospitalLoaded do
+        updateESP()
+        task.wait(1)
+    end
+    clearESP()
+end)
+
+-- UI 銷毀時清理資源
+Window:OnDestroy(function()
+    getgenv().AnimalHospitalLoaded = nil
+    clearESP()
+end)
+
+--------------------------
+-- 分頁與 UI 元件
 --------------------------
 local Tabs = {
-    Main = Window:Tab({ Title = "主要功能", Icon = "zap" }),
+    Main     = Window:Tab({ Title = "主要功能", Icon = "zap" }),
+    ESP      = Window:Tab({ Title = "物品 ESP", Icon = "eye" }),
     Teleport = Window:Tab({ Title = "地點傳送", Icon = "map-pin" }),
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+    Settings = Window:Tab({ Title = "設定",     Icon = "settings" })
 }
 
 --------------------------
 -- 主要功能頁面
 --------------------------
-Tabs.Main:Section({ Title = "快速互動與視角" })
+Tabs.Main:Section({ Title = "功能" })
 
 Tabs.Main:Toggle({
-    Title = "快速互動 (Instant Prompts)",
-    Desc = "將所有按鍵互動時間改為 0 秒",
+    Title = "快速互動",
     Value = _G.InstantPrompts,
     Callback = function(v)
         toggleInstantPrompts(v)
@@ -299,7 +434,6 @@ Tabs.Main:Toggle({
 
 Tabs.Main:Toggle({
     Title = "第三人稱視角",
-    Desc = "強制切換第三人稱（關閉則回到第一人稱）",
     Value = _G.ThirdPerson,
     Callback = function(v)
         toggleThirdPerson(v)
@@ -307,14 +441,115 @@ Tabs.Main:Toggle({
 })
 
 --------------------------
--- 地點傳送與房間偵測頁面
+-- 獨立 ESP 頁面 (10項物品)
+--------------------------
+Tabs.ESP:Section({ Title = "綠色組" })
+
+Tabs.ESP:Toggle({
+    Title = "Herbs (草藥)",
+    Value = _G.ESP_Herbs,
+    Callback = function(v)
+        _G.ESP_Herbs = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "Medicine (藥物)",
+    Value = _G.ESP_Medicine,
+    Callback = function(v)
+        _G.ESP_Medicine = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Section({ Title = "楓糖橘色組" })
+
+Tabs.ESP:Toggle({
+    Title = "Maple Syrup (楓糖漿)",
+    Value = _G.ESP_MapleSyrup,
+    Callback = function(v)
+        _G.ESP_MapleSyrup = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "Cough Syrup (止咳糖漿)",
+    Value = _G.ESP_CoughSyrup,
+    Callback = function(v)
+        _G.ESP_CoughSyrup = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Section({ Title = "白色組" })
+
+Tabs.ESP:Toggle({
+    Title = "Bandages (繃帶)",
+    Value = _G.ESP_Bandages,
+    Callback = function(v)
+        _G.ESP_Bandages = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "Ointment (藥膏)",
+    Value = _G.ESP_Ointment,
+    Callback = function(v)
+        _G.ESP_Ointment = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Section({ Title = "紅色組" })
+
+Tabs.ESP:Toggle({
+    Title = "Medkit (急救包)",
+    Value = _G.ESP_Medkit,
+    Callback = function(v)
+        _G.ESP_Medkit = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "Thermo (體溫計)",
+    Value = _G.ESP_Thermo,
+    Callback = function(v)
+        _G.ESP_Thermo = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Section({ Title = "藍色組" })
+
+Tabs.ESP:Toggle({
+    Title = "IV Drops (靜脈滴注)",
+    Value = _G.ESP_IVDrops,
+    Callback = function(v)
+        _G.ESP_IVDrops = v
+        updateESP()
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "Eye Drops (眼藥水)",
+    Value = _G.ESP_EyeDrops,
+    Callback = function(v)
+        _G.ESP_EyeDrops = v
+        updateESP()
+    end
+})
+
+--------------------------
+-- 地點傳送頁面
 --------------------------
 Tabs.Teleport:Section({ Title = "特定區域" })
 
 Tabs.Teleport:Button({
     Title = "傳送至 辦公室",
-    Icon = "shield",
-    Desc = "傳送至 workspace.Areas.Security",
     Callback = function()
         local target = workspace:FindFirstChild("Areas") and workspace.Areas:FindFirstChild("Security")
         teleportTo(target)
@@ -329,10 +564,8 @@ for i = 1, 8 do
     local roomName = "Room" .. i
     RoomButtons[i] = Tabs.Teleport:Button({
         Title = "傳送至 房間 " .. i,
-        Icon = "door-open",
         Desc = "狀態: 檢測中...",
         Callback = function()
-            -- 優先尋找 Areas，若無則尋找 Rooms.Medical
             local target = (workspace:FindFirstChild("Areas") and workspace.Areas:FindFirstChild(roomName))
                 or (workspace:FindFirstChild("Rooms") and workspace.Rooms:FindFirstChild("Medical") and workspace.Rooms.Medical:FindFirstChild(roomName))
             teleportTo(target)
@@ -340,30 +573,26 @@ for i = 1, 8 do
     })
 end
 
--- 房間狀態檢測 logic
 local function parseLightColor(color)
     if not color then return "⚪ 未知" end
     local r = math.round(color.R * 255)
     local g = math.round(color.G * 255)
     local b = math.round(color.B * 255)
 
-    -- [165, 0, 0] 容許誤差 ±10
     if math.abs(r - 165) <= 10 and math.abs(g - 0) <= 10 and math.abs(b - 0) <= 10 then
-        return "🔴 有人"
-    -- [27, 42, 53] 容許誤差 ±10
+        return "🟢 有人"
     elseif math.abs(r - 27) <= 10 and math.abs(g - 42) <= 10 and math.abs(b - 53) <= 10 then
-        return "🟢 沒人"
+        return "🔴 沒人"
     end
 
     return string.format("⚪ 未知 (%d, %d, %d)", r, g, b)
 end
 
--- 背景循環實時更新房間燈號狀態
 task.spawn(function()
     while getgenv().AnimalHospitalLoaded do
         for i = 1, 8 do
             local roomName = "Room" .. i
-            local statusStr = "⚪ 找不到標示"
+            local statusStr = "⚪ 尚未解鎖"
 
             local rooms = workspace:FindFirstChild("Rooms")
             local medical = rooms and rooms:FindFirstChild("Medical")
@@ -392,38 +621,6 @@ end)
 --------------------------
 -- 設定頁面
 --------------------------
-Tabs.Settings:Section({ Title = "重置腳本" })
-
-Tabs.Settings:Button({
-    Title = "將所有配置恢復初始",
-    Icon = "trash-2",
-    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
-    Callback = function()
-        local ok = pcall(function()
-            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
-                makefolder(ConfigFolder)
-            end
-            if typeof(writefile) == "function" then
-                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
-            end
-        end)
-        
-        if ok then
-            WindUI:Notify({
-                Title = "配置等待重置",
-                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
-                Duration = 4
-            })
-        else
-            WindUI:Notify({
-                Title = "重置失敗",
-                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
-                Duration = 4
-            })
-        end
-    end
-})
-
 Tabs.Settings:Section({ Title = "設定" })
 
 Tabs.Settings:Toggle({ 
