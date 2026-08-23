@@ -1,0 +1,514 @@
+----------------------------------------
+-- 服務
+----------------------------------------
+local HttpService = game:GetService("HttpService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local Players = game:GetService("Players")
+
+local LocalPlayer = Players.LocalPlayer
+
+----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if getgenv().AnimalHospitalLoaded then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Animal Hospital",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
+getgenv().AnimalHospitalLoaded = true
+
+--------------------------
+-- WindUI 載入
+--------------------------
+local WindUI = loadstring(request({
+    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+}).Body)()
+
+local Window = WindUI:CreateWindow({
+    Title         = "Animal Hospital",
+    Icon          = "user-check",
+    Author        = "by xuez1025",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            WindUI:Notify({ 
+                Title = LocalPlayer.Name, 
+                Content = "ID: " .. LocalPlayer.UserId, 
+                Duration = 3 
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Animal Hospital",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+    }
+})
+
+----------------------------------------
+-- 變數與核心功能邏輯
+----------------------------------------
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+
+if isfile and isfile("AnimalHospital.file") then
+    local success, content = pcall(function() return readfile("AnimalHospital.file") end)
+    _G.AutoExecute = (success and content == "true")
+else
+    _G.AutoExecute = false
+end
+
+local ScriptLoadstring = [[if isfile("AnimalHospital.file") then
+    if readfile("AnimalHospital.file") == "true" then
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
+    end
+end]]
+
+_G.CurrentKey = "G"
+_G.KeyDisabled = false
+_G.InstantPrompts = false
+_G.ThirdPerson = false
+
+-- 傳送核心邏輯（保持角色直立）
+local function teleportTo(target)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        WindUI:Notify({ Title = "傳送失敗", Content = "角色尚未載入！", Duration = 3 })
+        return
+    end
+
+    if typeof(target) == "Instance" then
+        local targetPos
+        if target:IsA("Model") then
+            targetPos = target:GetPivot().Position
+        elseif target:IsA("BasePart") then
+            targetPos = target.Position
+        end
+
+        if targetPos then
+            local finalPos = targetPos + Vector3.new(0, -15, 0)
+            local _, currentYaw, _ = hrp.CFrame:ToOrientation()
+            hrp.CFrame = CFrame.new(finalPos) * CFrame.Angles(0, currentYaw, 0)
+            WindUI:Notify({ Title = "傳送成功", Content = "已傳送至 " .. target.Name, Duration = 2 })
+        else
+            WindUI:Notify({ Title = "傳送失敗", Content = "找不到目標位置！", Duration = 3 })
+        end
+    else
+        WindUI:Notify({ Title = "傳送失敗", Content = "找不到目標位置！", Duration = 3 })
+    end
+end
+
+-- 快速互動 (Instant Prompts) 邏輯
+local SavedPrompts = {}
+local ppsLoop1, ppsLoop2
+
+local function startInstantPrompts()
+    if ppsLoop1 or ppsLoop2 then return end
+
+    ppsLoop1 = ProximityPromptService.PromptShown:Connect(function(prompt)
+        if SavedPrompts[prompt] then return end
+        SavedPrompts[prompt] = prompt.HoldDuration
+        prompt.HoldDuration = 0
+    end)
+
+    ppsLoop2 = ProximityPromptService.PromptHidden:Connect(function(prompt)
+        if not SavedPrompts[prompt] then return end
+        prompt.HoldDuration = SavedPrompts[prompt]
+        SavedPrompts[prompt] = nil
+    end)
+end
+
+local function stopInstantPrompts()
+    if ppsLoop1 then ppsLoop1:Disconnect() ppsLoop1 = nil end
+    if ppsLoop2 then ppsLoop2:Disconnect() ppsLoop2 = nil end
+
+    for prompt, duration in pairs(SavedPrompts) do
+        if prompt and prompt.Parent then
+            prompt.HoldDuration = duration
+        end
+    end
+    table.clear(SavedPrompts)
+end
+
+local function toggleInstantPrompts(state)
+    _G.InstantPrompts = state
+    if state then
+        startInstantPrompts()
+    else
+        stopInstantPrompts()
+    end
+end
+
+-- 第三人稱視角邏輯
+local function toggleThirdPerson(state)
+    _G.ThirdPerson = state
+    if state then
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMinZoomDistance = 10
+        LocalPlayer.CameraMaxZoomDistance = 128
+    else
+        LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMaxZoomDistance = 128
+    end
+end
+
+-- UI 關閉還原
+Window:OnDestroy(function()
+    stopInstantPrompts()
+    toggleThirdPerson(false)
+    getgenv().AnimalHospitalLoaded = nil
+end)
+
+----------------------------------------
+-- 配置自動保存
+----------------------------------------
+local ConfigFolder = "AnimalHospital_Config"
+local ConfigFile = ConfigFolder .. "/settings.json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+
+local ConfigKeys = {
+    "AutoExecute",
+    "CurrentKey",
+    "KeyDisabled",
+    "InstantPrompts",
+    "ThirdPerson"
+}
+
+local function CopyConfigValue(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = CopyConfigValue(item)
+    end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then
+            data[key] = CopyConfigValue(_G[key])
+        end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then
+            _G[key] = CopyConfigValue(data[key])
+        end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then
+        ApplyConfig(data)
+        return true
+    end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
+
+--------------------------
+-- 分頁與元件
+--------------------------
+local Tabs = {
+    Main = Window:Tab({ Title = "主要功能", Icon = "zap" }),
+    Teleport = Window:Tab({ Title = "地點傳送", Icon = "map-pin" }),
+    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+}
+
+--------------------------
+-- 主要功能頁面
+--------------------------
+Tabs.Main:Section({ Title = "快速互動與視角" })
+
+Tabs.Main:Toggle({
+    Title = "快速互動 (Instant Prompts)",
+    Desc = "將所有按鍵互動時間改為 0 秒",
+    Value = _G.InstantPrompts,
+    Callback = function(v)
+        toggleInstantPrompts(v)
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "第三人稱視角",
+    Desc = "強制切換第三人稱（關閉則回到第一人稱）",
+    Value = _G.ThirdPerson,
+    Callback = function(v)
+        toggleThirdPerson(v)
+    end
+})
+
+--------------------------
+-- 地點傳送與房間偵測頁面
+--------------------------
+Tabs.Teleport:Section({ Title = "特定區域" })
+
+Tabs.Teleport:Button({
+    Title = "傳送至 辦公室",
+    Icon = "shield",
+    Desc = "傳送至 workspace.Areas.Security",
+    Callback = function()
+        local target = workspace:FindFirstChild("Areas") and workspace.Areas:FindFirstChild("Security")
+        teleportTo(target)
+    end
+})
+
+Tabs.Teleport:Section({ Title = "房間列表與燈號偵測" })
+
+local RoomButtons = {}
+
+for i = 1, 8 do
+    local roomName = "Room" .. i
+    RoomButtons[i] = Tabs.Teleport:Button({
+        Title = "傳送至 房間 " .. i,
+        Icon = "door-open",
+        Desc = "狀態: 檢測中...",
+        Callback = function()
+            -- 優先尋找 Areas，若無則尋找 Rooms.Medical
+            local target = (workspace:FindFirstChild("Areas") and workspace.Areas:FindFirstChild(roomName))
+                or (workspace:FindFirstChild("Rooms") and workspace.Rooms:FindFirstChild("Medical") and workspace.Rooms.Medical:FindFirstChild(roomName))
+            teleportTo(target)
+        end
+    })
+end
+
+-- 房間狀態檢測 logic
+local function parseLightColor(color)
+    if not color then return "⚪ 未知" end
+    local r = math.round(color.R * 255)
+    local g = math.round(color.G * 255)
+    local b = math.round(color.B * 255)
+
+    -- [165, 0, 0] 容許誤差 ±10
+    if math.abs(r - 165) <= 10 and math.abs(g - 0) <= 10 and math.abs(b - 0) <= 10 then
+        return "🔴 有人"
+    -- [27, 42, 53] 容許誤差 ±10
+    elseif math.abs(r - 27) <= 10 and math.abs(g - 42) <= 10 and math.abs(b - 53) <= 10 then
+        return "🟢 沒人"
+    end
+
+    return string.format("⚪ 未知 (%d, %d, %d)", r, g, b)
+end
+
+-- 背景循環實時更新房間燈號狀態
+task.spawn(function()
+    while getgenv().AnimalHospitalLoaded do
+        for i = 1, 8 do
+            local roomName = "Room" .. i
+            local statusStr = "⚪ 找不到標示"
+
+            local rooms = workspace:FindFirstChild("Rooms")
+            local medical = rooms and rooms:FindFirstChild("Medical")
+            local roomObj = medical and medical:FindFirstChild(roomName)
+            local mainSign = roomObj and roomObj:FindFirstChild("MainSign")
+            local light = mainSign and mainSign:FindFirstChild("Light")
+
+            if light then
+                local col = light:IsA("BasePart") and light.Color or (light:IsA("Light") and light.Color or nil)
+                statusStr = parseLightColor(col)
+            end
+
+            local btn = RoomButtons[i]
+            if btn then
+                pcall(function()
+                    if btn.SetDesc then
+                        btn:SetDesc("狀態: " .. statusStr)
+                    end
+                end)
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+--------------------------
+-- 設定頁面
+--------------------------
+Tabs.Settings:Section({ Title = "重置腳本" })
+
+Tabs.Settings:Button({
+    Title = "將所有配置恢復初始",
+    Icon = "trash-2",
+    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Callback = function()
+        local ok = pcall(function()
+            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+                makefolder(ConfigFolder)
+            end
+            if typeof(writefile) == "function" then
+                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
+            end
+        end)
+        
+        if ok then
+            WindUI:Notify({
+                Title = "配置等待重置",
+                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "重置失敗",
+                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
+                Duration = 4
+            })
+        end
+    end
+})
+
+Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Toggle({ 
+    Title = "換服後自動執行",
+    Desc = "切換伺服器時自動重新載入",
+    Value = _G.AutoExecute,
+    Callback = function(v)
+        _G.AutoExecute = v
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                writefile("AnimalHospital.file", "true")
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        else
+            if queue_on_teleport and isfile("AnimalHospital.file") then
+                delfile("AnimalHospital.file")
+            end
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已關閉自動執行",
+                Duration = 3
+            })
+        end
+    end
+})
+
+Tabs.Settings:Keybind({ 
+    Title = "快捷鍵", 
+    Desc = "可更改", 
+    Value = _G.CurrentKey,
+    Callback = function(v)
+        _G.CurrentKey = v
+        
+        if not _G.KeyDisabled then
+            Window:SetToggleKey(Enum.KeyCode[v])
+        end
+    end
+})
+
+Tabs.Settings:Toggle({
+    Title = "停用快捷鍵",
+    Desc = "開啟後將禁用快捷鍵",
+    Value = _G.KeyDisabled,
+    Callback = function(state)
+        _G.KeyDisabled = state
+        
+        if state then
+            Window:SetToggleKey(nil)
+        else
+            Window:SetToggleKey(Enum.KeyCode[_G.CurrentKey])
+        end
+    end
+})
+
+--------------------------
+-- 初始化啟動
+--------------------------
+task.spawn(function()
+    task.wait()
+
+    if _G.InstantPrompts then toggleInstantPrompts(true) end
+    if _G.ThirdPerson then toggleThirdPerson(true) end
+
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("AnimalHospital.file") then
+                writefile("AnimalHospital.file", "true")
+            end
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("AnimalHospital.file") then
+            delfile("AnimalHospital.file")
+        end
+    end
+end)
