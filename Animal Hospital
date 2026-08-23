@@ -27,34 +27,13 @@ getgenv().AnimalHospitalLoaded = true
 --------------------------
 -- 變數與 ESP 設定
 --------------------------
+--秒互動
 _G.InstantPrompts = false
+--第三人稱
 _G.ThirdPerson = false
 
--- 獨立 ESP 開關變數 (10項物品)
-_G.ESP_Herbs = false
-_G.ESP_Medicine = false
-_G.ESP_MapleSyrup = false
-_G.ESP_CoughSyrup = false
-_G.ESP_Bandages = false
-_G.ESP_Ointment = false
-_G.ESP_Medkit = false
-_G.ESP_Thermo = false
-_G.ESP_IVDrops = false
-_G.ESP_EyeDrops = false
-
--- ESP 物品名稱與顏色映射 table
-local ITEM_CONFIGS = {
-    ["Herbs"]       = { Var = "ESP_Herbs",      Color = Color3.fromRGB(46, 204, 113) },
-    ["Medicine"]    = { Var = "ESP_Medicine",   Color = Color3.fromRGB(46, 204, 113) },
-    ["Maple Syrup"] = { Var = "ESP_MapleSyrup",  Color = Color3.fromRGB(230, 126, 34) },
-    ["Cough Syrup"] = { Var = "ESP_CoughSyrup",  Color = Color3.fromRGB(230, 126, 34) },
-    ["Bandages"]    = { Var = "ESP_Bandages",    Color = Color3.fromRGB(255, 255, 255) },
-    ["Ointment"]    = { Var = "ESP_Ointment",    Color = Color3.fromRGB(255, 255, 255) },
-    ["Medkit"]      = { Var = "ESP_Medkit",      Color = Color3.fromRGB(231, 76, 60) },
-    ["Thermo"]      = { Var = "ESP_Thermo",      Color = Color3.fromRGB(231, 76, 60) },
-    ["IV Drops"]    = { Var = "ESP_IVDrops",     Color = Color3.fromRGB(52, 152, 219) },
-    ["Eye Drops"]   = { Var = "ESP_EyeDrops",    Color = Color3.fromRGB(52, 152, 219) }
-}
+--ESP物品需求
+_G.ESP_NeededItems = false
 
 -- 自動執行設定
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -91,16 +70,7 @@ local ConfigKeys = {
     "KeyDisabled",
     "InstantPrompts",
     "ThirdPerson",
-    "ESP_Herbs",
-    "ESP_Medicine",
-    "ESP_MapleSyrup",
-    "ESP_CoughSyrup",
-    "ESP_Bandages",
-    "ESP_Ointment",
-    "ESP_Medkit",
-    "ESP_Thermo",
-    "ESP_IVDrops",
-    "ESP_EyeDrops"
+    "ESP_NeededItems"
 }
 
 local function CopyConfigValue(value)
@@ -221,6 +191,12 @@ local Window = WindUI:CreateWindow({
     }
 })
 
+-- UI 銷毀時清理資源
+Window:OnDestroy(function()
+    getgenv().AnimalHospitalLoaded = nil
+    clearESP()
+end)
+
 ----------------------------------------
 -- 功能核心邏輯
 ----------------------------------------
@@ -309,9 +285,20 @@ local function teleportTo(target)
     end
 end
 
-----------------------------------------
--- ESP 核心機制 (獨立十項)
-----------------------------------------
+--ESP物品需求
+local ROOM_COLORS = {
+    [1] = Color3.fromRGB(255, 75, 75),   -- Room 1: 鮮紅色
+    [2] = Color3.fromRGB(255, 165, 0),  -- Room 2: 楓糖橘
+    [3] = Color3.fromRGB(255, 235, 59),  -- Room 3: 亮黃色
+    [4] = Color3.fromRGB(76, 175, 80),   -- Room 4: 薄荷綠
+    [5] = Color3.fromRGB(0, 229, 255),   -- Room 5: 青藍色
+    [6] = Color3.fromRGB(41, 121, 255),  -- Room 6: 寶藍色
+    [7] = Color3.fromRGB(170, 0, 255),   -- Room 7: 紫色
+    [8] = Color3.fromRGB(255, 64, 129)   -- Room 8: 粉紅色
+}
+
+local DEFAULT_COLOR = Color3.fromRGB(255, 255, 255)
+
 local espObjects = {}
 
 local function clearESP()
@@ -323,30 +310,132 @@ local function clearESP()
     espObjects = {}
 end
 
+local function getNeededItemsFromRooms()
+    local neededItems = {}
+    local medicalFolder = workspace:FindFirstChild("Rooms") and workspace.Rooms:FindFirstChild("Medical")
+
+    if not medicalFolder then return neededItems end
+
+    for roomNum = 1, 8 do
+        local room = medicalFolder:FindFirstChild("Room" .. roomNum)
+        if room then
+            local inv = room:FindFirstChild("Minigame") 
+                and room.Minigame:FindFirstChild("TV")
+                and room.Minigame.TV:FindFirstChild("Screen")
+                and room.Minigame.TV.Screen:FindFirstChild("UI")
+                and room.Minigame.TV.Screen.UI:FindFirstChild("Report")
+                and room.Minigame.TV.Screen.UI.Report:FindFirstChild("inv")
+
+            if inv then
+                for _, child in ipairs(inv:GetChildren()) do
+                    if not child:IsA("UIGridLayout") and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+                        local itemName = child.Name
+                        if not neededItems[itemName] then
+                            neededItems[itemName] = {}
+                        end
+                        table.insert(neededItems[itemName], roomNum)
+                    end
+                end
+            end
+        end
+    end
+
+    for itemName, roomList in pairs(neededItems) do
+        table.sort(roomList)
+    end
+
+    return neededItems
+end
+
+local function getTargets(neededItems)
+    local targets = {}
+    local wsChildren = workspace:GetChildren()
+
+    -- 搜尋地圖內的 Items 資料夾
+    for i = 1, math.min(100, #wsChildren) do
+        local child = wsChildren[i]
+
+        pcall(function()
+            local itemsFolder = child:FindFirstChild("Items")
+            if itemsFolder then
+                for itemName, roomList in pairs(neededItems) do
+                    local folder = itemsFolder:FindFirstChild(itemName)
+                    if folder then
+                        local labelText = ""
+                        for _, roomNum in ipairs(roomList) do
+                            labelText = labelText .. "[" .. tostring(roomNum) .. "]"
+                        end
+
+                        local primaryRoom = roomList[1]
+                        local themeColor = ROOM_COLORS[primaryRoom] or DEFAULT_COLOR
+
+                        for _, item in ipairs(folder:GetChildren()) do
+                            if item:IsA("BasePart") or item:IsA("Model") then
+                                table.insert(targets, {
+                                    instance = item,
+                                    label = labelText,
+                                    color = themeColor
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- 搜尋 Workspace 內（含玩家身上角色模型）的需求物品
+    for i = 1, #wsChildren do
+        local child = wsChildren[i]
+        pcall(function()
+            if child.Name ~= "Items" then
+                for itemName, roomList in pairs(neededItems) do
+                    local heldItem = child:FindFirstChild(itemName)
+                    if heldItem and (heldItem:IsA("BasePart") or heldItem:IsA("Model") or heldItem:IsA("Tool")) then
+                        local labelText = ""
+                        for _, roomNum in ipairs(roomList) do
+                            labelText = labelText .. "[" .. tostring(roomNum) .. "]"
+                        end
+
+                        local primaryRoom = roomList[1]
+                        local themeColor = ROOM_COLORS[primaryRoom] or DEFAULT_COLOR
+
+                        table.insert(targets, {
+                            instance = heldItem,
+                            label = labelText,
+                            color = themeColor
+                        })
+                    end
+                end
+            end
+        end)
+    end
+
+    return targets
+end
+
 local function applyESP(targetData)
     local target = targetData.instance
     if not target or not target.Parent then return end
-    
+
     local labelText = targetData.label
     local themeColor = targetData.color
 
-    -- Highlight 外框高亮
     local highlight = Instance.new("Highlight")
     highlight.Name = "ESP_Highlight"
     highlight.Adornee = target
     highlight.FillColor = themeColor
     highlight.OutlineColor = Color3.fromRGB(0, 0, 0)
-    highlight.FillTransparency = 0.5
+    highlight.FillTransparency = 0.4
     highlight.OutlineTransparency = 0
     highlight.Parent = target
     table.insert(espObjects, highlight)
 
-    -- 3D 文字標籤
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ESP_Billboard"
     billboard.Adornee = target
-    billboard.Size = UDim2.new(0, 100, 0, 30)
-    billboard.StudsOffset = Vector3.new(0, 2, 0)
+    billboard.Size = UDim2.new(0, 150, 0, 40)
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
     billboard.AlwaysOnTop = true
 
     local textLabel = Instance.new("TextLabel")
@@ -355,8 +444,9 @@ local function applyESP(targetData)
     textLabel.Text = labelText
     textLabel.TextColor3 = themeColor
     textLabel.TextStrokeTransparency = 0
+    textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     textLabel.Font = Enum.Font.SourceSansBold
-    textLabel.TextSize = 14
+    textLabel.TextSize = 24
     textLabel.Parent = billboard
 
     billboard.Parent = target
@@ -365,47 +455,24 @@ end
 
 local function updateESP()
     clearESP()
-    
-    local wsChildren = workspace:GetChildren()
-    for i = 1, math.min(100, #wsChildren) do
-        local child = wsChildren[i]
-        pcall(function()
-            local items = child:FindFirstChild("Items")
-            if items then
-                for itemName, cfg in pairs(ITEM_CONFIGS) do
-                    -- 檢查該物品對應的獨立開關是否開啟
-                    if _G[cfg.Var] then
-                        local folder = items:FindFirstChild(itemName)
-                        if folder then
-                            for _, item in ipairs(folder:GetChildren()) do
-                                if item:IsA("BasePart") or item:IsA("Model") then
-                                    applyESP({
-                                        instance = item,
-                                        label = itemName,
-                                        color = cfg.Color
-                                    })
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end)
+    if not _G.ESP_NeededItems then return end
+
+    local neededItems = getNeededItemsFromRooms()
+    local targets = getTargets(neededItems)
+    for _, targetData in ipairs(targets) do
+        applyESP(targetData)
     end
 end
 
--- 背景循環定時刷新 ESP 狀態
 task.spawn(function()
     while getgenv().AnimalHospitalLoaded do
-        updateESP()
-        task.wait(1)
+        if _G.ESP_NeededItems then
+            updateESP()
+        else
+            clearESP()
+        end
+        task.wait(1.5)
     end
-    clearESP()
-end)
-
--- UI 銷毀時清理資源
-Window:OnDestroy(function()
-    getgenv().AnimalHospitalLoaded = nil
     clearESP()
 end)
 
@@ -414,13 +481,12 @@ end)
 --------------------------
 local Tabs = {
     Main     = Window:Tab({ Title = "主要功能", Icon = "zap" }),
-    ESP      = Window:Tab({ Title = "物品 ESP", Icon = "eye" }),
     Teleport = Window:Tab({ Title = "地點傳送", Icon = "map-pin" }),
     Settings = Window:Tab({ Title = "設定",     Icon = "settings" })
 }
 
 --------------------------
--- 主要功能頁面
+-- 元件
 --------------------------
 Tabs.Main:Section({ Title = "功能" })
 
@@ -440,112 +506,16 @@ Tabs.Main:Toggle({
     end
 })
 
---------------------------
--- 獨立 ESP 頁面 (10項物品)
---------------------------
-Tabs.ESP:Section({ Title = "綠色組" })
 
-Tabs.ESP:Toggle({
-    Title = "Herbs (草藥)",
-    Value = _G.ESP_Herbs,
+Tabs.Main:Toggle({
+    Title = "ESP 需求物品",
+    Value = _G.ESP_NeededItems,
     Callback = function(v)
-        _G.ESP_Herbs = v
+        _G.ESP_NeededItems = v
         updateESP()
     end
 })
 
-Tabs.ESP:Toggle({
-    Title = "Medicine (藥物)",
-    Value = _G.ESP_Medicine,
-    Callback = function(v)
-        _G.ESP_Medicine = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Section({ Title = "楓糖橘色組" })
-
-Tabs.ESP:Toggle({
-    Title = "Maple Syrup (楓糖漿)",
-    Value = _G.ESP_MapleSyrup,
-    Callback = function(v)
-        _G.ESP_MapleSyrup = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Toggle({
-    Title = "Cough Syrup (止咳糖漿)",
-    Value = _G.ESP_CoughSyrup,
-    Callback = function(v)
-        _G.ESP_CoughSyrup = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Section({ Title = "白色組" })
-
-Tabs.ESP:Toggle({
-    Title = "Bandages (繃帶)",
-    Value = _G.ESP_Bandages,
-    Callback = function(v)
-        _G.ESP_Bandages = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Toggle({
-    Title = "Ointment (藥膏)",
-    Value = _G.ESP_Ointment,
-    Callback = function(v)
-        _G.ESP_Ointment = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Section({ Title = "紅色組" })
-
-Tabs.ESP:Toggle({
-    Title = "Medkit (急救包)",
-    Value = _G.ESP_Medkit,
-    Callback = function(v)
-        _G.ESP_Medkit = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Toggle({
-    Title = "Thermo (體溫計)",
-    Value = _G.ESP_Thermo,
-    Callback = function(v)
-        _G.ESP_Thermo = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Section({ Title = "藍色組" })
-
-Tabs.ESP:Toggle({
-    Title = "IV Drops (靜脈滴注)",
-    Value = _G.ESP_IVDrops,
-    Callback = function(v)
-        _G.ESP_IVDrops = v
-        updateESP()
-    end
-})
-
-Tabs.ESP:Toggle({
-    Title = "Eye Drops (眼藥水)",
-    Value = _G.ESP_EyeDrops,
-    Callback = function(v)
-        _G.ESP_EyeDrops = v
-        updateESP()
-    end
-})
-
---------------------------
--- 地點傳送頁面
---------------------------
 Tabs.Teleport:Section({ Title = "特定區域" })
 
 Tabs.Teleport:Button({
@@ -618,9 +588,6 @@ task.spawn(function()
     end
 end)
 
---------------------------
--- 設定頁面
---------------------------
 Tabs.Settings:Section({ Title = "設定" })
 
 Tabs.Settings:Toggle({ 
