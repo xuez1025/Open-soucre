@@ -41,9 +41,6 @@ _G.ThirdPerson = false
 --理智全滿
 _G.SanityFull = false
 
---Room7快速跳過
-_G.Room7Skip = false
-
 --ESP總開關
 _G.NPCESPEnabled = false
 
@@ -98,7 +95,6 @@ local ConfigKeys = {
     "InstantPrompts",
     "ThirdPerson",
     "SanityFull",
-    "Room7Skip",
     "ESP_NeededItems",
     "GhostESPEnabled",
 		"HiderESPEnabled",
@@ -372,8 +368,6 @@ local function toggleSanityFull(state)
 end
 
 -- Room7 快速跳過
-local Room7Loop
-
 local function fireRoom7Complete()
     local rooms = workspace:FindFirstChild("Rooms")
     local emergency = rooms and rooms:FindFirstChild("Emergency")
@@ -386,32 +380,6 @@ local function fireRoom7Complete()
     if not remote then return end
 
     remote:FireServer(room7, true)
-end
-
-local function startRoom7Skip()
-    if Room7Loop then return end
-    Room7Loop = task.spawn(function()
-        while true do
-            fireRoom7Complete()
-            task.wait(0.5)
-        end
-    end)
-end
-
-local function stopRoom7Skip()
-    if Room7Loop then
-        task.cancel(Room7Loop)
-        Room7Loop = nil
-    end
-end
-
-local function toggleRoom7Skip(state)
-    _G.Room7Skip = state
-    if state then
-        startRoom7Skip()
-    else
-        stopRoom7Skip()
-    end
 end
 
 -- 傳送房間
@@ -863,12 +831,11 @@ Tabs.Main:Toggle({
     end
 })
 
-Tabs.Main:Toggle({
-    Title = "快速跳過",
-    Desc = "自動完成心跳小遊戲",
-    Value = _G.Room7Skip,
-    Callback = function(v)
-        toggleRoom7Skip(v)
+Tabs.Main:Button({
+    Title = "快速跳過(Room 7)",
+    Desc = "點擊完成心跳小遊戲",
+    Callback = function()
+        fireRoom7Complete()
     end
 })
 
@@ -1099,7 +1066,6 @@ task.spawn(function()
     if _G.InstantPrompts then toggleInstantPrompts(true) end
     if _G.ThirdPerson then toggleThirdPerson(true) end
     if _G.SanityFull then toggleSanityFull(true) end
-    if _G.Room7Skip then toggleRoom7Skip(true) end
 
     if _G.AutoExecute then
         if queue_on_teleport then
