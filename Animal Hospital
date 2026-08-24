@@ -41,6 +41,9 @@ _G.ThirdPerson = false
 --理智全滿
 _G.SanityFull = false
 
+--Room7快速跳過
+_G.Room7Skip = false
+
 --ESP總開關
 _G.NPCESPEnabled = false
 
@@ -53,8 +56,11 @@ _G.GhostESPEnabled = false
 --ESP躲藏者
 _G.HiderESPEnabled = false
 
---黑鬼
+--ESP黑鬼
 _G.TallMonsterESPEnabled = false
+
+--ESP EyeMass
+_G.EyeMassESPEnabled = false
 
 --ESP物品需求
 _G.ESP_NeededItems = false
@@ -92,11 +98,14 @@ local ConfigKeys = {
     "InstantPrompts",
     "ThirdPerson",
     "SanityFull",
+    "Room7Skip",
     "ESP_NeededItems",
-		"GhostESPEnabled",
+    "GhostESPEnabled",
 		"HiderESPEnabled",
+    "TallMonsterESPEnabled",
     "NPCESPEnabled",
     "SkinwalkerESPEnabled",
+    "EyeMassESPEnabled",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled",
@@ -362,6 +371,49 @@ local function toggleSanityFull(state)
     end
 end
 
+-- Room7 快速跳過
+local Room7Loop
+
+local function fireRoom7Complete()
+    local rooms = workspace:FindFirstChild("Rooms")
+    local emergency = rooms and rooms:FindFirstChild("Emergency")
+    local room7 = emergency and emergency:FindFirstChild("Room7")
+    if not room7 then return end
+
+    local util = ReplicatedStorage:FindFirstChild("Util")
+    local net = util and util:FindFirstChild("Net")
+    local remote = net and net:FindFirstChild("RE/HeartbeatMinigameComplete")
+    if not remote then return end
+
+    remote:FireServer(room7, true)
+end
+
+local function startRoom7Skip()
+    if Room7Loop then return end
+    Room7Loop = task.spawn(function()
+        while true do
+            fireRoom7Complete()
+            task.wait(0.5)
+        end
+    end)
+end
+
+local function stopRoom7Skip()
+    if Room7Loop then
+        task.cancel(Room7Loop)
+        Room7Loop = nil
+    end
+end
+
+local function toggleRoom7Skip(state)
+    _G.Room7Skip = state
+    if state then
+        startRoom7Skip()
+    else
+        stopRoom7Skip()
+    end
+end
+
 -- 傳送房間
 local function teleportTo(target)
     local char = LocalPlayer.Character
@@ -454,6 +506,25 @@ RunService.RenderStepped:Connect(function()
                         applyESP(npc, Color3.fromRGB(255, 50, 50), "Tall Monster") -- 預設亮紅色
                     else
                         removeESP(npc)
+                    end
+                end
+            end
+        end
+    end
+
+    -- ESP EyeMass
+    local rooms = workspace:FindFirstChild("Rooms")
+    if rooms then
+        for i = 1, 8 do
+            local room = (i >= 6 and rooms:FindFirstChild("Emergency") and rooms.Emergency:FindFirstChild("Room" .. i))
+                or (rooms:FindFirstChild("Medical") and rooms.Medical:FindFirstChild("Room" .. i))
+            if room then
+                local eyeMass = room:FindFirstChild("EyeMass")
+                if eyeMass then
+                    if _G.NPCESPEnabled and _G.EyeMassESPEnabled then
+                        applyESP(eyeMass, Color3.fromRGB(255, 0, 255), "EyeMass")
+                    else
+                        removeESP(eyeMass)
                     end
                 end
             end
@@ -785,10 +856,19 @@ Tabs.Main:Toggle({
 
 Tabs.Main:Toggle({
     Title = "理智全滿",
-    Desc = "不確定是否失效",
+    Desc = "將理智維持在 100",
     Value = _G.SanityFull,
     Callback = function(v)
         toggleSanityFull(v)
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "快速跳過",
+    Desc = "自動完成心跳小遊戲",
+    Value = _G.Room7Skip,
+    Callback = function(v)
+        toggleRoom7Skip(v)
     end
 })
 
@@ -833,6 +913,14 @@ Tabs.Main:Toggle({
     Value = _G.TallMonsterESPEnabled,
     Callback = function(v)
         _G.TallMonsterESPEnabled = v
+    end
+})
+
+Tabs.Main:Toggle({
+    Title = "ESP EyeMass",
+    Value = _G.EyeMassESPEnabled,
+    Callback = function(v)
+        _G.EyeMassESPEnabled = v
     end
 })
 
@@ -1011,6 +1099,7 @@ task.spawn(function()
     if _G.InstantPrompts then toggleInstantPrompts(true) end
     if _G.ThirdPerson then toggleThirdPerson(true) end
     if _G.SanityFull then toggleSanityFull(true) end
+    if _G.Room7Skip then toggleRoom7Skip(true) end
 
     if _G.AutoExecute then
         if queue_on_teleport then
