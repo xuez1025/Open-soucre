@@ -32,19 +32,6 @@ end
 
 getgenv().FarmMaterial = true
 
-----------------------------------------
--- 補全缺失的自訂判斷函數
-----------------------------------------
-local function isFriendlyMob(model)
-    -- 如果有友軍 NPC 判斷邏輯可寫在這，預設傳回 false
-    return false
-end
-
-local function isLastKillBoss(model)
-    -- 如果有指定 Boss 最後打的邏輯可寫在這，預設傳回 false
-    return false
-end
-
 --------------------------
 -- WindUI 載入
 --------------------------
@@ -263,18 +250,6 @@ local function GetTargets()
     local targets = {}
     local myPos   = root.Position
 
-    local hasNormalEnemy = false
-    local enemiesFolder  = Workspace:FindFirstChild("Enemies")
-    if enemiesFolder then
-        for _, model in ipairs(enemiesFolder:GetChildren()) do
-            local tHum = model:FindFirstChild("Humanoid")
-            if tHum and tHum.Health > 0 and not isLastKillBoss(model) then
-                hasNormalEnemy = true
-                break
-            end
-        end
-    end
-
     local sourceFolders = {
         Workspace:FindFirstChild("Enemies"),
         Workspace:FindFirstChild("NPCs"),
@@ -283,8 +258,6 @@ local function GetTargets()
 
     local function checkModel(model)
         if not model or model == char then return end
-        -- Boss 最後打: 場上還有其他小怪時不攻擊指定 Boss
-        if isLastKillBoss(model) and hasNormalEnemy then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
         local tHum  = model:FindFirstChild("Humanoid")
         if tRoot and tHum and tHum.Health > 0 then
