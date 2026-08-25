@@ -2,6 +2,8 @@
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
 ----------------------------------------
 -- 防重複啟用
@@ -29,7 +31,7 @@ local WindUI = loadstring(request({
 
 local Window = WindUI:CreateWindow({
     Title         = "Farm Material",
-    Icon          = "user-check",
+    Icon          = "gem",
     Author        = "by Xu",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
@@ -57,7 +59,7 @@ local Window = WindUI:CreateWindow({
         OnlyMobile      = false,
         Draggable       = true,
         OnlyIcon        = false,
-        Color           = ColorSequence.new(Color3.fromHex("#7F00FF"), Color3.fromHex("#00C6FF")),
+        Color           = ColorSequence.new(Color3.fromHex("#FF512F"), Color3.fromHex("#F09819")),
     }
 })
 
