@@ -8,6 +8,10 @@ local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local CommE = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommE")
 
 -- Fast Attack Remote
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
@@ -93,6 +97,10 @@ _G.AttackMobs = true
 
 --自動
 _G.AutoBusoEnabled = true
+_G.AutoV3_Enabled = true
+_G.AutoV4_Enabled = true
+_G.AutoKenEnabled = false
+_G.RemoveKenEffectEnabled = false
 
 -- 自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -136,6 +144,10 @@ local ConfigKeys = {
 		"M1FireInterval",
 		"AttackMobs",
 		"AutoBusoEnabled",
+		"AutoV3_Enabled",
+		"AutoV4_Enabled",
+		"AutoKenEnabled",
+		"RemoveKenEffectEnabled",
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
@@ -544,6 +556,102 @@ task.spawn(function()
     end
 end)
 
+-- Auto V3
+local function toggleV3()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.T, false, game)
+    task.wait(1)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoV3_Enabled then
+            toggleV3()
+            task.wait(1)
+        end
+    end
+end)
+
+-- Auto V4
+local function GetAwakeningRemote()
+    local p = Players.LocalPlayer
+    if not p then return nil end
+
+    local backpack    = p:FindFirstChild("Backpack")
+    local awakening   = backpack and backpack:FindFirstChild("Awakening")
+    if awakening and awakening:FindFirstChild("RemoteFunction") then
+        return awakening.RemoteFunction
+    end
+
+    local char           = p.Character
+    local charAwakening  = char and char:FindFirstChild("Awakening")
+    if charAwakening and charAwakening:FindFirstChild("RemoteFunction") then
+        return charAwakening.RemoteFunction
+    end
+
+    return nil
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.AutoV4_Enabled then
+            local remote = GetAwakeningRemote()
+            if remote then
+                task.spawn(function()
+                    pcall(function()
+                        remote:InvokeServer(true)
+                    end)
+                end)
+            end
+        end
+    end
+end)
+
+-- Auto Ken
+local function toggleKenVision()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function removeKenEffect()
+    local colorCorrection = Lighting:FindFirstChild("ColorCorrection") or Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
+    if colorCorrection and colorCorrection.Enabled then
+        colorCorrection.Enabled = false
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.RemoveKenEffectEnabled then
+        removeKenEffect()
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        
+        local kenLeft   = LocalPlayer:GetAttribute("KenDodgesLeft")
+        local kenActive = LocalPlayer:GetAttribute("KenActive")
+        
+        if _G.AutoKenEnabled then
+            if kenLeft ~= nil then
+                if not kenActive then
+                    toggleKenVision()
+                    task.wait(0.5)
+                end
+            else
+                toggleKenVision()
+                task.wait(1.0)
+            end
+        end
+    end
+end)
+
 -- 自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -644,6 +752,34 @@ Tabs.Config:Toggle({
     Value    = _G.AutoBusoEnabled,
     Callback = function(v)
         _G.AutoBusoEnabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto V3",
+    Desc     = "自動開啟V3",
+    Value    = _G.AutoV3_Enabled,
+    Callback = function(v)
+        _G.AutoV3_Enabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto V4",
+    Desc     = "自動開啟V4",
+    Value    = _G.AutoV4_Enabled,
+    Callback = function(v)
+        _G.AutoV4_Enabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto Ken",
+    Desc     = "自動開啟見聞色",
+    Value    = _G.AutoKenEnabled,
+    Callback = function(v)
+        _G.AutoKenEnabled = v
+        _G.RemoveKenEffectEnabled = v
     end
 })
 
