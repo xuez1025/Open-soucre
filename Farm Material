@@ -1,4 +1,11 @@
 ----------------------------------------
+--等待加載
+----------------------------------------
+repeat
+    task.wait()
+until game:IsLoaded() and game:GetService("Players").LocalPlayer
+
+----------------------------------------
 -- 服務
 ----------------------------------------
 local Players = game:GetService("Players")
@@ -91,6 +98,9 @@ _G.GunM1 = true
 _G.M1FireInterval = 0.2
 _G.AttackMobs = true
 
+--自動
+_G.AutoBusoEnabled = true
+
 -- 自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -132,6 +142,7 @@ local ConfigKeys = {
 		"GunM1",
 		"M1FireInterval",
 		"AttackMobs",
+		"AutoBusoEnabled",
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
@@ -189,7 +200,7 @@ local function LoadConfig()
         return false
     end
     local ok, data = pcall(function()
-        return HttpService:JSONEncode(readfile(ConfigFile))
+        return HttpService:JSONDecode(readfile(ConfigFile))
     end)
     if ok and type(data) == "table" then
         ApplyConfig(data)
@@ -526,6 +537,20 @@ task.spawn(function()
     end
 end)
 
+--Auto Buso
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutoBusoEnabled then
+            local character = LocalPlayer.Character
+            if character and not character:FindFirstChild("HasBuso") then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+                end)
+            end
+        end
+    end
+end)
+
 -- 自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -615,6 +640,17 @@ Tabs.Config:Slider({
     },
     Callback = function(v)
         _G.M1FireInterval = v
+    end
+})
+
+Tabs.Config:Section({ Title = "自動" })
+
+Tabs.Config:Toggle({
+    Title    = "Auto Buso",
+    Desc     = "自動開啟武裝色",
+    Value    = _G.AutoBusoEnabled,
+    Callback = function(v)
+        _G.AutoBusoEnabled = v
     end
 })
 
