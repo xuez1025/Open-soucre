@@ -146,16 +146,16 @@ local ConfigDirty = false
 local ConfigKeys = {
     "FastAttack",
     "AttackDistance",
-		"FruitsM1Enable",
-		"FruitsM1DelayValue",
-		"GunM1",
-		"M1FireInterval",
-		"AttackMobs",
-		"AutoBusoEnabled",
-		"AutoV3_Enabled",
-		"AutoV4_Enabled",
-		"AutoKenEnabled",
-		"RemoveKenEffectEnabled",
+	"FruitsM1Enable",
+	"FruitsM1DelayValue",
+	"GunM1",
+	"M1FireInterval",
+	"AttackMobs",
+	"AutoBusoEnabled",
+	"AutoV3_Enabled",
+	"AutoV4_Enabled",
+	"AutoKenEnabled",
+	"RemoveKenEffectEnabled",
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
@@ -816,7 +816,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.BringMob then
+        if _G.BringMob and _G.AutoTrackNPC then
             pcall(function()
                 if sethiddenproperty then
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
@@ -831,7 +831,7 @@ local LastBring = 0
 
 task.spawn(function()
     while task.wait(0.1) do
-        if _G.BringMob then
+        if _G.BringMob and _G.AutoTrackNPC then
             pcall(function()
                 if tick() - LastBring < 0.5 then return end
                 LastBring = tick()
