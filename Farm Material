@@ -82,6 +82,10 @@ end)
 _G.FastAttack = true
 _G.AttackDistance = 3000
 
+--Fruit M1
+_G.FruitsM1Enable = true
+_G.FruitsM1DelayValue = 0.05
+
 -- 自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -118,6 +122,8 @@ local ConfigDirty = false
 local ConfigKeys = {
     "FastAttack",
     "AttackDistance",
+		"FruitsM1Enable",
+		"FruitsM1DelayValue",
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
@@ -370,6 +376,35 @@ task.spawn(function()
     end
 end)
 
+--Fruit m1
+local function GetFruitRemote()
+    for _, loc in ipairs({ LocalPlayer.Character, LocalPlayer:FindFirstChild("Backpack") }) do
+        if loc then
+            for _, tool in ipairs(loc:GetChildren()) do
+                local remote = tool:IsA("Tool") and tool:FindFirstChild("LeftClickRemote", true)
+                if remote then 
+                    return remote, tool.Name 
+                end
+            end
+        end
+    end
+    return nil, "不是M1果實"
+end
+
+task.spawn(function()
+    while true do
+        if _G.FruitsM1Enable then
+            local char   = LocalPlayer.Character
+            local curHRP = char and char:FindFirstChild("HumanoidRootPart")
+            local remote = GetFruitRemote()
+            if curHRP and remote then 
+                remote:FireServer(-curHRP.CFrame.UpVector, 2, true) 
+            end
+        end
+        task.wait(_G.FruitsM1DelayValue)
+    end
+end)
+
 -- 自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -430,6 +465,14 @@ Tabs.Config:Toggle({
         else
             startManual()
         end
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "自動果實 M1",
+    Value    = _G.FruitsM1Enable,
+    Callback = function(v)
+        _G.FruitsM1Enable = v
     end
 })
 
