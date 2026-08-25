@@ -2,6 +2,8 @@
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
 ----------------------------------------
 -- 防重複啟用
