@@ -1,9 +1,19 @@
 ----------------------------------------
---服務
+-- 服務
 ----------------------------------------
-local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
+
+-- Fast Attack Remote
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
+local RegisterHit = Net:WaitForChild("RE/RegisterHit")
+local RemoteSeed = Net:FindFirstChild("seed")
 
 ----------------------------------------
 -- 防重複啟用
@@ -22,12 +32,23 @@ end
 
 getgenv().FarmMaterial = true
 
+----------------------------------------
+-- 補全缺失的自訂判斷函數
+----------------------------------------
+local function isFriendlyMob(model)
+    -- 如果有友軍 NPC 判斷邏輯可寫在這，預設傳回 false
+    return false
+end
+
+local function isLastKillBoss(model)
+    -- 如果有指定 Boss 最後打的邏輯可寫在這，預設傳回 false
+    return false
+end
+
 --------------------------
 -- WindUI 載入
 --------------------------
-local WindUI = loadstring(request({
-    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
-}).Body)()
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 local Window = WindUI:CreateWindow({
     Title         = "Farm Material",
@@ -40,7 +61,6 @@ local Window = WindUI:CreateWindow({
         Enabled   = true,
         Anonymous = false,
         Callback  = function()
-            local LocalPlayer = game.Players.LocalPlayer
             WindUI:Notify({ 
                 Title = LocalPlayer.Name, 
                 Content = "ID: " .. LocalPlayer.UserId, 
@@ -63,15 +83,19 @@ local Window = WindUI:CreateWindow({
     }
 })
 
---UI被關閉可重複執行
+-- UI 被關閉可重複執行
 Window:OnDestroy(function()
     getgenv().FarmMaterial = nil
 end)
 
 ----------------------------------------
---變數
+-- 變數設定
 ----------------------------------------
---自動執行
+-- Fast Attack
+_G.FastAttack = true
+_G.AttackDistance = 3000
+
+-- 自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
 if isfile and isfile("FarmMaterial.file") then
@@ -87,7 +111,11 @@ local ScriptLoadstring = [[if isfile("FarmMaterial.file") then
     end
 end]]
 
---快捷鍵
+-- Anti AFK
+_G.AntiAFK_ENABLED = true
+_G.AntiAFK_Connection = nil
+
+-- 快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
@@ -101,7 +129,10 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+    "FastAttack",
+    "AttackDistance",
     "AutoExecute",
+    "AntiAFK_ENABLED",
     "CurrentKey",
     "KeyDisabled"
 }
@@ -157,7 +188,7 @@ local function LoadConfig()
         return false
     end
     local ok, data = pcall(function()
-        return HttpService:JSONDecode(readfile(ConfigFile))
+        return HttpService:JSONEncode(readfile(ConfigFile))
     end)
     if ok and type(data) == "table" then
         ApplyConfig(data)
@@ -189,23 +220,246 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
---自動執行
+--Fast Attack
+local Settings = {
+    AttackInterval  = 0.01,
+    MaxTargets      = 20,
+    AutoScanRemotes = true
+}
+
+local State = {
+    FoundRemote   = nil,
+    FoundRemoteId = nil
+}
+
+if Settings.AutoScanRemotes then
+    task.spawn(function()
+        local folders = { 
+            ReplicatedStorage:FindFirstChild("Util"), 
+            ReplicatedStorage:FindFirstChild("Common"), 
+            ReplicatedStorage:FindFirstChild("Remotes"), 
+            ReplicatedStorage:FindFirstChild("Assets"), 
+            ReplicatedStorage:FindFirstChild("FX") 
+        }
+        local function checkChild(child)
+            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
+                State.FoundRemoteId = child:GetAttribute("Id")
+                State.FoundRemote   = child
+            end
+        end
+        for _, folder in ipairs(folders) do
+            if folder then
+                for _, child in ipairs(folder:GetChildren()) do checkChild(child) end
+                folder.ChildAdded:Connect(checkChild)
+            end
+        end
+    end)
+end
+
+local function GetTargets()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return {} end
+    local targets = {}
+    local myPos   = root.Position
+
+    local hasNormalEnemy = false
+    local enemiesFolder  = Workspace:FindFirstChild("Enemies")
+    if enemiesFolder then
+        for _, model in ipairs(enemiesFolder:GetChildren()) do
+            local tHum = model:FindFirstChild("Humanoid")
+            if tHum and tHum.Health > 0 and not isLastKillBoss(model) then
+                hasNormalEnemy = true
+                break
+            end
+        end
+    end
+
+    local sourceFolders = {
+        Workspace:FindFirstChild("Enemies"),
+        Workspace:FindFirstChild("NPCs"),
+        Workspace:FindFirstChild("Characters")
+    }
+
+    local function checkModel(model)
+        if not model or model == char then return end
+        -- Boss 最後打: 場上還有其他小怪時不攻擊指定 Boss
+        if isLastKillBoss(model) and hasNormalEnemy then return end
+        local tRoot = model:FindFirstChild("HumanoidRootPart")
+        local tHum  = model:FindFirstChild("Humanoid")
+        if tRoot and tHum and tHum.Health > 0 then
+            local dist = (tRoot.Position - myPos).Magnitude
+            if dist <= _G.AttackDistance then
+                table.insert(targets, { 
+                    Model = model, 
+                    Root  = tRoot, 
+                    Head  = model:FindFirstChild("Head") or tRoot 
+                })
+            end
+        end
+    end
+
+    for _, folder in ipairs(sourceFolders) do
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if #targets >= Settings.MaxTargets then break end
+                checkModel(model)
+            end
+        end
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if #targets >= Settings.MaxTargets then break end
+        if p ~= LocalPlayer and p.Character then
+            checkModel(p.Character)
+        end
+    end
+
+    return targets
+end
+
+local function PerformAttack(forceTargets)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
+    if not hasTool then return end
+
+    local targets = forceTargets or GetTargets()
+    if #targets == 0 then return end
+
+    local mainTarget = targets[1]
+    local hitList    = {}
+    for i, target in ipairs(targets) do 
+        table.insert(hitList, {target.Model, target.Root}) 
+    end
+
+    RegisterAttack:FireServer(0)
+
+    local fakeHash = tostring(LocalPlayer.UserId):sub(2,4) .. tostring(math.random(10000, 99999))
+    pcall(function()
+        RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
+    end)
+
+    if State.FoundRemote and State.FoundRemoteId then
+        pcall(function()
+            local seedValue   = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
+            local rawName     = "RE/RegisterHit"
+            local timestamp   = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
+            local encryptedName = string.gsub(rawName, ".", function(c) 
+                return string.char(bit32.bxor(string.byte(c), timestamp)) 
+            end)
+            State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
+        end)
+    end
+end
+
+local manualConnection = nil
+
+local function stopManual()
+    if manualConnection then
+        manualConnection:Disconnect()
+        manualConnection = nil
+    end
+end
+
+local function startManual()
+    if manualConnection then return end
+    manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if _G.FastAttack then return end 
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            pcall(PerformAttack)
+        end
+    end)
+end
+
+if not _G.FastAttack then startManual() end
+
+LocalPlayer.CharacterRemoving:Connect(function() stopManual() end)
+LocalPlayer.CharacterAdded:Connect(function()
+    if not _G.FastAttack then startManual() end
+end)
+
+local isRunning = true
+task.spawn(function()
+    while isRunning do
+        local startTime = tick()
+
+        if _G.FastAttack then
+            pcall(PerformAttack)
+        end
+
+        local elapsed  = tick() - startTime
+        local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
+        task.wait(waitTime)
+    end
+end)
+
+-- 自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
 if _G.AutoExecute and queue_func then
     queue_func(ScriptLoadstring)
 end
 
---------------------------
--- 分頁
---------------------------
-local Tabs = {
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
-}
+-- Anti AFK
+local function EnableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
+    if getconnections then
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            conn:Disable()
+        end
+    end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+
+local function DisableAntiAFK()
+    if _G.AntiAFK_Connection then 
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil 
+    end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
+end
 
 --------------------------
--- 元件
+-- UI 分頁與元件
 --------------------------
+local Tabs = {
+    Auto     = Window:Tab({ Title = "自動",   Icon = "crosshair" }),
+    Config   = Window:Tab({ Title = "配置",   Icon = "wrench"}),
+    Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
+}
+
+Tabs.Auto:Section({ Title = "自動" })
+
+Tabs.Config:Section({ Title = "M1" })
+
+Tabs.Config:Toggle({
+    Title    = "自動攻擊",
+    Value    = _G.FastAttack,
+    Callback = function(v)
+        _G.FastAttack = v
+        if _G.FastAttack then
+            stopManual()
+        else
+            startManual()
+        end
+    end
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
@@ -276,6 +530,20 @@ Tabs.Settings:Toggle({
     end
 })
 
+Tabs.Settings:Toggle({ 
+    Title    = "Anti AFK", 
+    Desc     = "防止閒置被踢出", 
+    Value    = _G.AntiAFK_ENABLED,
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
+            EnableAntiAFK() 
+        else 
+            DisableAntiAFK() 
+        end 
+    end
+})
+
 Tabs.Settings:Keybind({ 
     Title = "快捷鍵", 
     Desc = "可更改", 
@@ -308,7 +576,6 @@ Tabs.Settings:Toggle({
 task.spawn(function()
     task.wait()
 
-    -- 自動執行
     if _G.AutoExecute then
         if queue_on_teleport then
             if not isfile("FarmMaterial.file") then
