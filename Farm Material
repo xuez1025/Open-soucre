@@ -1,11 +1,4 @@
 ----------------------------------------
---等待加載
-----------------------------------------
-repeat
-    task.wait()
-until game:IsLoaded() and game:GetService("Players").LocalPlayer
-
-----------------------------------------
 -- 服務
 ----------------------------------------
 local Players = game:GetService("Players")
