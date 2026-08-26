@@ -96,6 +96,81 @@ _G.AutoEquip_SelectedType = "Melee"
 --大佛
 _G.BuddhaMode = "普通模式"
 
+--世界檢測
+local World1 = game.PlaceId == 2753915549 or game.PlaceId == 85211729168715
+local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
+local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
+local CurrentWorld = World1 and 1 or World2 and 2 or World3 and 3 or 0
+
+--材料掛機
+_G.SelectedMaterial = ""
+_G.MaterialQuestEnabled = false
+
+local MaterialFarm = {
+    [1] = {
+        { Name = "天使翅膀", Positions = { Vector3.new(-7898, 5639, -1459) }, Enemies = { "Royal Soldier", "Royal Squad" }, Quest = { "StartQuest", "SkyExp2Quest", 2 } },
+        { Name = "皮革",     Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
+        { Name = "岩漿石",   Positions = { Vector3.new(-5564, 47, 8517) },     Enemies = { "Military Soldier", "Military Spy" }, Quest = { "StartQuest", "MagmaQuest", 2 } },
+        { Name = "廢金屬",   Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
+        { Name = "雪怪毛皮", Positions = { Vector3.new(1203, 145, -1550) },    Enemies = { "Yeti" },                           Quest = { "StartQuest", "SnowQuest", 3 } },
+        { Name = "魚尾",     Positions = { Vector3.new(60999, 96, 1404), Vector3.new(61711, 96, 1406) }, Enemies = { "Fishman Warrior", "Fishman Commando" }, Quest = { "StartQuest", "FishmanQuest", 2 } },
+    },
+    [2] = {
+        { Name = "皮革",     Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
+        { Name = "岩漿石",   Positions = { Vector3.new(-5771, 76, -5665), Vector3.new(-5010, 35, -5105) }, Enemies = { "Magma Ninja", "Lava Pirate" }, Quest = { "StartQuest", "FireSideQuest", 2 } },
+        { Name = "廢金屬",   Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
+        { Name = "血漿",     Positions = { Vector3.new(918, 181, 33249) },       Enemies = { "Ship Deckhand", "Ship Engineer", "Ship Officer", "Ship Steward" }, Quest = { "StartQuest", "ShipQuest2", 2 } },
+        { Name = "神秘水滴", Positions = { Vector3.new(-3304, 252, -10497), Vector3.new(-2988, 116, -9967) }, Enemies = { "Water Fighter", "Sea Soldier" }, Quest = { "StartQuest", "ForgottenQuest", 2 } },
+        { Name = "放射性物質", Positions = { Vector3.new(-169, 149, -255), Vector3.new(950, 128, 145) }, Enemies = { "Factory Staff" }, Quest = { "StartQuest", "Area2Quest", 2 } },
+        { Name = "吸血鬼獠牙", Positions = { Vector3.new(-6003, 6, -1287) },      Enemies = { "Vampire" },                      Quest = { "StartQuest", "ZombieQuest", 2 } },
+        { Name = "隕石",     Positions = { Vector3.new(-2202, 77, -4098) },       Enemies = { "Orbitus" },                      Quest = { "StartQuest", "MarineQuest3", 3 } },
+    },
+    [3] = {
+        { Name = "皮革",     Positions = { Vector3.new(-131, 57, 5764), Vector3.new(-116, 85, 6108), Vector3.new(-787, 85, 5984), Vector3.new(-638, 57, 5628) }, Enemies = { "Pirate Millionaire", "Pistol Billionaire" }, Quest = { "StartQuest", "PiratePortQuest", 2 } },
+        { Name = "廢金屬",   Positions = { Vector3.new(-131, 57, 5764), Vector3.new(-116, 85, 6108), Vector3.new(-787, 85, 5984), Vector3.new(-638, 57, 5628) }, Enemies = { "Pirate Millionaire", "Pistol Billionaire" }, Quest = { "StartQuest", "PiratePortQuest", 2 } },
+        { Name = "骨頭",     Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
+        { Name = "魚尾",     Positions = { Vector3.new(-10514, 332, -8431), Vector3.new(-10979, 332, -8938) }, Enemies = { "Fishman Captain", "Fishman Raider" }, Quest = { "StartQuest", "DeepForestIsland3", 2 } },
+        { Name = "迷你獠牙", Positions = { Vector3.new(-13509, 583, -6986) },    Enemies = { "Mythological Pirate" },          Quest = { "StartQuest", "DeepForestIsland", 2 } },
+        { Name = "可可",     Positions = { Vector3.new(88, 74, -12317), Vector3.new(722, 142, -12703), Vector3.new(-43, 60, -12840) }, Enemies = { "Candy Rebel", "Chocolate Bar Battler", "Cocoa Warrior", "Sweet Thief" }, Quest = { "StartQuest", "ChocQuest2", 2 } },
+        { Name = "惡魔幽靈", Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
+        { Name = "龍麟",     Positions = { Vector3.new(6628, 547, 379), Vector3.new(7034, 145, -934) }, Enemies = { "Dragon Crew Warrior", "Dragon Crew Archer" }, Quest = { "StartQuest", "DragonCrewQuest", 2 } },
+        { Name = "惡夢捕手", Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
+    }
+}
+
+local function GetMaterialFarmConfig(name)
+    local list = MaterialFarm[CurrentWorld]
+    if not name or not list then return nil end
+    for _, mat in ipairs(list) do
+        if mat.Name == name then return mat end
+    end
+    return nil
+end
+
+-- 接任務（有任務時暫停 每5秒自動接取）
+local function HasActiveQuest()
+    local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local questFrame = main and main:FindFirstChild("Quest")
+    return questFrame ~= nil and questFrame.Visible == true
+end
+
+local function AcceptMaterialQuest(force)
+    local matConfig = GetMaterialFarmConfig(_G.SelectedMaterial)
+    if not matConfig or not matConfig.Quest then return end
+    if not force and HasActiveQuest() then return end
+    pcall(function()
+        ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(matConfig.Quest))
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.MaterialQuestEnabled then
+            AcceptMaterialQuest(false)
+        end
+    end
+end)
+
 -- Fast Attack
 _G.FastAttack = true
 _G.AttackDistance = 3000
@@ -154,6 +229,8 @@ local ConfigKeys = {
     "AutoTrackNPC",
     "AutoEquip_SelectedType",
     "BuddhaMode",
+    "SelectedMaterial",
+    "MaterialQuestEnabled",
     "FastAttack",
     "AttackDistance",
     "FruitsM1Enable",
@@ -391,6 +468,10 @@ task.spawn(function()
     while task.wait(0.1) do
         if _G.BringMob and _G.AutoTrackNPC then
             pcall(function()
+                -- 未選擇材料或該世界無此材料 → 不做任何動作
+                local matConfig = GetMaterialFarmConfig(_G.SelectedMaterial)
+                if not matConfig then return end
+
                 if tick() - LastBring < 0.5 then return end
                 LastBring = tick()
 
@@ -404,6 +485,12 @@ task.spawn(function()
                         local hum = enemy:FindFirstChildOfClass("Humanoid")
                         local root = enemy:FindFirstChild("HumanoidRootPart")
                         if hum and root and hum.Health > 0 and enemy.Name ~= "Tyrant of the Skies" and not string.find(enemy.Name, "Boss") then
+                            -- 只鎖定該材料對應的小怪
+                            local matched = false
+                            for _, en in ipairs(matConfig.Enemies) do
+                                if enemy.Name == en then matched = true break end
+                            end
+                            if not matched then continue end
                             local dist = (root.Position - hrp.Position).Magnitude
                             if dist < closestDist then
                                 closestDist = dist
@@ -470,6 +557,16 @@ local lastTweenTargetPos = nil
 
 RunService.Heartbeat:Connect(function()
     if _G.AutoTrackNPC then
+        -- 未選擇材料或該世界無此材料 → 不做任何動作
+        local matConfig = GetMaterialFarmConfig(_G.SelectedMaterial)
+        if not matConfig then
+            if _G.isMovementActive then
+                globalStopTween()
+                lastTweenTargetPos = nil
+            end
+            return
+        end
+
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
@@ -480,6 +577,12 @@ RunService.Heartbeat:Connect(function()
 
         for _, npc in pairs(enemiesFolder:GetChildren()) do
             if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 and npc.PrimaryPart and not string.find(npc.Name, "Boss") and npc.Name ~= "Tyrant of the Skies" then
+                -- 只鎖定該材料對應的小怪
+                local matched = false
+                for _, en in ipairs(matConfig.Enemies) do
+                    if npc.Name == en then matched = true break end
+                end
+                if not matched then continue end
                 local p = npc.PrimaryPart.Position
                 local d = (p - hrp.Position).Magnitude
                 if d < dist then
@@ -490,12 +593,38 @@ RunService.Heartbeat:Connect(function()
         end
         targetNPC = closest
 
+        local tpos = nil
         if targetNPC and targetNPC.PrimaryPart then
-            local tpos = Vector3.new(
+            tpos = Vector3.new(
                 targetNPC.PrimaryPart.Position.X,
                 targetNPC.PrimaryPart.Position.Y + _G.HoverHeight,
                 targetNPC.PrimaryPart.Position.Z
             )
+        elseif #matConfig.Positions > 0 then
+            -- 前往座標等待小怪生成 到達後等待2秒才切換下一個
+            local curIndex = matConfig.CoordIndex or 1
+            local pos = matConfig.Positions[curIndex]
+            tpos = Vector3.new(pos.X, pos.Y + _G.HoverHeight, pos.Z)
+
+            if (hrp.Position - tpos).Magnitude <= 5 then
+                -- 已到達座標
+                if not matConfig.Waiting then
+                    matConfig.Waiting = true
+                    matConfig.WaitStart = tick()
+                elseif tick() - matConfig.WaitStart >= 2 then
+                    -- 等待2秒後前往下一個座標
+                    matConfig.Waiting = false
+                    local nextIndex = curIndex % #matConfig.Positions + 1
+                    matConfig.CoordIndex = nextIndex
+                    local npos = matConfig.Positions[nextIndex]
+                    tpos = Vector3.new(npos.X, npos.Y + _G.HoverHeight, npos.Z)
+                end
+            else
+                matConfig.Waiting = false
+            end
+        end
+
+        if tpos then
             local targetCFrame = CFrame.new(tpos)
 
             if not _G.isMovementActive or not lastTweenTargetPos or (lastTweenTargetPos - tpos).Magnitude > 2 then
@@ -578,6 +707,7 @@ end
 task.spawn(function()
 	while task.wait(0.3) do
 		if not LocalPlayer or not LocalPlayer.Character then continue end
+		if not _G.AutoTrackNPC then continue end -- 需Start Farm開啟才執行大佛邏輯
 		
 		local transformed = isBuddhaTransformed()
 		
@@ -1124,7 +1254,9 @@ Tabs.Auto:Dropdown({
 		if v == "大佛模式" then
 			_G.HoverHeight = 30
 			lastTransformAttempt = tick()
-			task.spawn(triggerBuddhaTransform)
+			if _G.AutoTrackNPC then
+				task.spawn(triggerBuddhaTransform)
+			end
 		else
 			_G.HoverHeight = 15
 		end
@@ -1140,6 +1272,33 @@ Tabs.Auto:Dropdown({
         if _G.AutoTrackNPC and (_G.BuddhaMode ~= "大佛模式" or isBuddhaTransformed()) then
             equipByType(v)
         end
+    end
+})
+
+local MaterialOptions = {}
+if MaterialFarm[CurrentWorld] then
+    for _, mat in ipairs(MaterialFarm[CurrentWorld]) do
+        table.insert(MaterialOptions, mat.Name)
+    end
+end
+
+Tabs.Auto:Dropdown({
+    Title    = "選擇材料",
+    Values   = MaterialOptions,
+    Value    = _G.SelectedMaterial,
+    Callback = function(v)
+        _G.SelectedMaterial = v
+        if _G.MaterialQuestEnabled then
+            AcceptMaterialQuest(true)
+        end
+    end
+})
+
+Tabs.Auto:Toggle({
+    Title    = "自動接任務",
+    Value    = _G.MaterialQuestEnabled,
+    Callback = function(v)
+        _G.MaterialQuestEnabled = v
     end
 })
 
