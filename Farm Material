@@ -108,33 +108,33 @@ _G.MaterialQuestEnabled = false
 
 local MaterialFarm = {
     [1] = {
-        { Name = "天使翅膀", Positions = { Vector3.new(-7898, 5639, -1459) }, Enemies = { "Royal Soldier", "Royal Squad" }, Quest = { "StartQuest", "SkyExp2Quest", 2 } },
-        { Name = "皮革",     Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
-        { Name = "岩漿石",   Positions = { Vector3.new(-5564, 47, 8517) },     Enemies = { "Military Soldier", "Military Spy" }, Quest = { "StartQuest", "MagmaQuest", 2 } },
-        { Name = "廢金屬",   Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
-        { Name = "雪怪毛皮", Positions = { Vector3.new(1203, 145, -1550) },    Enemies = { "Yeti" },                           Quest = { "StartQuest", "SnowQuest", 3 } },
-        { Name = "魚尾",     Positions = { Vector3.new(60999, 96, 1404), Vector3.new(61711, 96, 1406) }, Enemies = { "Fishman Warrior", "Fishman Commando" }, Quest = { "StartQuest", "FishmanQuest", 2 } },
+        { Name = "天使翅膀", En = "Angel Wings", Positions = { Vector3.new(-7898, 5639, -1459) }, Enemies = { "Royal Soldier", "Royal Squad" }, Quest = { "StartQuest", "SkyExp2Quest", 2 } },
+        { Name = "皮革",     En = "Leather",     Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
+        { Name = "岩漿石",   En = "Magma Ore",   Positions = { Vector3.new(-5564, 47, 8517) },     Enemies = { "Military Soldier", "Military Spy" }, Quest = { "StartQuest", "MagmaQuest", 2 } },
+        { Name = "廢金屬",   En = "Scrap Metal", Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
+        { Name = "雪怪毛皮", En = "Yeti Fur",    Positions = { Vector3.new(1203, 145, -1550) },    Enemies = { "Yeti" },                           Quest = { "StartQuest", "SnowQuest", 3 } },
+        { Name = "魚尾",     En = "Fish Tail",   Positions = { Vector3.new(60999, 96, 1404), Vector3.new(61711, 96, 1406) }, Enemies = { "Fishman Warrior", "Fishman Commando" }, Quest = { "StartQuest", "FishmanQuest", 2 } },
     },
     [2] = {
-        { Name = "皮革",     Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
-        { Name = "岩漿石",   Positions = { Vector3.new(-5771, 76, -5665), Vector3.new(-5010, 35, -5105) }, Enemies = { "Magma Ninja", "Lava Pirate" }, Quest = { "StartQuest", "FireSideQuest", 2 } },
-        { Name = "廢金屬",   Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
-        { Name = "血漿",     Positions = { Vector3.new(918, 181, 33249) },       Enemies = { "Ship Deckhand", "Ship Engineer", "Ship Officer", "Ship Steward" }, Quest = { "StartQuest", "ShipQuest2", 2 } },
-        { Name = "神秘水滴", Positions = { Vector3.new(-3304, 252, -10497), Vector3.new(-2988, 116, -9967) }, Enemies = { "Water Fighter", "Sea Soldier" }, Quest = { "StartQuest", "ForgottenQuest", 2 } },
-        { Name = "放射性物質", Positions = { Vector3.new(-169, 149, -255), Vector3.new(950, 128, 145) }, Enemies = { "Factory Staff" }, Quest = { "StartQuest", "Area2Quest", 2 } },
-        { Name = "吸血鬼獠牙", Positions = { Vector3.new(-6003, 6, -1287) },      Enemies = { "Vampire" },                      Quest = { "StartQuest", "ZombieQuest", 2 } },
-        { Name = "隕石",     Positions = { Vector3.new(-2202, 77, -4098) },       Enemies = { "Orbitus" },                      Quest = { "StartQuest", "MarineQuest3", 3 } },
+        { Name = "皮革",     En = "Leather",     Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
+        { Name = "岩漿石",   En = "Magma Ore",   Positions = { Vector3.new(-5771, 76, -5665), Vector3.new(-5010, 35, -5105) }, Enemies = { "Magma Ninja", "Lava Pirate" }, Quest = { "StartQuest", "FireSideQuest", 2 } },
+        { Name = "廢金屬",   En = "Scrap Metal", Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
+        { Name = "血漿",     En = "Ectoplasm",   Positions = { Vector3.new(918, 181, 33249) },       Enemies = { "Ship Deckhand", "Ship Engineer", "Ship Officer", "Ship Steward" }, Quest = { "StartQuest", "ShipQuest2", 2 } },
+        { Name = "神秘水滴", En = "Mystic Droplet", Positions = { Vector3.new(-3304, 252, -10497), Vector3.new(-2988, 116, -9967) }, Enemies = { "Water Fighter", "Sea Soldier" }, Quest = { "StartQuest", "ForgottenQuest", 2 } },
+        { Name = "放射性物質", En = "Radioactive Material", Positions = { Vector3.new(-169, 149, -255), Vector3.new(950, 128, 145) }, Enemies = { "Factory Staff" }, Quest = { "StartQuest", "Area2Quest", 2 } },
+        { Name = "吸血鬼獠牙", En = "Vampire Fang", Positions = { Vector3.new(-6003, 6, -1287) },      Enemies = { "Vampire" },                      Quest = { "StartQuest", "ZombieQuest", 2 } },
+        { Name = "隕石",     En = "Meteorite",   Positions = { Vector3.new(-2202, 77, -4098) },       Enemies = { "Orbitus" },                      Quest = { "StartQuest", "MarineQuest3", 3 } },
     },
     [3] = {
-        { Name = "皮革",     Positions = { Vector3.new(-131, 57, 5764), Vector3.new(-116, 85, 6108), Vector3.new(-787, 85, 5984), Vector3.new(-638, 57, 5628) }, Enemies = { "Pirate Millionaire", "Pistol Billionaire" }, Quest = { "StartQuest", "PiratePortQuest", 2 } },
-        { Name = "廢金屬",   Positions = { Vector3.new(-131, 57, 5764), Vector3.new(-116, 85, 6108), Vector3.new(-787, 85, 5984), Vector3.new(-638, 57, 5628) }, Enemies = { "Pirate Millionaire", "Pistol Billionaire" }, Quest = { "StartQuest", "PiratePortQuest", 2 } },
-        { Name = "骨頭",     Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
-        { Name = "魚尾",     Positions = { Vector3.new(-10514, 332, -8431), Vector3.new(-10979, 332, -8938) }, Enemies = { "Fishman Captain", "Fishman Raider" }, Quest = { "StartQuest", "DeepForestIsland3", 2 } },
-        { Name = "迷你獠牙", Positions = { Vector3.new(-13509, 583, -6986) },    Enemies = { "Mythological Pirate" },          Quest = { "StartQuest", "DeepForestIsland", 2 } },
-        { Name = "可可",     Positions = { Vector3.new(88, 74, -12317), Vector3.new(722, 142, -12703), Vector3.new(-43, 60, -12840) }, Enemies = { "Candy Rebel", "Chocolate Bar Battler", "Cocoa Warrior", "Sweet Thief" }, Quest = { "StartQuest", "ChocQuest2", 2 } },
-        { Name = "惡魔幽靈", Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
-        { Name = "龍麟",     Positions = { Vector3.new(6628, 547, 379), Vector3.new(7034, 145, -934) }, Enemies = { "Dragon Crew Warrior", "Dragon Crew Archer" }, Quest = { "StartQuest", "DragonCrewQuest", 2 } },
-        { Name = "惡夢捕手", Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
+        { Name = "皮革",     En = "Leather",     Positions = { Vector3.new(-131, 57, 5764), Vector3.new(-116, 85, 6108), Vector3.new(-787, 85, 5984), Vector3.new(-638, 57, 5628) }, Enemies = { "Pirate Millionaire", "Pistol Billionaire" }, Quest = { "StartQuest", "PiratePortQuest", 2 } },
+        { Name = "廢金屬",   En = "Scrap Metal", Positions = { Vector3.new(-131, 57, 5764), Vector3.new(-116, 85, 6108), Vector3.new(-787, 85, 5984), Vector3.new(-638, 57, 5628) }, Enemies = { "Pirate Millionaire", "Pistol Billionaire" }, Quest = { "StartQuest", "PiratePortQuest", 2 } },
+        { Name = "骨頭",     En = "Bones",       Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
+        { Name = "魚尾",     En = "Fish Tail",   Positions = { Vector3.new(-10514, 332, -8431), Vector3.new(-10979, 332, -8938) }, Enemies = { "Fishman Captain", "Fishman Raider" }, Quest = { "StartQuest", "DeepForestIsland3", 2 } },
+        { Name = "迷你獠牙", En = "Mini Tusk",   Positions = { Vector3.new(-13509, 583, -6986) },    Enemies = { "Mythological Pirate" },          Quest = { "StartQuest", "DeepForestIsland", 2 } },
+        { Name = "可可",     En = "Conjured Cocoa", Positions = { Vector3.new(88, 74, -12317), Vector3.new(722, 142, -12703), Vector3.new(-43, 60, -12840) }, Enemies = { "Candy Rebel", "Chocolate Bar Battler", "Cocoa Warrior", "Sweet Thief" }, Quest = { "StartQuest", "ChocQuest2", 2 } },
+        { Name = "惡魔幽靈", En = "Demonic Wisp", Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
+        { Name = "龍麟",     En = "Dragon Scale", Positions = { Vector3.new(6628, 547, 379), Vector3.new(7034, 145, -934) }, Enemies = { "Dragon Crew Warrior", "Dragon Crew Archer" }, Quest = { "StartQuest", "DragonCrewQuest", 2 } },
+        { Name = "惡夢捕手", En = "Nightmare Catcher", Positions = { Vector3.new(-9501, 172, 6082), Vector3.new(-10172, 139, 5997), Vector3.new(-8759, 142, 5978) }, Enemies = { "Demonic Soul", "Living Zombie", "Posessed Mummy", "Reborn Skeleton" }, Quest = { "StartQuest", "HauntedQuest2", 2 } },
     }
 }
 
@@ -142,7 +142,10 @@ local function GetMaterialFarmConfig(name)
     local list = MaterialFarm[CurrentWorld]
     if not name or not list then return nil end
     for _, mat in ipairs(list) do
-        if mat.Name == name then return mat end
+        -- 支援「中文(English)」顯示名稱 或 純中文名稱
+        if mat.Name == name or (mat.Name .. "(" .. mat.En .. ")") == name then
+            return mat
+        end
     end
     return nil
 end
@@ -193,6 +196,10 @@ _G.AutoV3_Enabled = true
 _G.AutoV4_Enabled = true
 _G.AutoKenEnabled = true
 _G.RemoveKenEffectEnabled = true
+
+--低配模式
+_G.LowVisualMode = false
+_G.LowVisualConnection = nil
 
 -- 自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -247,6 +254,7 @@ local ConfigKeys = {
     "AutoV4_Enabled",
     "AutoKenEnabled",
     "RemoveKenEffectEnabled",
+    "LowVisualMode",
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
@@ -1344,6 +1352,54 @@ task.spawn(function()
     end
 end)
 
+--低配模式
+_G.SetLowVisualState = function(state)
+    _G.LowVisualMode = state
+    
+    if _G.LowVisualMode then
+        WindUI:Notify({ 
+            Title = "優化系統", 
+            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
+            Duration = 5
+        })
+        
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.Reflectance = 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj:Destroy()
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            elseif obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("DepthOfFieldEffect") or obj:IsA("SunRaysEffect") then
+                obj.Enabled = false
+            end
+        end
+        
+        if not _G.LowVisualConnection then
+            _G.LowVisualConnection = Workspace.DescendantAdded:Connect(function(obj)
+                if obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj:Destroy()
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
+        end
+    else
+        if _G.LowVisualConnection then
+            _G.LowVisualConnection:Disconnect()
+            _G.LowVisualConnection = nil
+        end
+    end
+end
+
 -- 自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -1390,7 +1446,41 @@ local Tabs = {
     Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
 }
 
-Tabs.Auto:Section({ Title = "自動" })
+Tabs.Auto:Section({ Title = "刷材料" })
+
+-- 將中文名稱轉為「中文(English)」顯示名稱
+local function ToMaterialDisplayName(name)
+    local mat = GetMaterialFarmConfig(name)
+    if mat then return mat.Name .. "(" .. mat.En .. ")" end
+    return name
+end
+
+local MaterialOptions = {}
+if MaterialFarm[CurrentWorld] then
+    for _, mat in ipairs(MaterialFarm[CurrentWorld]) do
+        table.insert(MaterialOptions, mat.Name .. "(" .. mat.En .. ")")
+    end
+end
+
+Tabs.Auto:Dropdown({
+    Title    = "選擇材料",
+    Values   = MaterialOptions,
+    Value    = ToMaterialDisplayName(_G.SelectedMaterial),
+    Callback = function(v)
+        _G.SelectedMaterial = v
+        if _G.MaterialQuestEnabled then
+            AcceptMaterialQuest(true)
+        end
+    end
+})
+
+Tabs.Auto:Toggle({
+    Title    = "自動接任務",
+    Value    = _G.MaterialQuestEnabled,
+    Callback = function(v)
+        _G.MaterialQuestEnabled = v
+    end
+})
 
 Tabs.Auto:Toggle({
     Title = "Start Farm",
@@ -1439,34 +1529,6 @@ Tabs.Auto:Dropdown({
         if _G.AutoTrackNPC and (_G.BuddhaMode ~= "大佛模式" or isBuddhaTransformed()) then
             equipByType(v)
         end
-    end
-})
-
-local MaterialOptions = {}
-if MaterialFarm[CurrentWorld] then
-    for _, mat in ipairs(MaterialFarm[CurrentWorld]) do
-        table.insert(MaterialOptions, mat.Name)
-    end
-end
-
-Tabs.Auto:Dropdown({
-    Title    = "選擇材料",
-    Values   = MaterialOptions,
-    Value    = _G.SelectedMaterial,
-    Callback = function(v)
-        _G.SelectedMaterial = v
-        -- 切換材料後立即重新接取該材料的任務
-        if _G.MaterialQuestEnabled then
-            AcceptMaterialQuest(true)
-        end
-    end
-})
-
-Tabs.Auto:Toggle({
-    Title    = "自動接任務",
-    Value    = _G.MaterialQuestEnabled,
-    Callback = function(v)
-        _G.MaterialQuestEnabled = v
     end
 })
 
@@ -1598,6 +1660,15 @@ Tabs.Settings:Button({
 })
 
 Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Toggle({
+    Title = "低配模式",
+    Desc = "大幅優化效能",
+    Value = _G.LowVisualMode,
+    Callback = function(v)
+        _G.SetLowVisualState(v)
+    end
+})
 
 Tabs.Settings:Toggle({ 
     Title = "換服後自動執行",
