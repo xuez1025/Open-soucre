@@ -171,6 +171,9 @@ task.spawn(function()
     end
 end)
 
+--選擇陣營
+_G.SelectTeam = "Marines"
+
 -- Fast Attack
 _G.FastAttack = true
 _G.AttackDistance = 3000
@@ -231,6 +234,7 @@ local ConfigKeys = {
     "BuddhaMode",
     "SelectedMaterial",
     "MaterialQuestEnabled",
+    "SelectTeam",
     "FastAttack",
     "AttackDistance",
     "FruitsM1Enable",
@@ -468,7 +472,6 @@ task.spawn(function()
     while task.wait(0.1) do
         if _G.BringMob and _G.AutoTrackNPC then
             pcall(function()
-                -- 未選擇材料或該世界無此材料 → 不做任何動作
                 local matConfig = GetMaterialFarmConfig(_G.SelectedMaterial)
                 if not matConfig then return end
 
@@ -485,7 +488,6 @@ task.spawn(function()
                         local hum = enemy:FindFirstChildOfClass("Humanoid")
                         local root = enemy:FindFirstChild("HumanoidRootPart")
                         if hum and root and hum.Health > 0 and enemy.Name ~= "Tyrant of the Skies" and not string.find(enemy.Name, "Boss") then
-                            -- 只鎖定該材料對應的小怪
                             local matched = false
                             for _, en in ipairs(matConfig.Enemies) do
                                 if enemy.Name == en then matched = true break end
@@ -553,11 +555,120 @@ task.spawn(function()
     end
 end)
 
+-- 捷徑傳送邏輯（傳送門）
+_G.FruitFlySpeed = 300
+_G.Fruit_BlockedEntrances = {}
+_G.Fruit_LastTeleportTicks = {}
+_G.Fruit_TeleportFails = {}
+_G.Fruit_TeleportPauseUntil =  0
+
+local function GetCurrentWorldEntrances()
+    local pool = {}
+    local pid = game.PlaceId
+
+    -- 一海 (First Sea)
+    if table.find({2753915549, 85211729168715}, pid) then
+        pool = {
+            { Arg = Vector3.new(61163.85,  11.68,   1819.78), Dest = Vector3.new(61164,   5,    1820)  },
+            { Arg = Vector3.new(3864.68,    6.73,  -1926.21), Dest = Vector3.new(3865,    5,   -1926)  },
+            { Arg = Vector3.new(-4607.82,  874.39, -1667.55), Dest = Vector3.new(-4608,  873, -1668)  },
+            { Arg = Vector3.new(-7894.61, 5547.14,  -380.29), Dest = Vector3.new(-7895, 5546,  -380)  },
+        }
+    -- 二海 (Second Sea)
+    elseif table.find({4442272183, 79091703265657}, pid) then
+        pool = {
+            { Arg = Vector3.new(2285,   15,   882),   Dest = Vector3.new(2285,   15,   882)  },
+            { Arg = Vector3.new(-380,  350,   630),   Dest = Vector3.new(-380,  350,   630)  },
+            { Arg = Vector3.new(924,   125, 32882),   Dest = Vector3.new(924,   125, 32882)  },
+            { Arg = Vector3.new(-6491, 116,  -107),   Dest = Vector3.new(-6491, 116,  -107)  },
+        }
+    -- 三海 (Third Sea)
+    elseif table.find({7449423635, 100117331123089}, pid) then
+        pool = {
+            { Arg = Vector3.new(5678,    1013,  -312), Dest = Vector3.new(5678,    1013,  -312)  },
+            { Arg = Vector3.new(-12551,  337,  -7507), Dest = Vector3.new(-12551,  337,  -7507)  },
+            { Arg = Vector3.new(-5038,   315,  -3135), Dest = Vector3.new(-5038,   315,  -3135)  },
+            { Arg = Vector3.new(-5098,   317,  -3179), Dest = Vector3.new(-16813,   58,    305)  },
+        }
+    end
+    return pool
+end
+
+local function GetBestEntrance(myPos, targetPos)
+    local distToFruit = (targetPos - myPos).Magnitude
+    
+    if distToFruit < 300 then return nil end
+
+    local directFlightTime = distToFruit / _G.FruitFlySpeed
+    local bestEntrance = nil
+    local bestTotalTime = directFlightTime
+    local teleportPenalty = 1.5 -- 傳送讀條/載入的時間懲罰（秒）
+    local pool = GetCurrentWorldEntrances()
+
+    for _, e in ipairs(pool) do
+        if _G.Fruit_BlockedEntrances[e.Arg] then continue end
+
+        local destDistToFruit = (e.Dest - targetPos).Magnitude
+        local totalTimeViaPortal = (destDistToFruit / _G.FruitFlySpeed) + teleportPenalty
+
+        if totalTimeViaPortal < bestTotalTime then
+            if (distToFruit - destDistToFruit) > 150 then
+                bestTotalTime = totalTimeViaPortal
+                bestEntrance = e
+            end
+        end
+    end
+
+    return bestEntrance
+end
+
+local function TryTeleportEntrance(bestEntrance, myHRP)
+    local lastTime = _G.Fruit_LastTeleportTicks[bestEntrance.Arg] or 0
+    
+    if os.clock() - lastTime > 4 then
+        _G.Fruit_LastTeleportTicks[bestEntrance.Arg] = os.clock()
+        _G.Fruit_TeleportPauseUntil = os.clock() + 1.2 -- 暫停飛行移動 1.2 秒
+
+        if _G.Fruit_LinearVelocity then
+            _G.Fruit_LinearVelocity.VectorVelocity = Vector3.zero
+        end
+        myHRP.AssemblyLinearVelocity = Vector3.zero
+
+        local preDist = (myHRP.Position - bestEntrance.Dest).Magnitude
+
+        task.spawn(function()
+            pcall(function()
+                local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+                commF:InvokeServer("requestEntrance", bestEntrance.Arg)
+            end)
+        end)
+
+        task.spawn(function()
+            task.wait(1.5)
+            local c = LocalPlayer.Character
+            local hrp = c and c:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
+                -- 若傳送後位置沒有明顯靠近目的地
+                if postDist > 150 and postDist >= preDist * 0.5 then
+                    local fails = (_G.Fruit_TeleportFails[bestEntrance.Arg] or 0) + 1
+                    _G.Fruit_TeleportFails[bestEntrance.Arg] = fails
+                    -- 失敗達到 3 次則加入黑名單，不再使用該入口
+                    if fails >= 3 then
+                        _G.Fruit_BlockedEntrances[bestEntrance.Arg] = true
+                    end
+                end
+            end
+        end)
+        return true
+    end
+    return false
+end
+
 local lastTweenTargetPos = nil
 
 RunService.Heartbeat:Connect(function()
     if _G.AutoTrackNPC then
-        -- 未選擇材料或該世界無此材料 → 不做任何動作
         local matConfig = GetMaterialFarmConfig(_G.SelectedMaterial)
         if not matConfig then
             if _G.isMovementActive then
@@ -577,7 +688,6 @@ RunService.Heartbeat:Connect(function()
 
         for _, npc in pairs(enemiesFolder:GetChildren()) do
             if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 and npc.PrimaryPart and not string.find(npc.Name, "Boss") and npc.Name ~= "Tyrant of the Skies" then
-                -- 只鎖定該材料對應的小怪
                 local matched = false
                 for _, en in ipairs(matConfig.Enemies) do
                     if npc.Name == en then matched = true break end
@@ -601,18 +711,32 @@ RunService.Heartbeat:Connect(function()
                 targetNPC.PrimaryPart.Position.Z
             )
         elseif #matConfig.Positions > 0 then
-            -- 前往座標等待小怪生成 到達後等待2秒才切換下一個
             local curIndex = matConfig.CoordIndex or 1
             local pos = matConfig.Positions[curIndex]
+
+            if os.clock() < _G.Fruit_TeleportPauseUntil then
+                if _G.isMovementActive then
+                    globalStopTween()
+                    lastTweenTargetPos = nil
+                end
+                return
+            end
+            local bestEntrance = GetBestEntrance(hrp.Position, pos)
+            if bestEntrance and TryTeleportEntrance(bestEntrance, hrp) then
+                if _G.isMovementActive then
+                    globalStopTween()
+                    lastTweenTargetPos = nil
+                end
+                return
+            end
+
             tpos = Vector3.new(pos.X, pos.Y + _G.HoverHeight, pos.Z)
 
             if (hrp.Position - tpos).Magnitude <= 5 then
-                -- 已到達座標
                 if not matConfig.Waiting then
                     matConfig.Waiting = true
                     matConfig.WaitStart = tick()
                 elseif tick() - matConfig.WaitStart >= 2 then
-                    -- 等待2秒後前往下一個座標
                     matConfig.Waiting = false
                     local nextIndex = curIndex % #matConfig.Positions + 1
                     matConfig.CoordIndex = nextIndex
@@ -704,6 +828,35 @@ local function triggerBuddhaTransform()
 	end)
 end
 
+local function IsAtFarmLocation()
+    local matConfig = GetMaterialFarmConfig(_G.SelectedMaterial)
+    if not matConfig then return false end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local myPos = hrp.Position
+
+    for _, pos in ipairs(matConfig.Positions) do
+        local dx = myPos.X - pos.X
+        local dz = myPos.Z - pos.Z
+        if (dx * dx + dz * dz) <= 15 * 15 then
+            return true
+        end
+    end
+
+    if targetNPC and targetNPC.PrimaryPart then
+        for _, en in ipairs(matConfig.Enemies) do
+            if targetNPC.Name == en then
+                local d = (targetNPC.PrimaryPart.Position - myPos).Magnitude
+                if d <= 40 then return true end
+            end
+        end
+    end
+
+    return false
+end
+
 task.spawn(function()
 	while task.wait(0.3) do
 		if not LocalPlayer or not LocalPlayer.Character then continue end
@@ -712,7 +865,7 @@ task.spawn(function()
 		local transformed = isBuddhaTransformed()
 		
 		if not transformed then
-			if _G.BuddhaMode == "大佛模式" and (tick() - lastTransformAttempt > 3) then
+			if _G.BuddhaMode == "大佛模式" and IsAtFarmLocation() and (tick() - lastTransformAttempt > 3) then
 				lastTransformAttempt = tick()
 				task.spawn(triggerBuddhaTransform)
 			end
@@ -722,8 +875,8 @@ end)
 
 --自動切換配置
 local function equipByType(toolType)
-    if not _G.AutoTrackNPC then return end -- Start Farm 未開啟不執行
-    _G.AutoEquip_SelectedType = toolType -- 更新當前選擇的配置類型
+    if not _G.AutoTrackNPC then return end
+    _G.AutoEquip_SelectedType = toolType
 
     local char = LocalPlayer.Character
     local hum  = char and char:FindFirstChildOfClass("Humanoid")
@@ -761,6 +914,20 @@ local function monitorCurrentTool()
 end
 
 monitorCurrentTool()
+
+--選擇陣營
+local function SelectTeam()
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
+end
+
+SelectTeam()
 
 --Fast Attack
 local Settings = {
@@ -1254,7 +1421,7 @@ Tabs.Auto:Dropdown({
 		if v == "大佛模式" then
 			_G.HoverHeight = 30
 			lastTransformAttempt = tick()
-			if _G.AutoTrackNPC then
+			if _G.AutoTrackNPC and IsAtFarmLocation() then
 				task.spawn(triggerBuddhaTransform)
 			end
 		else
@@ -1288,6 +1455,7 @@ Tabs.Auto:Dropdown({
     Value    = _G.SelectedMaterial,
     Callback = function(v)
         _G.SelectedMaterial = v
+        -- 切換材料後立即重新接取該材料的任務
         if _G.MaterialQuestEnabled then
             AcceptMaterialQuest(true)
         end
@@ -1300,6 +1468,18 @@ Tabs.Auto:Toggle({
     Callback = function(v)
         _G.MaterialQuestEnabled = v
     end
+})
+
+Tabs.Config:Section({ Title = "Select Team" })
+
+Tabs.Config:Dropdown({
+    Title = "選擇陣營",
+    Values = { "海賊", "海軍" },
+    Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
+    Callback = function(v)
+        _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
+        SelectTeam()
+    end,
 })
 
 Tabs.Config:Section({ Title = "M1" })
