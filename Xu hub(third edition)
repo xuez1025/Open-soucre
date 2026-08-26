@@ -261,25 +261,6 @@ task.spawn(function()
 end)
 
 ----------------------------------------
---管理員系統
-----------------------------------------
-local TextChatService = game:GetService("TextChatService")
-
-local adminUsers = {
-    [10716026282] = true,
-    [9063888018] = true,
-    [1677344145] = true,
-    [7434449565] = true,
-    [7434452079] = true,
-    [5145281721] = true,
-    [4362975709] = true,
-}
-
-local function isAdmin(player)
-    return player and adminUsers[player.UserId] == true
-end
-
-----------------------------------------
 -- WindUI
 ----------------------------------------
 local WindUI = loadstring(request({
