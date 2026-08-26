@@ -1765,4 +1765,9 @@ task.spawn(function()
             delfile("FarmMaterial.file")
         end
     end
+
+    -- 低配模式已開啟時 載入後重新套用
+    if _G.LowVisualMode then
+        _G.SetLowVisualState(true)
+    end
 end)
