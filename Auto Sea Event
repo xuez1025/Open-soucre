@@ -1,0 +1,1010 @@
+----------------------------------------
+-- 服務
+----------------------------------------
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local CommE = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommE")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+-- Fast Attack Remote
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
+local RegisterHit = Net:WaitForChild("RE/RegisterHit")
+local RemoteSeed = Net:FindFirstChild("seed")
+
+----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if getgenv().AutoSeaEvent then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Auto Sea Event",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
+getgenv().AutoSeaEvent = true
+
+--------------------------
+-- WindUI 載入
+--------------------------
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title         = "Auto Sea Event",
+    Icon          = "waves",
+    Author        = "by 小傑",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            WindUI:Notify({ 
+                Title = LocalPlayer.Name, 
+                Content = "ID: " .. LocalPlayer.UserId, 
+                Duration = 3 
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Auto Sea Event",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#00C6FF"), Color3.fromHex("#0072FF")),
+    }
+})
+
+-- UI 被關閉可重複執行
+Window:OnDestroy(function()
+    getgenv().AutoSeaEvent = nil
+end)
+
+----------------------------------------
+-- 變數設定
+----------------------------------------
+--選擇陣營
+_G.SelectTeam = "Marines"
+
+-- Fast Attack
+_G.FastAttack = false
+_G.AttackDistance = 3000
+
+--Fruit M1
+_G.FruitsM1Enable = false
+_G.FruitsM1DelayValue = 0.05
+
+-- DragonGun
+_G.GunM1 = false
+_G.M1FireInterval = 0.2
+_G.AttackMobs = false
+
+--自動
+_G.AutoBusoEnabled = false
+_G.AutoV3_Enabled = false
+_G.AutoV4_Enabled = false
+_G.AutoKenEnabled = false
+_G.RemoveKenEffectEnabled = false
+
+--低配模式
+_G.LowVisualMode = false
+_G.LowVisualConnection = nil
+
+-- 自動執行
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+
+if isfile and isfile("AutoSeaEvent.file") then
+    local success, content = pcall(function() return readfile("AutoSeaEvent.file") end)
+    _G.AutoExecute = (success and content == "true")
+else
+    _G.AutoExecute = false
+end
+
+local ScriptLoadstring = [[if isfile("AutoSeaEvent.file") then
+    if readfile("AutoSeaEvent.file") == "true" then
+        loadstring(game:HttpGet("https://rjr-loader.top/script/farmmaterial"))()
+    end
+end]]
+
+-- Anti AFK
+_G.AntiAFK_ENABLED = true
+_G.AntiAFK_Connection = nil
+
+-- 快捷鍵
+_G.CurrentKey = "G"
+_G.KeyDisabled = false
+
+----------------------------------------
+-- 配置自動保存
+----------------------------------------
+local ConfigFolder = "AutoSeaEvent_Config"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+
+local ConfigKeys = {
+    "SelectTeam",
+    "FastAttack",
+    "AttackDistance",
+    "FruitsM1Enable",
+    "FruitsM1DelayValue",
+    "GunM1",
+    "M1FireInterval",
+    "AttackMobs",
+    "AutoBusoEnabled",
+    "AutoV3_Enabled",
+    "AutoV4_Enabled",
+    "AutoKenEnabled",
+    "RemoveKenEffectEnabled",
+    "LowVisualMode",
+    "AutoExecute",
+    "AntiAFK_ENABLED",
+    "CurrentKey",
+    "KeyDisabled"
+}
+
+local function CopyConfigValue(value)	
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = CopyConfigValue(item)
+    end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then
+            data[key] = CopyConfigValue(_G[key])
+        end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then
+            _G[key] = CopyConfigValue(data[key])
+        end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then
+        ApplyConfig(data)
+        return true
+    end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
+
+--------------------------
+-- 功能核心邏輯
+--------------------------
+--選擇陣營
+local function SelectTeam()
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
+end
+
+SelectTeam()
+
+--Fast Attack
+local Settings = {
+    AttackInterval  = 0.01,
+    MaxTargets      = 20,
+    AutoScanRemotes = true
+}
+
+local State = {
+    FoundRemote   = nil,
+    FoundRemoteId = nil
+}
+
+if Settings.AutoScanRemotes then
+    task.spawn(function()
+        local folders = { 
+            ReplicatedStorage:FindFirstChild("Util"), 
+            ReplicatedStorage:FindFirstChild("Common"), 
+            ReplicatedStorage:FindFirstChild("Remotes"), 
+            ReplicatedStorage:FindFirstChild("Assets"), 
+            ReplicatedStorage:FindFirstChild("FX") 
+        }
+        local function checkChild(child)
+            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
+                State.FoundRemoteId = child:GetAttribute("Id")
+                State.FoundRemote   = child
+            end
+        end
+        for _, folder in ipairs(folders) do
+            if folder then
+                for _, child in ipairs(folder:GetChildren()) do checkChild(child) end
+                folder.ChildAdded:Connect(checkChild)
+            end
+        end
+    end)
+end
+
+local function GetTargets()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return {} end
+    local targets = {}
+    local myPos   = root.Position
+
+    local sourceFolders = {
+        Workspace:FindFirstChild("Enemies"),
+        Workspace:FindFirstChild("NPCs"),
+        Workspace:FindFirstChild("Characters")
+    }
+
+    local function checkModel(model)
+        if not model or model == char then return end
+        local tRoot = model:FindFirstChild("HumanoidRootPart")
+        local tHum  = model:FindFirstChild("Humanoid")
+        if tRoot and tHum and tHum.Health > 0 then
+            local dist = (tRoot.Position - myPos).Magnitude
+            if dist <= _G.AttackDistance then
+                table.insert(targets, { 
+                    Model = model, 
+                    Root  = tRoot, 
+                    Head  = model:FindFirstChild("Head") or tRoot 
+                })
+            end
+        end
+    end
+
+    for _, folder in ipairs(sourceFolders) do
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if #targets >= Settings.MaxTargets then break end
+                checkModel(model)
+            end
+        end
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if #targets >= Settings.MaxTargets then break end
+        if p ~= LocalPlayer and p.Character then
+            checkModel(p.Character)
+        end
+    end
+
+    return targets
+end
+
+local function PerformAttack(forceTargets)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
+    if not hasTool then return end
+
+    local targets = forceTargets or GetTargets()
+    if #targets == 0 then return end
+
+    local mainTarget = targets[1]
+    local hitList    = {}
+    for i, target in ipairs(targets) do 
+        table.insert(hitList, {target.Model, target.Root}) 
+    end
+
+    RegisterAttack:FireServer(0)
+
+    local fakeHash = tostring(LocalPlayer.UserId):sub(2,4) .. tostring(math.random(10000, 99999))
+    pcall(function()
+        RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
+    end)
+
+    if State.FoundRemote and State.FoundRemoteId then
+        pcall(function()
+            local seedValue   = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
+            local rawName     = "RE/RegisterHit"
+            local timestamp   = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
+            local encryptedName = string.gsub(rawName, ".", function(c) 
+                return string.char(bit32.bxor(string.byte(c), timestamp)) 
+            end)
+            State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
+        end)
+    end
+end
+
+local manualConnection = nil
+
+local function stopManual()
+    if manualConnection then
+        manualConnection:Disconnect()
+        manualConnection = nil
+    end
+end
+
+local function startManual()
+    if manualConnection then return end
+    manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if _G.FastAttack then return end 
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            pcall(PerformAttack)
+        end
+    end)
+end
+
+if not _G.FastAttack then startManual() end
+
+LocalPlayer.CharacterRemoving:Connect(function() stopManual() end)
+LocalPlayer.CharacterAdded:Connect(function()
+    if not _G.FastAttack then startManual() end
+end)
+
+local isRunning = true
+task.spawn(function()
+    while isRunning do
+        local startTime = tick()
+
+        if _G.FastAttack then
+            pcall(PerformAttack)
+        end
+
+        local elapsed  = tick() - startTime
+        local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
+        task.wait(waitTime)
+    end
+end)
+
+--Fruit m1
+local function GetFruitRemote()
+    for _, loc in ipairs({ LocalPlayer.Character, LocalPlayer:FindFirstChild("Backpack") }) do
+        if loc then
+            for _, tool in ipairs(loc:GetChildren()) do
+                local remote = tool:IsA("Tool") and tool:FindFirstChild("LeftClickRemote", true)
+                if remote then 
+                    return remote, tool.Name 
+                end
+            end
+        end
+    end
+    return nil, "不是M1果實"
+end
+
+task.spawn(function()
+    while true do
+        if _G.FruitsM1Enable then
+            local char   = LocalPlayer.Character
+            local curHRP = char and char:FindFirstChild("HumanoidRootPart")
+            local remote = GetFruitRemote()
+            if curHRP and remote then 
+                remote:FireServer(-curHRP.CFrame.UpVector, 2, true) 
+            end
+        end
+        task.wait(_G.FruitsM1DelayValue)
+    end
+end)
+
+-- DragonGun
+task.spawn(function()
+    local Modules         = ReplicatedStorage:WaitForChild("Modules")
+    local DragonNet       = Modules:WaitForChild("Net")
+    local ShootGunEvent   = DragonNet:WaitForChild("RE/ShootGunEvent")
+    local Validator2      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Validator2")
+    
+    local getupval  = debug.getupvalue  or getupvalue
+    local setupval  = debug.setupvalue  or setupvalue
+    local getupvals = debug.getupvalues or getupvalues
+    
+    local ShootFunction
+    local V_Idx = { v26 = 12, v22 = 13, v25 = 14, v21 = 15, v23 = 16, v24 = 17, v27 = 18 }
+    
+    local function InitDragonGun()
+        local success, result = pcall(require, ReplicatedStorage:WaitForChild("Controllers"):WaitForChild("CombatController"))
+        if success and type(result) == "table" and result.Attack then 
+            ShootFunction = getupval(result.Attack, 9) 
+        end
+    end
+    
+    local function GetNextValidator()
+        if not ShootFunction then InitDragonGun() end
+        if not ShootFunction then return 0, 0 end
+        local upvals = getupvals(ShootFunction)
+        if not upvals then return 0, 0 end
+        
+        if upvals[V_Idx.v21] ~= 727595 then
+            for i, v in pairs(upvals) do
+                if v == 727595 then
+                    local offset  = i - 15
+                    V_Idx.v21 = i; V_Idx.v22 = 13 + offset; V_Idx.v23 = 16 + offset; V_Idx.v24 = 17 + offset
+                    V_Idx.v26 = 12 + offset; V_Idx.v25 = 14 + offset; V_Idx.v27 = 18 + offset
+                    break
+                end
+            end
+        end
+        
+        local v1 = getupval(ShootFunction, V_Idx.v21)
+        local v2 = getupval(ShootFunction, V_Idx.v22)
+        local v3 = getupval(ShootFunction, V_Idx.v23)
+        local v4 = getupval(ShootFunction, V_Idx.v24)
+        local v5 = getupval(ShootFunction, V_Idx.v25)
+        local v6 = getupval(ShootFunction, V_Idx.v26)
+        local v7 = getupval(ShootFunction, V_Idx.v27)
+        
+        if not (v1 and v2 and v3 and v4 and v5 and v6 and v7) then return 0, 0 end
+        
+        local v8 = v6 * v2
+        local v9 = (v5 * v2 + v6 * v1) % v3
+        v9       = (v9 * v3 + v8) % v4
+        v5       = math.floor(v9 / v3)
+        v6       = v9 - v5 * v3
+        v7       = v7 + 1
+        
+        setupval(ShootFunction, V_Idx.v25, v5)
+        setupval(ShootFunction, V_Idx.v26, v6)
+        setupval(ShootFunction, V_Idx.v27, v7)
+        
+        return math.floor(v9 / v4 * 16777215), v7
+    end
+    
+    local function GetClosestDragonTarget()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+        
+        local closest, dist = nil, math.huge
+        local myPos = root.Position
+        
+        if _G.AttackMobs then
+            local enemiesFolder = Workspace:FindFirstChild("Enemies")
+            if enemiesFolder then
+                for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                    local eHum  = enemy:FindFirstChildOfClass("Humanoid")
+                    local eRoot = enemy:FindFirstChild("HumanoidRootPart")
+                    if eHum and eHum.Health > 0 and eRoot then
+                        local d = (eRoot.Position - myPos).Magnitude
+                        if d < dist then 
+                            dist    = d
+                            closest = eRoot 
+                        end
+                    end
+                end
+            end
+        end
+        return closest
+    end
+    
+    while true do
+        task.wait(_G.M1FireInterval)
+        if not _G.GunM1 then continue end
+        
+        pcall(function()
+            local char = LocalPlayer.Character
+            local tool = char and char:FindFirstChildOfClass("Tool")
+            if not tool or tool.ToolTip ~= "Gun" then return end
+            
+            local targetPart = GetClosestDragonTarget()
+            if not targetPart then return end
+            
+            local valCode, valCount = GetNextValidator()
+            if valCode ~= 0 then 
+                Validator2:FireServer(valCode, valCount) 
+            end
+            
+            tool:SetAttribute("LocalOverheat",    0)
+            tool:SetAttribute("LocalTotalShots",  (tool:GetAttribute("LocalTotalShots") or 0) + 1)
+            ShootGunEvent:FireServer(targetPart.Position, { targetPart })
+        end)
+    end
+end)
+
+--Auto Buso
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutoBusoEnabled then
+            local character = LocalPlayer.Character
+            if character and not character:FindFirstChild("HasBuso") then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+                end)
+            end
+        end
+    end
+end)
+
+-- Auto V3
+local function toggleV3()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.T, false, game)
+    task.wait(1)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoV3_Enabled then
+            toggleV3()
+            task.wait(1)
+        end
+    end
+end)
+
+-- Auto V4
+local function GetAwakeningRemote()
+    local p = Players.LocalPlayer
+    if not p then return nil end
+
+    local backpack    = p:FindFirstChild("Backpack")
+    local awakening   = backpack and backpack:FindFirstChild("Awakening")
+    if awakening and awakening:FindFirstChild("RemoteFunction") then
+        return awakening.RemoteFunction
+    end
+
+    local char           = p.Character
+    local charAwakening  = char and char:FindFirstChild("Awakening")
+    if charAwakening and charAwakening:FindFirstChild("RemoteFunction") then
+        return charAwakening.RemoteFunction
+    end
+
+    return nil
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.AutoV4_Enabled then
+            local remote = GetAwakeningRemote()
+            if remote then
+                task.spawn(function()
+                    pcall(function()
+                        remote:InvokeServer(true)
+                    end)
+                end)
+            end
+        end
+    end
+end)
+
+-- Auto Ken
+local function toggleKenVision()
+    if UserInputService:GetFocusedTextBox() then return end
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function removeKenEffect()
+    local colorCorrection = Lighting:FindFirstChild("ColorCorrection") or Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
+    if colorCorrection and colorCorrection.Enabled then
+        colorCorrection.Enabled = false
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.RemoveKenEffectEnabled then
+        removeKenEffect()
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        
+        local kenLeft   = LocalPlayer:GetAttribute("KenDodgesLeft")
+        local kenActive = LocalPlayer:GetAttribute("KenActive")
+        
+        if _G.AutoKenEnabled then
+            if kenLeft ~= nil then
+                if not kenActive then
+                    toggleKenVision()
+                    task.wait(0.5)
+                end
+            else
+                toggleKenVision()
+                task.wait(1.0)
+            end
+        end
+    end
+end)
+
+--低配模式
+_G.SetLowVisualState = function(state)
+    _G.LowVisualMode = state
+    
+    if _G.LowVisualMode then
+        WindUI:Notify({ 
+            Title = "優化系統", 
+            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
+            Duration = 5
+        })
+        
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.Reflectance = 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj:Destroy()
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            elseif obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("DepthOfFieldEffect") or obj:IsA("SunRaysEffect") then
+                obj.Enabled = false
+            end
+        end
+        
+        if not _G.LowVisualConnection then
+            _G.LowVisualConnection = Workspace.DescendantAdded:Connect(function(obj)
+                if obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj:Destroy()
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
+        end
+    else
+        if _G.LowVisualConnection then
+            _G.LowVisualConnection:Disconnect()
+            _G.LowVisualConnection = nil
+        end
+    end
+end
+
+-- 自動執行
+local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+
+if _G.AutoExecute and queue_func then
+    queue_func(ScriptLoadstring)
+end
+
+-- Anti AFK
+local function EnableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
+    if getconnections then
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            conn:Disable()
+        end
+    end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+
+local function DisableAntiAFK()
+    if _G.AntiAFK_Connection then 
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil 
+    end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
+end
+
+--------------------------
+-- UI 分頁與元件
+--------------------------
+local Tabs = {
+    Config   = Window:Tab({ Title = "配置",   Icon = "wrench"}),
+    Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
+}
+
+Tabs.Config:Section({ Title = "Select Team" })
+
+Tabs.Config:Dropdown({
+    Title = "選擇陣營",
+    Values = { "海賊", "海軍" },
+    Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
+    Callback = function(v)
+        _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
+        SelectTeam()
+    end,
+})
+
+Tabs.Config:Section({ Title = "M1" })
+
+Tabs.Config:Toggle({
+    Title    = "自動攻擊",
+    Value    = _G.FastAttack,
+    Callback = function(v)
+        _G.FastAttack = v
+        if _G.FastAttack then
+            stopManual()
+        else
+            startManual()
+        end
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "自動果實 M1",
+    Value    = _G.FruitsM1Enable,
+    Callback = function(v)
+        _G.FruitsM1Enable = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "自動槍 M1",
+    Value    = _G.GunM1,
+    Callback = function(v) 
+        _G.GunM1 = v
+    end
+})
+
+Tabs.Config:Slider({
+    Title = "槍 M1 發射間隔(限龍炮)",
+    Step  = 0.001,
+    Value = {
+        Min     = 0.001,
+        Max     = 0.2,
+        Default = _G.M1FireInterval
+    },
+    Callback = function(v)
+        _G.M1FireInterval = v
+    end
+})
+
+Tabs.Config:Section({ Title = "自動" })
+
+Tabs.Config:Toggle({
+    Title    = "Auto Buso",
+    Desc     = "自動開啟武裝色",
+    Value    = _G.AutoBusoEnabled,
+    Callback = function(v)
+        _G.AutoBusoEnabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto V3",
+    Desc     = "自動開啟V3",
+    Value    = _G.AutoV3_Enabled,
+    Callback = function(v)
+        _G.AutoV3_Enabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto V4",
+    Desc     = "自動開啟V4",
+    Value    = _G.AutoV4_Enabled,
+    Callback = function(v)
+        _G.AutoV4_Enabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto Ken",
+    Desc     = "自動開啟見聞色",
+    Value    = _G.AutoKenEnabled,
+    Callback = function(v)
+        _G.AutoKenEnabled = v
+        _G.RemoveKenEffectEnabled = v
+    end
+})
+
+Tabs.Settings:Section({ Title = "重置腳本" })
+
+Tabs.Settings:Button({
+    Title = "將所有配置恢復初始",
+    Icon = "trash-2",
+    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Callback = function()
+        local ok = pcall(function()
+            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+                makefolder(ConfigFolder)
+            end
+            if typeof(writefile) == "function" then
+                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
+            end
+        end)
+        
+        if ok then
+            WindUI:Notify({
+                Title = "配置等待重置",
+                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "重置失敗",
+                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
+                Duration = 4
+            })
+        end
+    end
+})
+
+Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Toggle({
+    Title = "低配模式",
+    Desc = "大幅優化效能",
+    Value = _G.LowVisualMode,
+    Callback = function(v)
+        _G.SetLowVisualState(v)
+    end
+})
+
+Tabs.Settings:Toggle({ 
+    Title = "換服後自動執行",
+    Desc = "切換伺服器時自動重新載入",
+    Value = _G.AutoExecute,
+    Callback = function(v)
+        _G.AutoExecute = v
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                writefile("AutoSeaEvent.file", "true")
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        else
+            if queue_on_teleport and isfile("AutoSeaEvent.file") then
+                delfile("AutoSeaEvent.file")
+            end
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已關閉自動執行",
+                Duration = 3
+            })
+        end
+    end
+})
+
+Tabs.Settings:Toggle({ 
+    Title    = "Anti AFK", 
+    Desc     = "防止閒置被踢出", 
+    Value    = _G.AntiAFK_ENABLED,
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
+            EnableAntiAFK() 
+        else 
+            DisableAntiAFK() 
+        end 
+    end
+})
+
+Tabs.Settings:Keybind({ 
+    Title = "快捷鍵", 
+    Desc = "可更改", 
+    Value = _G.CurrentKey,
+    Callback = function(v)
+        _G.CurrentKey = v
+        
+        if not _G.KeyDisabled then
+            Window:SetToggleKey(Enum.KeyCode[v])
+        end
+    end
+})
+
+Tabs.Settings:Toggle({
+    Title = "停用快捷鍵",
+    Desc = "開啟後將禁用快捷鍵",
+    Value = _G.KeyDisabled,
+    Callback = function(state)
+        _G.KeyDisabled = state
+        
+        if state then
+            Window:SetToggleKey(nil)
+        else
+            Window:SetToggleKey(Enum.KeyCode[_G.CurrentKey])
+        end
+    end
+})
+
+-- 初始化狀態
+task.spawn(function()
+    task.wait()
+
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("AutoSeaEvent.file") then
+                writefile("AutoSeaEvent.file", "true")
+            end
+
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("AutoSeaEvent.file") then
+            delfile("AutoSeaEvent.file")
+        end
+    end
+
+    if _G.LowVisualMode then
+        _G.SetLowVisualState(true)
+    end
+end)
