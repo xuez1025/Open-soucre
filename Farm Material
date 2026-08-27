@@ -1112,6 +1112,7 @@ local function GetPlayerTools()
     return tools
 end
 
+-- 解析所需升級材料
 local function ParseOnlyRequiredMaterials(requiredList)
     if type(requiredList) ~= "table" or #requiredList == 0 then
         return "✨ 已升級 (Up)"
@@ -1137,6 +1138,7 @@ end
 
 local isFetching = false
 local function GetWeaponsData()
+    if isFetching then return { ok = false, error = "正在讀取中" } end
     isFetching = true
 
     local modules = ReplicatedStorage:FindFirstChild("Modules")
@@ -1210,7 +1212,6 @@ local function TryUpgradeTool(tool, targetType)
                 local reqNum = tonumber(item.Required or item.Amount) or 0
                 local hasNum = tonumber(item.Count) or 0
                 
-                -- 如果當前擁有的數量小於需求的數量，則標記不能升級並跳出檢查迴圈
                 if hasNum < reqNum then
                     canUpgrade = false
                     break
@@ -1239,7 +1240,6 @@ local function runUpgradeProcess(onUpgraded)
         local didUpgrade = false
 
         for _, tool in ipairs(tools) do
-            -- 開啟刀升級時，檢測並升級未滿級的刀
             if _G.AutoUpgradeSword then
                 if TryUpgradeTool(tool, "Sword") then
                     didUpgrade = true
@@ -1277,7 +1277,7 @@ local function StartAutoUpgradeLoop(onUpgraded)
     autoUpgradeThread = task.spawn(function()
         while _G.AutoUpgradeSword or _G.AutoUpgradeGun do
             runUpgradeProcess(onUpgraded)
-            task.wait(1.5) -- 每 1.5 秒自動輪詢與檢測新裝備
+            task.wait(1) -- 改為每 1 秒自動檢測與升級
         end
         autoUpgradeThread = nil
     end)
@@ -1953,8 +1953,6 @@ local GunParagraph = Tabs.Weapon:Paragraph({
 })
 
 local function RenderWeaponsData()
-    if isFetching then return end -- 已有檢測在執行，等待其完成
-
     local data = GetWeaponsData()
     if not data or not data.ok then return end
 
@@ -1967,18 +1965,14 @@ local function RenderWeaponsData()
         end
     end
 
-    -- 解析武器名稱與材料資訊
     local function ProcessWeapons(list)
-        if #list == 0 then
-            return nil, nil
-        end
+        if #list == 0 then return nil, nil end
 
         local names = {}
         local details = {}
 
         for _, w in ipairs(list) do
             table.insert(names, w.name)
-            -- 如果有多把武器，在內容中標註該武器名稱與材料
             if #list > 1 then
                 table.insert(details, string.format("【%s】\n材料：\n%s", w.name, w.requiredText))
             else
@@ -1991,7 +1985,7 @@ local function RenderWeaponsData()
         return titleText, descText
     end
 
-    -- 更新 刀類 Paragraph
+    -- 更新刀類 Paragraph
     local swordTitle, swordDesc = ProcessWeapons(swords)
     if swordTitle then
         SwordParagraph:SetTitle(swordTitle)
@@ -2001,7 +1995,7 @@ local function RenderWeaponsData()
         SwordParagraph:SetDesc("目前無可顯示數據。")
     end
 
-    -- 更新 槍類 Paragraph
+    -- 更新槍類 Paragraph
     local gunTitle, gunDesc = ProcessWeapons(guns)
     if gunTitle then
         GunParagraph:SetTitle(gunTitle)
@@ -2012,6 +2006,7 @@ local function RenderWeaponsData()
     end
 end
 
+-- UI 開關與區塊設置
 Tabs.Weapon:Section({ Title = "武器自動升級" })
 
 Tabs.Weapon:Toggle({
@@ -2044,10 +2039,13 @@ Tabs.Weapon:Toggle({
 
 task.spawn(function()
     BindToolEvents(RenderWeaponsData)
-    task.wait(1)
-    RenderWeaponsData()
-    if _G.AutoUpgradeSword or _G.AutoUpgradeGun then
-        StartAutoUpgradeLoop(RenderWeaponsData)
+    
+    while true do
+        RenderWeaponsData()
+        if _G.AutoUpgradeSword or _G.AutoUpgradeGun then
+            StartAutoUpgradeLoop(RenderWeaponsData)
+        end
+        task.wait(1)
     end
 end)
 
