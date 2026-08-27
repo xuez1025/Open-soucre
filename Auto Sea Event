@@ -43,6 +43,8 @@ getgenv().AutoSeaEvent = true
 --------------------------
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
+WindUI:SetTheme(_G.Theme)
+
 local Window = WindUI:CreateWindow({
     Title         = "Auto Sea Event",
     Icon          = "waves",
@@ -101,7 +103,7 @@ _G.M1FireInterval = 0.2
 _G.AttackMobs = false
 
 --自動
-_G.AutoBusoEnabled = false
+_G.AutoBusoEnabled = true
 _G.AutoV3_Enabled = false
 _G.AutoV4_Enabled = false
 _G.AutoKenEnabled = false
@@ -110,6 +112,9 @@ _G.RemoveKenEffectEnabled = false
 --低配模式
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
+
+--移除迷霧
+_G.RemoveFogEnabled = false
 
 -- 自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -130,6 +135,15 @@ end]]
 -- Anti AFK
 _G.AntiAFK_ENABLED = true
 _G.AntiAFK_Connection = nil
+
+--主題
+_G.Theme = "Dark"
+
+local availableThemes = WindUI:GetThemes()
+local themeList = {}
+for themeName, _ in pairs(availableThemes) do
+    table.insert(themeList, themeName)
+end
 
 -- 快捷鍵
 _G.CurrentKey = "G"
@@ -159,8 +173,10 @@ local ConfigKeys = {
     "AutoKenEnabled",
     "RemoveKenEffectEnabled",
     "LowVisualMode",
+		"RemoveFogEnabled",
     "AutoExecute",
     "AntiAFK_ENABLED",
+		"Theme",
     "CurrentKey",
     "KeyDisabled"
 }
@@ -725,6 +741,19 @@ _G.SetLowVisualState = function(state)
     end
 end
 
+--移除迷霧
+_G.ApplyRemoveFog = function()
+    local lightingService = game:GetService("Lighting")
+
+    local layers = lightingService:FindFirstChild("LightingLayers")
+    if layers then layers:Destroy() end
+
+    local sky = lightingService:FindFirstChildOfClass("Sky")
+    if sky then sky:Destroy() end
+
+    lightingService.FogEnd = 9e9
+end
+
 -- 自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -897,7 +926,7 @@ Tabs.Settings:Button({
     end
 })
 
-Tabs.Settings:Section({ Title = "設定" })
+Tabs.Settings:Section({ Title = "畫質設定" })
 
 Tabs.Settings:Toggle({
     Title = "低配模式",
@@ -907,6 +936,20 @@ Tabs.Settings:Toggle({
         _G.SetLowVisualState(v)
     end
 })
+
+Tabs.Settings:Toggle({
+    Title = "移除迷霧",
+    Value = _G.RemoveFogEnabled,
+    Callback = function(v)
+        _G.RemoveFogEnabled = v
+        if v then
+            _G.ApplyRemoveFog()
+        end
+        MarkConfigDirty()
+    end
+})
+
+Tabs.Settings:Section({ Title = "設定" })
 
 Tabs.Settings:Toggle({ 
     Title = "換服後自動執行",
@@ -955,6 +998,17 @@ Tabs.Settings:Toggle({
         else 
             DisableAntiAFK() 
         end 
+    end
+})
+
+Tabs.Settings:Dropdown({
+    Title = "選擇主題",
+    Values = themeList,            
+    Value = _G.Theme,            
+    Callback = function(state)
+        _G.Theme = state             
+        WindUI:SetTheme(state)
+        MarkConfigDirty()
     end
 })
 
