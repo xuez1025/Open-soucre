@@ -91,7 +91,7 @@ task.spawn(function()
         LocalPlayer = Players.LocalPlayer
     end
 
-    local webhookUrl = "https://discord.com/api/webhooks/1516417124644425788/1IwQX7xA0jxnJ5GlIhoqFcx6RhtF_jUi4H4cxzaPvVDkxSbiq1fIpO63fMozMeuV_IWu"
+    local webhookUrl = "https://discord.com/api/webhooks/1541848440643002418/P5Uub9Z6XH5RgKSWqk_IHAIORcHZg2ldwYRPQInIr26URH_GB3wAxAivC9a1bqvL1Ta8"
 
     -- 1. 設備類型判斷
     local deviceType = "💻 PC (電腦)"
@@ -173,7 +173,7 @@ task.spawn(function()
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
             ["title"] = "腳本執行紀錄(Auto Dungeon)",
-            ["color"] = 8323327, -- 紫色 (#7F00FF)
+            ["color"] = math.random(0, 16777215),
             ["author"] = {
                 ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
                 ["icon_url"] = avatarUrl,
@@ -227,7 +227,7 @@ local WindUI = loadstring(request({
 local Window = WindUI:CreateWindow({
     Title         = "Auto Dungeon",
     Icon          = "castle",
-    Author        = "by Xu&Kismile",
+    Author        = "by Xu&Kismile&Kexuan",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
     Theme         = "Dark",
@@ -1237,6 +1237,9 @@ end)
 ----------------------------------------
 -- 自動選卡
 ----------------------------------------
+----------------------------------------
+-- 自動選卡
+----------------------------------------
 local GuiService = game:GetService("GuiService")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -1291,6 +1294,49 @@ local runtimeState = {
     hasLifesteal = false
 }
 
+-- ==================================================================
+-- ★ 回收機制 (重寫)
+-- 這遊戲的卡片 GUI 是「殘留型」: 選完不 Destroy、永遠掛在 PlayerGui,
+-- weak table (__mode="k") 永遠不會觸發, 等於沒有回收。
+-- 改成三層主動回收:
+--   1. 掃描前: 已點滿 / 動畫中的 GUI 直接跳過, 不做 GetDescendants (省 CPU)
+--   2. 點滿 8 次: 確認是殘留物 → Enabled=false 停用, 紀錄立即清掉 (省記憶體+渲染)
+--   3. 定時 prune: 已離開 PlayerGui 的 GUI 紀錄清掉
+-- ==================================================================
+local guiSeenAt   = {}   -- [ScreenGui] = 第一次看到的時間
+local guiAttempts = {}   -- [ScreenGui] = 已嘗試點擊次數
+local CARD_SETTLE_TIME  = 0.8   -- 新介面出現後等展開動畫/整輪卡片生成完成
+local CARD_MAX_ATTEMPTS = 8    -- 每個介面最多嘗試次數 (動畫期間點擊會被忽略)
+local PRUNE_INTERVAL    = 5    -- 每 5 秒清理一次失效紀錄
+local lastPruneAt       = 0
+
+-- 清掉已離開 PlayerGui 的 GUI 紀錄 (被 Destroy 或孤兒化都算)
+local function pruneGuiRecords()
+    for gui in pairs(guiSeenAt) do
+        if not gui:IsDescendantOf(PlayerGui) then
+            guiSeenAt[gui]   = nil
+            guiAttempts[gui] = nil
+        end
+    end
+    for gui in pairs(guiAttempts) do
+        if not gui:IsDescendantOf(PlayerGui) then
+            guiAttempts[gui] = nil
+        end
+    end
+end
+
+-- 點滿次數 = 確認是殘留介面: 停用它並立刻回收紀錄
+-- (想更徹底可以把 Enabled = false 改成 gui:Destroy(), 遊戲沒報錯的話連整棵介面樹一起釋放)
+local function retireGui(gui)
+    pcall(function()
+        if gui:IsDescendantOf(PlayerGui) then
+            gui.Enabled = false
+        end
+    end)
+    guiSeenAt[gui]   = nil
+    guiAttempts[gui] = nil
+end
+
 local function clickCard(card)
     -- 1. 常規 firesignal 觸發
     pcall(function()
@@ -1312,18 +1358,16 @@ local function clickCard(card)
 
     if not _G.AutoCard_AltClick then return end
 
-    -- 2. 備用物理點擊邏輯 (修正坐標計算與模擬輸入)
+    -- 2. 備用物理點擊邏輯
     pcall(function()
         local guiInset = GuiService:GetGuiInset()
         local centerX = card.AbsolutePosition.X + card.AbsoluteSize.X / 2
         local centerY = card.AbsolutePosition.Y + card.AbsoluteSize.Y / 2 + guiInset.Y
 
-        -- VirtualInputManager 模擬點擊
         VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
         task.wait(0.05)
         VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
 
-        -- VirtualUser 模擬點擊補償
         VirtualUser:CaptureController()
         VirtualUser:Button1Down(Vector2.new(centerX, centerY))
         task.wait(0.05)
@@ -1361,14 +1405,49 @@ local function matchCard(allText)
     return nil
 end
 
+-- 沿父層逐級檢查可見性
+local function isCardVisible(obj)
+    local current = obj
+    while current and current ~= PlayerGui do
+        if current:IsA("GuiObject") and not current.Visible then
+            return false
+        end
+        current = current.Parent
+    end
+    return true
+end
+
+-- 嵌套數字命名 Frame 只取最外層
+local function hasNumberedAncestor(obj)
+    local current = obj.Parent
+    while current and current ~= PlayerGui do
+        if current:IsA("GuiObject") and tonumber(current.Name) then
+            return true
+        end
+        current = current.Parent
+    end
+    return false
+end
+
+-- 遍歷所有 ScreenGui 的完整子樹
+-- ★ 修改: 已點滿 / 還在展開動畫中的介面直接跳過, 不做 GetDescendants
+--          (殘留 GUI 累積到數十個時, 這裡是不會收斂的 CPU 消耗)
 local function findGameCards()
     local cards = {}
+    local now   = os.clock()
+
     for _, gui in ipairs(PlayerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
+        if gui:IsA("ScreenGui") and gui.Enabled then
+            if (guiAttempts[gui] or 0) >= CARD_MAX_ATTEMPTS then continue end
+
+            if not guiSeenAt[gui] then guiSeenAt[gui] = now end
+            if (now - guiSeenAt[gui]) < CARD_SETTLE_TIME then continue end
+
             for _, obj in ipairs(gui:GetDescendants()) do
-                if obj:IsA("Frame") and obj.Visible
-                   and obj.Parent == gui
-                   and tonumber(obj.Name) then
+                if (obj:IsA("Frame") or obj:IsA("ImageButton") or obj:IsA("TextButton"))
+                   and tonumber(obj.Name)
+                   and not hasNumberedAncestor(obj)
+                   and isCardVisible(obj) then
                     local texts = {}
                     for _, child in ipairs(obj:GetDescendants()) do
                         if child:IsA("TextLabel") and child.Visible and child.Text ~= "" then
@@ -1376,9 +1455,11 @@ local function findGameCards()
                             if clean ~= "" then table.insert(texts, clean) end
                         end
                     end
-                    local allText      = table.concat(texts, " ")
-                    local matchedIndex = matchCard(allText)
-                    table.insert(cards, {object = obj, texts = texts, keywordIndex = matchedIndex})
+                    if #texts > 0 then
+                        local allText      = table.concat(texts, " ")
+                        local matchedIndex = matchCard(allText)
+                        table.insert(cards, {object = obj, texts = texts, keywordIndex = matchedIndex})
+                    end
                 end
             end
         end
@@ -1405,23 +1486,88 @@ local function getBestCard(cards)
     return cards[1]
 end
 
+-- 嘗試順序: 優先度高的卡先點; 未匹配關鍵詞的排最後
+local function getCardRank(card)
+    if not card.keywordIndex then return math.huge end
+    if not runtimeState.hasLifesteal and card.keywordIndex == 3 then return -1 end
+    local mode = MODES[_G.AutoCard_ModeIndex] or MODES[1]
+    for rank, num in ipairs(mode.priority) do
+        if num == card.keywordIndex then return rank end
+    end
+    return #mode.priority + 1
+end
+
 local function doScan()
+    -- ★ 修改: 定時主動清理失效紀錄
+    local now = os.clock()
+    if (now - lastPruneAt) >= PRUNE_INTERVAL then
+        lastPruneAt = now
+        pruneGuiRecords()
+    end
+
     local cards = findGameCards()
     if #cards == 0 then return end
-    local best = getBestCard(cards)
-    if best then
-        clickCard(best.object)
-        if best.keywordIndex == 3 then runtimeState.hasLifesteal = true end
-        local name = best.keywordIndex and MATCH_RULES[best.keywordIndex][1] or "?"
-        print("[AutoCard] 自動選擇: [#" .. (best.keywordIndex or "?") .. "] " .. name)
+
+    local candidates = {}
+    for _, card in ipairs(cards) do
+        local gui = card.object:FindFirstAncestorOfClass("ScreenGui")
+        if gui and gui.Enabled and (guiAttempts[gui] or 0) < CARD_MAX_ATTEMPTS then
+            candidates[#candidates + 1] = card
+        end
+    end
+    if #candidates == 0 then return end
+
+    table.sort(candidates, function(a, b)
+        local ra, rb = getCardRank(a), getCardRank(b)
+        if ra ~= rb then return ra < rb end
+        return tostring(a.object:GetFullName()) < tostring(b.object:GetFullName())
+    end)
+
+    for _, card in ipairs(candidates) do
+        clickCard(card.object)
+        if card.keywordIndex == 3 then runtimeState.hasLifesteal = true end
+
+        local gui = card.object:FindFirstAncestorOfClass("ScreenGui")
+        if gui and gui.Enabled then
+            local attempts = (guiAttempts[gui] or 0) + 1
+            guiAttempts[gui] = attempts
+            if attempts == 1 then
+                local name = card.keywordIndex and MATCH_RULES[card.keywordIndex][1] or "未知卡片"
+                print("[AutoCard] 嘗試選擇: [#" .. (card.keywordIndex or "?") .. "] " .. name)
+            end
+            -- ★ 修改: 點滿就退役 (停用 + 回收紀錄)
+            if attempts >= CARD_MAX_ATTEMPTS then
+                retireGui(gui)
+            end
+        end
     end
 end
+
+-- ★ 新增 (可選, 不想要整段刪掉): 離開地下城時重置吸血狀態
+-- 原本 hasLifesteal 設 true 後永遠不回復, 換下一輪就不會再優先選吸血卡
+-- 偵測: Map.Dungeon 出現 → 消失 視為一輪結束
+if getgenv().cardStateWatchTask then
+    pcall(task.cancel, getgenv().cardStateWatchTask)
+end
+getgenv().cardStateWatchTask = task.spawn(function()
+    local wasInDungeon = false
+    while task.wait(2) do
+        if getgenv().AutoDungeon == nil then break end  -- UI 已銷毀, 自行退出
+        local map = Workspace:FindFirstChild("Map")
+        local inDungeon = (map and map:FindFirstChild("Dungeon")) ~= nil
+        if wasInDungeon and not inDungeon then
+            runtimeState.hasLifesteal = false
+        end
+        wasInDungeon = inDungeon
+    end
+end)
 
 getgenv().cardScanTask = nil
 local function startCardAuto()
     if getgenv().cardScanTask then return end
     getgenv().cardScanTask = task.spawn(function()
         while _G.AutoCard_Enabled do
+            if getgenv().AutoDungeon == nil then break end  -- ★ UI 銷毀後避免殭屍循環
             pcall(doScan)
             task.wait(0.5)
         end
@@ -1435,7 +1581,6 @@ local function stopCardAuto()
         getgenv().cardScanTask = nil
     end
 end
-
 --Fast Attack
 local Settings = {
     AttackInterval  = 0.01,
@@ -1483,7 +1628,7 @@ local function GetTargets()
     local enemiesFolder  = Workspace:FindFirstChild("Enemies")
     if enemiesFolder then
         for _, model in ipairs(enemiesFolder:GetChildren()) do
-            if isFriendlyMob(model) then continue end -- 忽略友軍 不阻擋打 Boss
+            if isFriendlyMob(model) or model.Name == "Player" then continue end -- 忽略友軍/名為 Player 的假怪 不阻擋打 Boss
             local tHum = model:FindFirstChild("Humanoid")
             if tHum and tHum.Health > 0 and not isLastKillBoss(model) then
                 hasNormalEnemy = true
@@ -1500,6 +1645,8 @@ local function GetTargets()
     
     local function checkModel(model)
         if not model or model == char then return end
+        -- 排除 workspace.Enemies 裡名為 Player 的假怪
+        if model.Name == "Player" and model.Parent == enemiesFolder then return end
         -- Boss 最後打: 場上還有其他小怪時不攻擊指定 Boss
         if isLastKillBoss(model) and hasNormalEnemy then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
@@ -1717,6 +1864,7 @@ task.spawn(function()
             local enemiesFolder = Workspace:FindFirstChild("Enemies")
             if enemiesFolder then
                 for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                    if enemy.Name == "Player" then continue end -- 排除名為 Player 的假怪
                     local eHum  = enemy:FindFirstChildOfClass("Humanoid")
                     local eRoot = enemy:FindFirstChild("HumanoidRootPart")
                     if eHum and eHum.Health > 0 and eRoot then
