@@ -247,8 +247,18 @@ end)
 ----------------------------------------
 -- 變數設定
 ----------------------------------------
+--自動鍊等
+_G.BringMob = true
+_G.AutoLevelFarm = false
+_G.HoverHeight = 15
+_G.ActiveTween = nil
+_G.isMovementActive = false
+
+--自動切換配置
+_G.AutoEquip_SelectedType = "Melee"
+
 --選擇陣營
-_G.SelectTeam = "Marines"
+_G.SelectTeam = "Pirates"
 
 -- Fast Attack
 _G.FastAttack = true
@@ -256,6 +266,9 @@ _G.AttackDistance = 3000
 
 --Auto Buso
 _G.AutoBusoEnabled = true
+
+--自動點數
+_G.AutoStatsEnabled = true
 
 --兌換代碼
 _G.RedeemCodesList = {
@@ -313,23 +326,122 @@ _G.AntiAFK_Connection = nil
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
---Tween&bring
-_G.BringMob = true
-_G.AutoLevelFarm = false
-_G.HoverHeight = 15
-_G.ActiveTween = nil
-_G.isMovementActive = false
-
---自動切換配置
-_G.AutoEquip_SelectedType = "Melee"
-
 --世界檢測
 local World1 = game.PlaceId == 2753915549 or game.PlaceId == 85211729168715
 local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
 local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 local CurrentWorld = World1 and 1 or World2 and 2 or World3 and 3 or 0
 
---自動練等小怪資料（依等級自動選擇 僅小怪不含BOSS）
+----------------------------------------
+-- 配置自動保存
+----------------------------------------
+local ConfigFolder = "AutoLevel_Config"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+
+local ConfigKeys = {
+    "AutoLevelFarm",
+    "BringMob",
+    "HoverHeight",
+    "AutoEquip_SelectedType",
+    "SelectTeam",
+    "FastAttack",
+    "AttackDistance",
+    "AutoBusoEnabled",
+		"AutoStatsEnabled",
+    "LowVisualMode",
+    "AutoExecute",
+    "AntiAFK_ENABLED",
+    "CurrentKey",
+    "KeyDisabled",
+}
+
+local function CopyConfigValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = CopyConfigValue(item)
+    end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then
+            data[key] = CopyConfigValue(_G[key])
+        end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then
+            _G[key] = CopyConfigValue(data[key])
+        end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then
+        ApplyConfig(data)
+        return true
+    end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
+
+--------------------------
+-- 功能核心邏輯
+--------------------------
+--自動練等
 local LevelMobs = {
     [1] = {
         { MinLevel = 1,   Enemies = { "Bandit" },              Positions = { Vector3.new(1037, 81, 1595) }, Quest = { "StartQuest", "BanditQuest1", 1 } }, -- 1~10
@@ -431,7 +543,6 @@ local LevelMobs = {
     }
 }
 
--- 依玩家等級取得對應的小怪設定（取 MinLevel <= 等級的最後一筆）
 local CachedLevel = nil
 local CachedEntry = nil
 
@@ -462,10 +573,6 @@ local function GetCurrentLevelEntry()
     return best
 end
 
-----------------------------------------
--- BOSS 優先邏輯
-----------------------------------------
---自動練等 BOSS 資料（BOSS 任務區間 尚未生成時先 Farm 前一個等級的小怪）
 local LevelBosses = {
     [1] = {
         { MinLevel = 20,  Enemies = { "The Gorilla King" },  Positions = { Vector3.new(-1197, 8, -448) },    Quest = { "StartQuest", "JungleQuest", 3 } },  -- 20~30
@@ -499,7 +606,6 @@ local LevelBosses = {
     }
 }
 
--- 依玩家等級取得對應的 BOSS 設定（等級進入下一階段小怪範圍後 BOSS 任務失效）
 local CachedBossLevel = nil
 local CachedBossEntry = nil
 
@@ -527,7 +633,6 @@ local function GetCurrentBossEntry()
 
     if best then
         local mobEntry = GetCurrentLevelEntry()
-        -- 已到下一階段小怪的等級 BOSS 任務不再適用 (例如 20~30 的 BOSS 到 30 等失效)
         if not mobEntry or best.MinLevel < mobEntry.MinLevel then
             best = nil
         end
@@ -538,7 +643,6 @@ local function GetCurrentBossEntry()
     return best
 end
 
--- BOSS 名稱比對優先度 完全相同(3) > 開頭符合(2) > 名稱包含(1) 避免誤鎖 (例如 Warden 誤鎖 Chief Warden)
 local function MatchBossScore(enemyName, bossNames)
     local score = 0
     for _, bossName in ipairs(bossNames) do
@@ -553,7 +657,6 @@ local function MatchBossScore(enemyName, bossNames)
     return score
 end
 
--- 掃描 workspace.Enemies 取得目前存活的 BOSS（尚未生成或已死亡回傳 nil）
 local function FindBossEnemy(bossEntry)
     if not bossEntry then return nil end
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
@@ -573,7 +676,6 @@ local function FindBossEnemy(bossEntry)
     return best
 end
 
--- 目前應執行的任務來源 BOSS 存活時優先 BOSS 任務 否則小怪任務
 local function GetActiveQuestEntry()
     local bossEntry = GetCurrentBossEntry()
     if bossEntry and FindBossEnemy(bossEntry) then
@@ -582,129 +684,6 @@ local function GetActiveQuestEntry()
     return GetCurrentLevelEntry()
 end
 
-----------------------------------------
--- 配置自動保存
-----------------------------------------
-local ConfigFolder = "AutoLevel_Config"
-local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
-local ConfigReady = false
-local ConfigSaving = false
-local ConfigDirty = false
-
-local ConfigKeys = {
-    "SelectTeam",
-    "FastAttack",
-    "AttackDistance",
-    "AutoBusoEnabled",
-    "LowVisualMode",
-    "AutoExecute",
-    "AntiAFK_ENABLED",
-    "CurrentKey",
-    "KeyDisabled",
-    "AutoLevelFarm",
-    "BringMob",
-    "HoverHeight",
-    "AutoEquip_SelectedType"
-}
-
-local function CopyConfigValue(value)
-    if type(value) ~= "table" then
-        return value
-    end
-    local copy = {}
-    for key, item in pairs(value) do
-        copy[key] = CopyConfigValue(item)
-    end
-    return copy
-end
-
-local function CollectConfig()
-    local data = {}
-    for _, key in ipairs(ConfigKeys) do
-        if _G[key] ~= nil then
-            data[key] = CopyConfigValue(_G[key])
-        end
-    end
-    return data
-end
-
-local function ApplyConfig(data)
-    if type(data) ~= "table" then return end
-    for _, key in ipairs(ConfigKeys) do
-        if data[key] ~= nil then
-            _G[key] = CopyConfigValue(data[key])
-        end
-    end
-end
-
-local function SaveConfig(force)
-    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
-        return false
-    end
-    ConfigSaving = true
-    local ok = pcall(function()
-        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
-            makefolder(ConfigFolder)
-        end
-        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
-    end)
-    ConfigSaving = false
-    if ok then ConfigDirty = false end
-    return ok
-end
-
-local function LoadConfig()
-    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
-        return false
-    end
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(readfile(ConfigFile))
-    end)
-    if ok and type(data) == "table" then
-        ApplyConfig(data)
-        return true
-    end
-    return false
-end
-
-local InitialConfig = CollectConfig()
-LoadConfig()
-ConfigReady = true
-
-task.spawn(function()
-    local lastConfig = nil
-    while task.wait(1) do
-        if ConfigReady then
-            local ok, currentConfig = pcall(function()
-                return HttpService:JSONEncode(CollectConfig())
-            end)
-            if ok and currentConfig ~= lastConfig then
-                lastConfig = currentConfig
-                ConfigDirty = true
-            end
-            if ConfigDirty then SaveConfig(true) end
-        end
-    end
-end)
-
---------------------------
--- 功能核心邏輯
---------------------------
---選擇陣營
-local function SelectTeam()
-    local lp = game:GetService("Players").LocalPlayer
-    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
-        local args = {
-            "SetTeam2",
-            _G.SelectTeam
-        }
-        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
-    end
-end
-
-SelectTeam()
-
---自動練等 接任務（有任務時暫停 每5秒檢查 BOSS優先 等級更換小怪時強制改接任務）
 local function HasActiveQuest()
     local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
     local questFrame = main and main:FindFirstChild("Quest")
@@ -725,7 +704,6 @@ local function AcceptQuest(entry, force)
     end)
 end
 
--- 依目前狀態維持任務（任務已更換或沒有任務時強制接取）
 local function MaintainQuest(entry)
     if not entry or not entry.Quest then return end
     local questKey = tostring(entry.Quest[2]) .. "|" .. tostring(entry.Quest[3])
@@ -742,11 +720,6 @@ task.spawn(function()
     end
 end)
 
-----------------------------------------
--- BOSS 優先偵測
--- BOSS 生成 → 立即停止小怪 Farm 並接取 BOSS 任務
--- BOSS 死亡 → 立即恢復 Farm 前一個等級的小怪任務
-----------------------------------------
 local PrevBossActive = false
 
 task.spawn(function()
@@ -915,7 +888,6 @@ task.spawn(function()
                 local bossEnemy = FindBossEnemy(bossEntry)
 
                 if bossEnemy then
-                    -- BOSS 已生成 只鎖定 BOSS 禁止繼續拉小怪
                     Mon = bossEnemy
                 else
                     local entry = GetCurrentLevelEntry()
@@ -1091,11 +1063,9 @@ local function TryTeleportEntrance(bestEntrance, myHRP)
             local hrp = c and c:FindFirstChild("HumanoidRootPart")
             if hrp then
                 local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
-                -- 若傳送後位置沒有明顯靠近目的地
                 if postDist > 150 and postDist >= preDist * 0.5 then
                     local fails = (_G.Fruit_TeleportFails[bestEntrance.Arg] or 0) + 1
                     _G.Fruit_TeleportFails[bestEntrance.Arg] = fails
-                    -- 失敗達到 3 次則加入黑名單，不再使用該入口
                     if fails >= 3 then
                         _G.Fruit_BlockedEntrances[bestEntrance.Arg] = true
                     end
@@ -1120,7 +1090,6 @@ RunService.Heartbeat:Connect(function()
         local tpos = nil
 
         if bossEnemy then
-            -- BOSS 已生成 優先 Farm BOSS 禁止繼續 Farm 前一個小怪
             targetNPC = bossEnemy
             local broot = bossEnemy:FindFirstChild("HumanoidRootPart")
 
@@ -1145,7 +1114,6 @@ RunService.Heartbeat:Connect(function()
                 tpos = Vector3.new(bpos.X, bpos.Y + _G.HoverHeight, bpos.Z)
             end
         else
-            -- BOSS 尚未生成（或非 BOSS 區間）Farm 當前等級小怪
             local entry = GetCurrentLevelEntry()
             if not entry then
                 if _G.isMovementActive then
@@ -1237,7 +1205,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
---自動切換配置（Auto Level 開啟時固定切換 Melee 無UI元件）
+--自動切換配置
 local function equipByType(toolType)
     if not _G.AutoLevelFarm then return end
     _G.AutoEquip_SelectedType = toolType
@@ -1275,6 +1243,20 @@ local function monitorCurrentTool()
 end
 
 monitorCurrentTool()
+
+--選擇陣營
+local function SelectTeam()
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
+end
+
+SelectTeam()
 
 --Fast Attack
 local Settings = {
@@ -1453,9 +1435,39 @@ task.spawn(function()
     end
 end)
 
+--自動點數
+task.spawn(function()
+    while task.wait(0.1) do
+        if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
+        
+        if _G.AutoStatsEnabled then
+            local player = game.Players.LocalPlayer
+            local data = player:FindFirstChild("Data")
+            
+            if data then
+                local points = data:FindFirstChild("Points")
+                local stats = data:FindFirstChild("Stats")
+                
+                if points and stats and points.Value > 0 then
+                    local meleeLevel = stats:FindFirstChild("Melee") and stats.Melee:FindFirstChild("Level")
+                    local defenseLevel = stats:FindFirstChild("Defense") and stats.Defense:FindFirstChild("Level")
+                    local commF = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_")
+                    
+                    if meleeLevel and defenseLevel then
+                        if meleeLevel.Value < 2800 then
+                            commF:InvokeServer("AddPoint", "Melee", 1)
+                        elseif defenseLevel.Value < 2800 then
+                            commF:InvokeServer("AddPoint", "Defense", 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 --兌換代碼
 local function redeemAllCodes()
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
     task.spawn(function()
         for _, code in ipairs(_G.RedeemCodesList) do
@@ -1625,11 +1637,18 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Config:Toggle({
-    Title    = "Auto Buso",
-    Desc     = "自動開啟武裝色",
+    Title    = "自動武裝色",
     Value    = _G.AutoBusoEnabled,
     Callback = function(v)
         _G.AutoBusoEnabled = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title = "自動點數",
+    Value = _G.AutoStatsEnabled,
+    Callback = function(v)
+        _G.AutoStatsEnabled = v
     end
 })
 
