@@ -380,25 +380,23 @@ local function Sea2ShouldRun()
     return _G.AutoLevelFarm and World1 and level >= 700
 end
 
-----------------------------------------
--- 自動檢測：一海大於700等自動傳送二海
-----------------------------------------
-task.spawn(function()
-    while task.wait(2) do
-        if World1 then
-            local data = LocalPlayer:FindFirstChild("Data")
-            local levelStat = data and data:FindFirstChild("Level")
-            if levelStat and levelStat.Value >= 700 then
-                pcall(function()
-                    local commF = SaberGetCommF()
-                    if commF then
-                        commF:InvokeServer("TravelDressrosa")
-                    end
-                end)
-            end
-        end
+--自動 Bartilo Quest (850 等後)
+local function BartiloShouldRun()
+    local data = LocalPlayer:FindFirstChild("Data")
+    local levelStat = data and data:FindFirstChild("Level")
+    local level = levelStat and levelStat.Value or 0
+    if not _G.AutoLevelFarm or not World2 or level < 850 then return false end
+
+    local progress = nil
+    pcall(function()
+        progress = ReplicatedStorage.Remotes.CommF_:InvokeServer("BartiloQuestProgress", "Bartilo")
+    end)
+
+    if type(progress) == "number" and progress < 3 then
+        return true
     end
-end)
+    return false
+end
 
 ----------------------------------------
 -- 配置自動保存
@@ -782,7 +780,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
+        if _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not BartiloShouldRun() and not _G.BlackLegBuying then
             MaintainQuest(GetActiveQuestEntry())
         end
     end
@@ -792,7 +790,7 @@ local PrevBossActive = false
 
 task.spawn(function()
     while task.wait(0.2) do
-        if _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
+        if _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not BartiloShouldRun() and not _G.BlackLegBuying then
             local bossEntry = GetCurrentBossEntry()
             local bossEnemy = FindBossEnemy(bossEntry)
 
@@ -928,7 +926,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
+        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not BartiloShouldRun() and not _G.BlackLegBuying then
             pcall(function()
                 if sethiddenproperty then
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
@@ -943,7 +941,7 @@ local LastBring = 0
 
 task.spawn(function()
     while task.wait(0.1) do
-        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
+        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not BartiloShouldRun() and not _G.BlackLegBuying then
             pcall(function()
                 if tick() - LastBring < 0.5 then return end
                 LastBring = tick()
@@ -1148,7 +1146,7 @@ end
 local lastTweenTargetPos = nil
 
 RunService.Heartbeat:Connect(function()
-    if _G.AutoLevelFarm and (SaberShouldRun() or Sea2ShouldRun()) then
+    if _G.AutoLevelFarm and (SaberShouldRun() or Sea2ShouldRun() or BartiloShouldRun()) then
         return
     end
     if _G.AutoLevelFarm then
@@ -1278,7 +1276,7 @@ end)
 
 --自動切換配置
 local function equipByType(toolType)
-    if not _G.AutoLevelFarm or SaberShouldRun() or Sea2ShouldRun() or _G.BlackLegBuying then return end
+    if not _G.AutoLevelFarm or SaberShouldRun() or Sea2ShouldRun() or BartiloShouldRun() or _G.BlackLegBuying then return end
     _G.AutoEquip_SelectedType = toolType
 
     local char = LocalPlayer.Character
@@ -1732,7 +1730,7 @@ local function SaberRunFlow()
             end
 
             if boss then
-                -- Saber Expert 已生成 獨立停止 Farm 小怪 切換回 Boss 戰鬥
+                -- Saber Expert 已生成 立即停止 Farm 小怪 切換回 Boss 戰鬥
                 _G.SaberWaitBoss = false
                 if SaberKillMob(boss, 300) then
                     CommF:InvokeServer("ProQuestProgress", "PlaceRelic")
@@ -1898,6 +1896,180 @@ end
 task.spawn(function()
     while task.wait(0.2) do
         pcall(Sea2RunFlow)
+    end
+end)
+
+-- Bartilo Quest 專用移動與擊殺函數
+local function BartiloGoto(targetCFrame, timeout)
+    local deadline = tick() + (timeout or 180)
+
+    while tick() < deadline do
+        if not BartiloShouldRun() then return false end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        local dist = (targetCFrame.Position - hrp.Position).Magnitude
+        if dist < 6 then
+            return true
+        end
+
+        if os.clock() < _G.Fruit_TeleportPauseUntil then
+            task.wait(0.1)
+            continue
+        end
+
+        local entrance = dist > 300 and GetBestEntrance(hrp.Position, targetCFrame.Position) or nil
+        if entrance and TryTeleportEntrance(entrance, hrp) then
+            task.wait(2)
+            continue
+        end
+
+        local headingToTarget = _G.isMovementActive and _G.ActiveTween ~= nil
+            and lastTweenTargetPos ~= nil
+            and (lastTweenTargetPos - targetCFrame.Position).Magnitude < 5
+
+        if not headingToTarget then
+            lastTweenTargetPos = targetCFrame.Position
+            globalTweenTo(CFrame.new(targetCFrame.Position))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local function BartiloKillMob(mob, timeout)
+    local deadline = tick() + (timeout or 180)
+    local lastTarget = nil
+
+    while tick() < deadline do
+        if not BartiloShouldRun() then return false end
+        if not SaberAlive(mob) then return true end
+
+        SaberEquipCombatWeapon()
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local root = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+        if not hrp or not root then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        local hoverPos = Vector3.new(root.Position.X, root.Position.Y + (_G.HoverHeight or 15), root.Position.Z)
+
+        if not _G.isMovementActive or not lastTarget or (lastTarget - hoverPos).Magnitude > 10 then
+            lastTarget = hoverPos
+            lastTweenTargetPos = hoverPos
+            globalTweenTo(CFrame.new(hoverPos))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local function BartiloRunFlow()
+    if not BartiloShouldRun() then return end
+
+    local plr = LocalPlayer
+    local CommF = SaberGetCommF()
+    if not CommF then return end
+
+    local progress = CommF:InvokeServer("BartiloQuestProgress", "Bartilo")
+
+    if progress == 0 then
+        local main = plr:FindFirstChild("PlayerGui") and plr.PlayerGui:FindFirstChild("Main")
+        local questFrame = main and main:FindFirstChild("Quest")
+        local isQuestActive = questFrame and questFrame.Visible == true
+
+        if isQuestActive then
+            local questTitle = questFrame:FindFirstChild("Container")
+                and questFrame.Container:FindFirstChild("QuestTitle")
+                and questFrame.Container.QuestTitle:FindFirstChild("Title")
+                and questFrame.Container.QuestTitle.Title.Text or ""
+
+            if not string.find(questTitle, "Swan Pirate") then
+                CommF:InvokeServer("AbandonQuest")
+                return
+            end
+
+            -- 擊殺 Swan Pirate
+            local enemy = nil
+            for _, v in ipairs(workspace.Enemies:GetChildren()) do
+                if v.Name == "Swan Pirate" and SaberAlive(v) then
+                    enemy = v
+                    break
+                end
+            end
+
+            if enemy then
+                BartiloKillMob(enemy, 30)
+            else
+                BartiloGoto(CFrame.new(970.369446, 142.653198, 1217.3667), 30)
+            end
+        else
+            -- 前往 Bartilo NPC 接任務
+            local npcPos = CFrame.new(-461.533203, 72.3478546, 300.311096)
+            if BartiloGoto(npcPos, 120) then
+                CommF:InvokeServer("StartQuest", "BartiloQuest", 1)
+                task.wait(0.5)
+            end
+        end
+
+    elseif progress == 1 then
+        -- 擊殺 Jeremy
+        local jeremy = nil
+        for _, v in ipairs(workspace.Enemies:GetChildren()) do
+            if v.Name == "Jeremy" and SaberAlive(v) then
+                jeremy = v
+                break
+            end
+        end
+
+        if jeremy then
+            BartiloKillMob(jeremy, 300)
+        else
+            BartiloGoto(CFrame.new(2158.97412, 449.056244, 705.411682), 60)
+        end
+
+    elseif progress == 2 then
+        -- 解開 Bartilo Plates 踏板
+        local platePos = CFrame.new(-1830.83972, 10.5578213, 1680.60229)
+        if BartiloGoto(platePos, 120) then
+            task.wait(0.5)
+            local plates = workspace:FindFirstChild("Map")
+                and workspace.Map:FindFirstChild("Dressrosa")
+                and workspace.Map.Dressrosa:FindFirstChild("BartiloPlates")
+
+            if plates then
+                for i = 1, 8 do
+                    local plate = plates:FindFirstChild("Plate" .. i)
+                    if plate and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                        plr.Character.HumanoidRootPart.CFrame = plate.CFrame
+                        task.wait(0.5)
+                    end
+                end
+                task.wait(2.5)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.2) do
+        pcall(BartiloRunFlow)
     end
 end)
 
@@ -2147,13 +2319,6 @@ local function EnableAntiAFK()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new())
     end)
-end
-
-local function DisableAntiAFK()
-    if _G.AntiAFK_Connection then
-        _G.AntiAFK_Connection:Disconnect()
-        _G.AntiAFK_Connection = nil
-    end
 end
 
 if _G.AntiAFK_ENABLED then
