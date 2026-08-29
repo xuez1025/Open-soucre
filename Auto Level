@@ -270,6 +270,10 @@ _G.AutoBusoEnabled = true
 --自動點數
 _G.AutoStatsEnabled = true
 
+--自動抽果 / 自動存果
+_G.AutoRollFruit = true
+_G.AutoStoreFruit = true
+
 --兌換代碼
 _G.RedeemCodesList = {
     "EASTEREXP",
@@ -331,6 +335,43 @@ local World1 = game.PlaceId == 2753915549 or game.PlaceId == 85211729168715
 local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
 local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 local CurrentWorld = World1 and 1 or World2 and 2 or World3 and 3 or 0
+
+--自動 Saber (屬於自動練等的額外流程 等級 ≥ 200 時接管 Farm 小怪邏輯)
+local function SaberHasSword()
+    local char = LocalPlayer.Character
+    return LocalPlayer.Backpack:FindFirstChild("Saber") ~= nil
+        or (char ~= nil and char:FindFirstChild("Saber") ~= nil)
+end
+
+-- Saber Expert 生成等待期間為 true 暫時恢復原本練等流程
+_G.SaberWaitBoss = false
+
+local function SaberShouldRun()
+    if _G.SaberWaitBoss then return false end -- 等 Saber Expert 生成期間 恢復 Farm 小怪邏輯
+    local data = LocalPlayer:FindFirstChild("Data")
+    local levelStat = data and data:FindFirstChild("Level")
+    local level = levelStat and levelStat.Value or 0
+    return _G.AutoLevelFarm and World1 and level >= 200 and not SaberHasSword()
+end
+
+local function SaberAlive(mob)
+    local hum = mob and mob:FindFirstChildOfClass("Humanoid")
+    return mob ~= nil and mob.Parent ~= nil and hum ~= nil and hum.Health > 0
+end
+
+local function SaberGetCommF()
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    return remotes and remotes:FindFirstChild("CommF_")
+end
+
+local function SaberEquipTool(toolName)
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local tool = LocalPlayer.Backpack:FindFirstChild(toolName)
+    if hum and tool then
+        hum:EquipTool(tool)
+    end
+end
 
 ----------------------------------------
 -- 配置自動保存
@@ -714,7 +755,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.AutoLevelFarm then
+        if _G.AutoLevelFarm and not SaberShouldRun() then
             MaintainQuest(GetActiveQuestEntry())
         end
     end
@@ -724,7 +765,7 @@ local PrevBossActive = false
 
 task.spawn(function()
     while task.wait(0.2) do
-        if _G.AutoLevelFarm then
+        if _G.AutoLevelFarm and not SaberShouldRun() then
             local bossEntry = GetCurrentBossEntry()
             local bossEnemy = FindBossEnemy(bossEntry)
 
@@ -860,7 +901,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.BringMob and _G.AutoLevelFarm then
+        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() then
             pcall(function()
                 if sethiddenproperty then
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
@@ -875,7 +916,7 @@ local LastBring = 0
 
 task.spawn(function()
     while task.wait(0.1) do
-        if _G.BringMob and _G.AutoLevelFarm then
+        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() then
             pcall(function()
                 if tick() - LastBring < 0.5 then return end
                 LastBring = tick()
@@ -1080,6 +1121,9 @@ end
 local lastTweenTargetPos = nil
 
 RunService.Heartbeat:Connect(function()
+    if _G.AutoLevelFarm and SaberShouldRun() then
+        return -- Saber 流程接管移動 停止 Farm 小怪邏輯
+    end
     if _G.AutoLevelFarm then
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1207,7 +1251,7 @@ end)
 
 --自動切換配置
 local function equipByType(toolType)
-    if not _G.AutoLevelFarm then return end
+    if not _G.AutoLevelFarm or SaberShouldRun() then return end
     _G.AutoEquip_SelectedType = toolType
 
     local char = LocalPlayer.Character
@@ -1466,6 +1510,327 @@ task.spawn(function()
     end
 end)
 
+-- 自動 Saber 移動 (捷徑傳送門 + Tween)
+local function SaberGoto(targetCFrame, timeout)
+    local deadline = tick() + (timeout or 180)
+
+    while tick() < deadline do
+        if not SaberShouldRun() then return false end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        local dist = (targetCFrame.Position - hrp.Position).Magnitude
+        if dist < 6 then
+            return true
+        end
+
+        if os.clock() < _G.Fruit_TeleportPauseUntil then
+            task.wait(0.1)
+            continue
+        end
+
+        local entrance = dist > 300 and GetBestEntrance(hrp.Position, targetCFrame.Position) or nil
+        if entrance and TryTeleportEntrance(entrance, hrp) then
+            task.wait(2) -- 等待傳送門完成
+            continue
+        end
+
+        local headingToTarget = _G.isMovementActive and _G.ActiveTween ~= nil
+            and lastTweenTargetPos ~= nil
+            and (lastTweenTargetPos - targetCFrame.Position).Magnitude < 5
+
+        if not headingToTarget then
+            lastTweenTargetPos = targetCFrame.Position
+            globalTweenTo(CFrame.new(targetCFrame.Position))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+-- 自動 Saber 戰鬥 (Tween 懸停在目標上方 FastAttack 負責輸出)
+local function SaberEquipCombatWeapon()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not hum or not backpack then return end
+
+    local current = char:FindFirstChildOfClass("Tool")
+    if current and (current.ToolTip == "Melee" or current.ToolTip == "Sword" or current.ToolTip == "Gun") then return end
+
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and (tool.ToolTip == "Melee" or tool.ToolTip == "Sword" or tool.ToolTip == "Gun") then
+            pcall(function() hum:EquipTool(tool) end)
+            return
+        end
+    end
+end
+
+local function SaberKillMob(mob, timeout)
+    local deadline = tick() + (timeout or 180)
+    local lastTarget = nil
+
+    while tick() < deadline do
+        if not SaberShouldRun() then return false end
+        if not SaberAlive(mob) then return true end
+
+        SaberEquipCombatWeapon()
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local root = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+        if not hrp or not root then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        local hoverPos = Vector3.new(root.Position.X, root.Position.Y + (_G.HoverHeight or 15), root.Position.Z)
+
+        if not _G.isMovementActive or not lastTarget or (lastTarget - hoverPos).Magnitude > 10 then
+            lastTarget = hoverPos
+            lastTweenTargetPos = hoverPos
+            globalTweenTo(CFrame.new(hoverPos))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+-- Saber 主流程 (屬於自動練等 等級 ≥ 200 時自動接管)
+local function SaberRunFlow()
+    -- 故意不檢查 _G.SaberWaitBoss 等 Boss 期間仍需進入流程偵測 Saber Expert 是否生成
+    local plr = LocalPlayer
+    local data = plr:FindFirstChild("Data")
+    local levelStat = data and data:FindFirstChild("Level")
+
+    if not _G.AutoLevelFarm or not World1 or not levelStat or levelStat.Value < 200 or SaberHasSword() then
+        _G.SaberWaitBoss = false
+        return
+    end
+
+    local CommF = SaberGetCommF()
+    if not CommF then return end
+
+    local StatusLabel = { Text = "閒置" } -- 預留狀態顯示 與原流程寫法相容
+
+    if plr.Data.Level.Value >= 200 and not plr.Backpack:FindFirstChild("Saber") and not plr.Character:FindFirstChild("Saber") then
+
+        -- 階段一：踏板與門
+        if workspace.Map.Jungle.Final.Part.Transparency == 0 then
+            if workspace.Map.Jungle.QuestPlates.Door.Transparency == 0 then
+                StatusLabel.Text = "狀態: 正在踩踏板..."
+                if not SaberGoto(CFrame.new(-1612.55884, 36.9774132, 148.719543, 0.37091279, 3.0717151e-09, -0.928667724, 3.97099491e-08, 1, 1.91679348e-08, 0.928667724, -4.39869794e-08, 0.37091279)) then return end
+
+                for _, name in ipairs({ "Plate1", "Plate2", "Plate3", "Plate4", "Plate5" }) do
+                    local plate = workspace.Map.Jungle.QuestPlates:FindFirstChild(name)
+                    local button = plate and plate:FindFirstChild("Button")
+                    if button then
+                        if not SaberGoto(button.CFrame, 30) then return end
+                        task.wait(0.4)
+                    end
+                end
+            else
+                -- 階段二：沙漠燒門/拿火把
+                if workspace.Map.Desert.Burn.Part.Transparency == 0 then
+                    StatusLabel.Text = "狀態: 燒燬沙漠門..."
+                    if plr.Backpack:FindFirstChild("Torch") or plr.Character:FindFirstChild("Torch") then
+                        SaberEquipTool("Torch")
+                        firetouchinterest(plr.Character.Torch.Handle, workspace.Map.Desert.Burn.Fire, 0)
+                        firetouchinterest(plr.Character.Torch.Handle, workspace.Map.Desert.Burn.Fire, 1)
+                        if not SaberGoto(CFrame.new(1114.61475, 5.04679728, 4350.22803, -0.648466587, -1.28799094e-09, 0.761243105, -5.70652914e-10, 1, 1.20584542e-09, -0.761243105, 3.47544882e-10, -0.648466587)) then return end
+                    else
+                        if not SaberGoto(CFrame.new(-1610.00757, 11.5049858, 164.001587, 0.984807551, -0.167722285, -0.0449818149, 0.17364943, 0.951244235, 0.254912198, 3.42372805e-05, -0.258850515, 0.965917408), 60) then return end
+                        task.wait(0.5)
+                    end
+                else
+                    -- 階段三：病人生病/接水與富豪任務
+                    if CommF:InvokeServer("ProQuestProgress", "SickMan") ~= 0 then
+                        StatusLabel.Text = "狀態: 給生病的人送水..."
+                        CommF:InvokeServer("ProQuestProgress", "GetCup")
+                        task.wait(0.5)
+                        SaberEquipTool("Cup")
+                        task.wait(0.5)
+                        CommF:InvokeServer("ProQuestProgress", "FillCup", plr.Character.Cup)
+                        task.wait(1)
+                        CommF:InvokeServer("ProQuestProgress", "SickMan")
+                    else
+                        if CommF:InvokeServer("ProQuestProgress", "RichSon") == nil then
+                            CommF:InvokeServer("ProQuestProgress", "RichSon")
+                        elseif CommF:InvokeServer("ProQuestProgress", "RichSon") == 0 then
+                            -- 擊殺 Mob Leader
+                            StatusLabel.Text = "狀態: 擊殺 Mob Leader..."
+                            -- Tween 到 Mob Leader 生成點
+                            if not SaberGoto(CFrame.new(-2844, 7, 5344)) then return end
+
+                            local leaderDeadline = tick() + 120
+                            while tick() < leaderDeadline do
+                                if not SaberShouldRun() then return end
+                                local leader = workspace.Enemies:FindFirstChild("Mob Leader")
+                                if leader and SaberAlive(leader) then
+                                    if SaberKillMob(leader, 120) then
+                                        break
+                                    end
+                                else
+                                    task.wait(0.5)
+                                end
+                            end
+                        elseif CommF:InvokeServer("ProQuestProgress", "RichSon") == 1 then
+                            StatusLabel.Text = "狀態: 前往放置 Relic..."
+                            CommF:InvokeServer("ProQuestProgress", "RichSon")
+                            SaberEquipTool("Relic")
+                            if not SaberGoto(CFrame.new(-1404.91504, 29.9773273, 3.80598116, 0.876514494, 5.66906877e-09, 0.481375456, 2.53851997e-08, 1, -5.79995607e-08, -0.481375456, 6.30572643e-08, 0.876514494)) then return end
+                        end
+                    end
+                end
+            end
+        else
+            -- 階段四：擊殺 Saber Expert 取得軍刀
+            StatusLabel.Text = "狀態: 擊殺 Saber Expert..."
+
+            local boss = nil
+            for _, v in ipairs(workspace.Enemies:GetChildren()) do
+                if v.Name == "Saber Expert" and SaberAlive(v) then
+                    boss = v
+                    break
+                end
+            end
+
+            if boss then
+                -- Saber Expert 已生成 立即停止 Farm 小怪 切換回 Boss 戰鬥
+                _G.SaberWaitBoss = false
+                if SaberKillMob(boss, 300) then
+                    CommF:InvokeServer("ProQuestProgress", "PlaceRelic")
+                end
+            else
+                -- Saber Expert 尚未生成 暫時恢復原本練等流程
+                _G.SaberWaitBoss = true
+                return
+            end
+        end
+
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.2) do
+        pcall(SaberRunFlow)
+    end
+end)
+
+--自動抽果
+task.spawn(function()
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.CharacterAdded:Wait()
+        task.wait(3)
+    else
+        task.wait(3)
+    end
+
+    while true do
+        if _G.AutoRollFruit then
+            pcall(function()
+                local args = {
+                    "Cousin",
+                    "DLCBoxData"
+                }
+                ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+            end)
+            task.wait(600)
+        else
+            task.wait(1)
+        end
+    end
+end)
+
+--自動存果
+local FruitList = {
+    ["Dragon-West"]         = "Dragon (West) Fruit",
+    ["Dragon-East"]         = "Dragon (East) Fruit",
+    ["Kitsune-Kitsune"]     = "Kitsune Fruit",
+    ["Tiger-Tiger"]         = "Tiger Fruit",
+    ["Spirit-Spirit"]       = "Spirit Fruit",
+    ["Control-Control"]     = "Control Fruit",
+    ["Venom-Venom"]         = "Venom Fruit",
+    ["Shadow-Shadow"]       = "Shadow Fruit",
+    ["Dough-Dough"]         = "Dough Fruit",
+    ["T-Rex-T-Rex"]         = "T-Rex Fruit",
+    ["Mammoth-Mammoth"]     = "Mammoth Fruit",
+    ["Gravity-Gravity"]     = "Gravity Fruit",
+    ["Blizzard-Blizzard"]   = "Blizzard Fruit",
+    ["Pain-Pain"]           = "Pain Fruit",
+    ["Lightning-Lightning"] = "Lightning Fruit",
+    ["Portal-Portal"]       = "Portal Fruit",
+    ["Phoenix-Phoenix"]     = "Phoenix Fruit",
+    ["Gas-Gas"]             = "Gas Fruit",
+    ["Yeti-Yeti"]           = "Yeti Fruit",
+    ["Sound-Sound"]         = "Sound Fruit",
+    ["Spider-Spider"]       = "Spider Fruit",
+    ["Love-Love"]           = "Love Fruit",
+    ["Buddha-Buddha"]       = "Buddha Fruit",
+    ["Quake-Quake"]         = "Quake Fruit",
+    ["Magma-Magma"]         = "Magma Fruit",
+    ["Ghost-Ghost"]         = "Ghost Fruit",
+    ["Creation-Creation"]   = "Creation Fruit",
+    ["Rubber-Rubber"]       = "Rubber Fruit",
+    ["Light-Light"]         = "Light Fruit",
+    ["Diamond-Diamond"]     = "Diamond Fruit",
+    ["Dark-Dark"]           = "Dark Fruit",
+    ["Sand-Sand"]           = "Sand Fruit",
+    ["Ice-Ice"]             = "Ice Fruit",
+    ["Eagle-Eagle"]         = "Eagle Fruit",
+    ["Flame-Flame"]         = "Flame Fruit",
+    ["Spike-Spike"]         = "Spike Fruit",
+    ["Smoke-Smoke"]         = "Smoke Fruit",
+    ["Bomb-Bomb"]           = "Bomb Fruit",
+    ["Spring-Spring"]       = "Spring Fruit",
+    ["Blade-Blade"]         = "Blade Fruit",
+    ["Spin-Spin"]           = "Spin Fruit",
+    ["Rocket-Rocket"]       = "Rocket Fruit"
+}
+
+task.spawn(function()
+    while true do
+        if _G.AutoStoreFruit then
+            pcall(function()
+                local character = LocalPlayer.Character
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+
+                for remoteName, toolName in pairs(FruitList) do
+                    local fruitTool = nil
+
+                    if character then
+                        fruitTool = character:FindFirstChild(toolName)
+                    end
+
+                    if not fruitTool then
+                        if backpack then
+                            fruitTool = backpack:FindFirstChild(toolName)
+                        end
+                    end
+
+                    if fruitTool then
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("StoreFruit", remoteName, fruitTool)
+                    end
+                end
+            end)
+        end
+        task.wait(0.5)
+    end
+end)
+
 --兌換代碼
 local function redeemAllCodes()
 
@@ -1649,6 +2014,23 @@ Tabs.Config:Toggle({
     Value = _G.AutoStatsEnabled,
     Callback = function(v)
         _G.AutoStatsEnabled = v
+    end
+})
+
+
+Tabs.Config:Toggle({
+    Title    = "自動抽果",
+    Value    = _G.AutoRollFruit,
+    Callback = function(v)
+        _G.AutoRollFruit = v
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "自動儲存果實",
+    Value    = _G.AutoStoreFruit,
+    Callback = function(v)
+        _G.AutoStoreFruit = v
     end
 })
 
