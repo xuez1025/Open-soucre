@@ -270,6 +270,9 @@ _G.AutoBusoEnabled = true
 --自動點數
 _G.AutoStatsEnabled = true
 
+--自動購買
+_G.BlackLegBuying = false
+
 --自動抽果 / 自動存果
 _G.AutoRollFruit = true
 _G.AutoStoreFruit = true
@@ -336,18 +339,18 @@ local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
 local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
 local CurrentWorld = World1 and 1 or World2 and 2 or World3 and 3 or 0
 
---自動 Saber (屬於自動練等的額外流程 等級 ≥ 200 時接管 Farm 小怪邏輯)
+--自動 Saber
 local function SaberHasSword()
     local char = LocalPlayer.Character
     return LocalPlayer.Backpack:FindFirstChild("Saber") ~= nil
         or (char ~= nil and char:FindFirstChild("Saber") ~= nil)
 end
 
--- Saber Expert 生成等待期間為 true 暫時恢復原本練等流程
 _G.SaberWaitBoss = false
 
 local function SaberShouldRun()
-    if _G.SaberWaitBoss then return false end -- 等 Saber Expert 生成期間 恢復 Farm 小怪邏輯
+    if _G.SaberWaitBoss then return false end
+    if _G.BlackLegBuying then return false end
     local data = LocalPlayer:FindFirstChild("Data")
     local levelStat = data and data:FindFirstChild("Level")
     local level = levelStat and levelStat.Value or 0
@@ -371,6 +374,15 @@ local function SaberEquipTool(toolName)
     if hum and tool then
         hum:EquipTool(tool)
     end
+end
+
+--自動前往二海 (700 等後)
+local function Sea2ShouldRun()
+    if _G.BlackLegBuying then return false end
+    local data = LocalPlayer:FindFirstChild("Data")
+    local levelStat = data and data:FindFirstChild("Level")
+    local level = levelStat and levelStat.Value or 0
+    return _G.AutoLevelFarm and World1 and level >= 700
 end
 
 ----------------------------------------
@@ -509,8 +521,8 @@ local LevelMobs = {
         { MinLevel = 475, Enemies = { "Shanda" },              Positions = { Vector3.new(-7810, 5580, -573) }, Quest = { "StartQuest", "SkyExp1Quest", 2 } }, -- 475~500
         { MinLevel = 525, Enemies = { "Royal Squad" },         Positions = { Vector3.new(-7902, 5640, -1460) }, Quest = { "StartQuest", "SkyExp2Quest", 1 } }, -- 525~550
         { MinLevel = 550, Enemies = { "Royal Soldier" },       Positions = { Vector3.new(-7902, 5640, -1460) }, Quest = { "StartQuest", "SkyExp2Quest", 2 } }, -- 550~575
-        { MinLevel = 600, Enemies = { "Galley Pirate" },       Positions = { Vector3.new(5595, 59, 4044) }, Quest = { "StartQuest", "FountainQuest", 1 } }, -- 600~625
-        { MinLevel = 625, Enemies = { "Galley Captain" },      Positions = { Vector3.new(5689, 39, 4925) }, Quest = { "StartQuest", "FountainQuest", 2 } }, -- 625~650
+        { MinLevel = 625, Enemies = { "Galley Pirate" },       Positions = { Vector3.new(5595, 59, 4044) }, Quest = { "StartQuest", "FountainQuest", 1 } }, -- 625~650
+        { MinLevel = 650, Enemies = { "Galley Captain" },      Positions = { Vector3.new(5689, 39, 4925) }, Quest = { "StartQuest", "FountainQuest", 2 } }, -- 650~675
     },
     [2] = {
         { MinLevel = 700,  Enemies = { "Raider" },             Positions = { Vector3.new(375, 39, 2326), Vector3.new(-751, 39, 2384) }, Quest = { "StartQuest", "Area1Quest", 1 } }, -- 700~725
@@ -626,8 +638,8 @@ local LevelBosses = {
         { MinLevel = 350, Enemies = { "Magma Admiral" },     Positions = { Vector3.new(-5509, 18, 8694) },   Quest = { "StartQuest", "MagmaQuest", 3 } },   -- 350~375
         { MinLevel = 425, Enemies = { "Fishman Lord" },      Positions = { Vector3.new(61350, 31, 1144) },   Quest = { "StartQuest", "FishmanQuest", 3 } }, -- 425~450
         { MinLevel = 500, Enemies = { "Wysper" },            Positions = { Vector3.new(-7810, 5580, -573) }, Quest = { "StartQuest", "SkyExp1Quest", 3 } }, -- 500~525
-        { MinLevel = 575, Enemies = { "Thunder God" },       Positions = { Vector3.new(-7789, 5607, -2343) },Quest = { "StartQuest", "SkyExp2Quest", 3 } },  -- 575~600
-        { MinLevel = 650, Enemies = { "Cyborg" },            Positions = { Vector3.new(6130, 10, 3935) },    Quest = { "StartQuest", "FountainQuest", 3 } },-- 650~675
+        { MinLevel = 575, Enemies = { "Thunder God" },       Positions = { Vector3.new(-7789, 5607, -2343) },Quest = { "StartQuest", "SkyExp2Quest", 3 } },  -- 575~625
+        { MinLevel = 675, Enemies = { "Cyborg" },            Positions = { Vector3.new(6130, 10, 3935) },    Quest = { "StartQuest", "FountainQuest", 3 } },-- 675~700
     },
     [2] = {
         { MinLevel = 750,  Enemies = { "Diamond" },              Positions = { Vector3.new(-1687, 199, -77) },    Quest = { "StartQuest", "Area1Quest", 3 } },     -- 750~775
@@ -736,7 +748,7 @@ local LastQuestAccept = 0
 
 local function AcceptQuest(entry, force)
     if not entry or not entry.Quest then return end
-    if os.clock() - LastQuestAccept < 1 then return end -- 防止短時間重複洗遠端
+    if os.clock() - LastQuestAccept < 1 then return end
     if not force and HasActiveQuest() then return end
     pcall(function()
         ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(entry.Quest))
@@ -755,7 +767,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.AutoLevelFarm and not SaberShouldRun() then
+        if _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
             MaintainQuest(GetActiveQuestEntry())
         end
     end
@@ -765,14 +777,14 @@ local PrevBossActive = false
 
 task.spawn(function()
     while task.wait(0.2) do
-        if _G.AutoLevelFarm and not SaberShouldRun() then
+        if _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
             local bossEntry = GetCurrentBossEntry()
             local bossEnemy = FindBossEnemy(bossEntry)
 
             if bossEnemy then
-                MaintainQuest(bossEntry) -- BOSS 已生成 立即改接 BOSS 任務
+                MaintainQuest(bossEntry)
             elseif PrevBossActive then
-                MaintainQuest(GetCurrentLevelEntry()) -- BOSS 已死亡 立即恢復小怪任務
+                MaintainQuest(GetCurrentLevelEntry())
             end
 
             PrevBossActive = bossEnemy ~= nil
@@ -901,7 +913,7 @@ end
 
 task.spawn(function()
     while task.wait(5) do
-        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() then
+        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
             pcall(function()
                 if sethiddenproperty then
                     sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
@@ -916,7 +928,7 @@ local LastBring = 0
 
 task.spawn(function()
     while task.wait(0.1) do
-        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() then
+        if _G.BringMob and _G.AutoLevelFarm and not SaberShouldRun() and not Sea2ShouldRun() and not _G.BlackLegBuying then
             pcall(function()
                 if tick() - LastBring < 0.5 then return end
                 LastBring = tick()
@@ -1057,7 +1069,7 @@ local function GetBestEntrance(myPos, targetPos)
     local directFlightTime = distToFruit / _G.FruitFlySpeed
     local bestEntrance = nil
     local bestTotalTime = directFlightTime
-    local teleportPenalty = 1.5 -- 傳送讀條/載入的時間懲罰（秒）
+    local teleportPenalty = 1.5
     local pool = GetCurrentWorldEntrances()
 
     for _, e in ipairs(pool) do
@@ -1082,7 +1094,7 @@ local function TryTeleportEntrance(bestEntrance, myHRP)
 
     if os.clock() - lastTime > 4 then
         _G.Fruit_LastTeleportTicks[bestEntrance.Arg] = os.clock()
-        _G.Fruit_TeleportPauseUntil = os.clock() + 1.2 -- 暫停飛行移動 1.2 秒
+        _G.Fruit_TeleportPauseUntil = os.clock() + 1.2
 
         if _G.Fruit_LinearVelocity then
             _G.Fruit_LinearVelocity.VectorVelocity = Vector3.zero
@@ -1121,8 +1133,11 @@ end
 local lastTweenTargetPos = nil
 
 RunService.Heartbeat:Connect(function()
-    if _G.AutoLevelFarm and SaberShouldRun() then
-        return -- Saber 流程接管移動 停止 Farm 小怪邏輯
+    if _G.AutoLevelFarm and (SaberShouldRun() or Sea2ShouldRun()) then
+        return
+    end
+    if _G.BlackLegBuying then
+        return
     end
     if _G.AutoLevelFarm then
         local char = LocalPlayer.Character
@@ -1251,7 +1266,7 @@ end)
 
 --自動切換配置
 local function equipByType(toolType)
-    if not _G.AutoLevelFarm or SaberShouldRun() then return end
+    if not _G.AutoLevelFarm or SaberShouldRun() or Sea2ShouldRun() or _G.BlackLegBuying then return end
     _G.AutoEquip_SelectedType = toolType
 
     local char = LocalPlayer.Character
@@ -1260,7 +1275,7 @@ local function equipByType(toolType)
 
     for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
         if tool:IsA("Tool") and tool.ToolTip == toolType then
-            hum:EquipTool(tool) -- 讓角色裝備該武器
+            hum:EquipTool(tool)
             break
         end
     end
@@ -1269,7 +1284,7 @@ end
 local function monitorCurrentTool()
     task.spawn(function()
         while true do
-            task.wait(0.1) -- 每 0.1 秒檢查一次
+            task.wait(0.1)
             if not _G.AutoLevelFarm then continue end
 
             local char = LocalPlayer.Character
@@ -1510,7 +1525,6 @@ task.spawn(function()
     end
 end)
 
--- 自動 Saber 移動 (捷徑傳送門 + Tween)
 local function SaberGoto(targetCFrame, timeout)
     local deadline = tick() + (timeout or 180)
 
@@ -1557,7 +1571,6 @@ local function SaberGoto(targetCFrame, timeout)
     return false
 end
 
--- 自動 Saber 戰鬥 (Tween 懸停在目標上方 FastAttack 負責輸出)
 local function SaberEquipCombatWeapon()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -1609,14 +1622,12 @@ local function SaberKillMob(mob, timeout)
     return false
 end
 
--- Saber 主流程 (屬於自動練等 等級 ≥ 200 時自動接管)
 local function SaberRunFlow()
-    -- 故意不檢查 _G.SaberWaitBoss 等 Boss 期間仍需進入流程偵測 Saber Expert 是否生成
     local plr = LocalPlayer
     local data = plr:FindFirstChild("Data")
     local levelStat = data and data:FindFirstChild("Level")
 
-    if not _G.AutoLevelFarm or not World1 or not levelStat or levelStat.Value < 200 or SaberHasSword() then
+    if not _G.AutoLevelFarm or not World1 or not levelStat or levelStat.Value < 200 or SaberHasSword() or _G.BlackLegBuying or Sea2ShouldRun() then
         _G.SaberWaitBoss = false
         return
     end
@@ -1727,6 +1738,298 @@ end
 task.spawn(function()
     while task.wait(0.2) do
         pcall(SaberRunFlow)
+    end
+end)
+
+--自動前往二海 (Sea 2 Travel)
+local function Sea2Goto(targetCFrame, timeout)
+    local deadline = tick() + (timeout or 180)
+
+    while tick() < deadline do
+        if not Sea2ShouldRun() then return false end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        local dist = (targetCFrame.Position - hrp.Position).Magnitude
+        if dist < 6 then
+            return true
+        end
+
+        if os.clock() < _G.Fruit_TeleportPauseUntil then
+            task.wait(0.1)
+            continue
+        end
+
+        local entrance = dist > 300 and GetBestEntrance(hrp.Position, targetCFrame.Position) or nil
+        if entrance and TryTeleportEntrance(entrance, hrp) then
+            task.wait(2) -- 等待傳送門完成
+            continue
+        end
+
+        local headingToTarget = _G.isMovementActive and _G.ActiveTween ~= nil
+            and lastTweenTargetPos ~= nil
+            and (lastTweenTargetPos - targetCFrame.Position).Magnitude < 5
+
+        if not headingToTarget then
+            lastTweenTargetPos = targetCFrame.Position
+            globalTweenTo(CFrame.new(targetCFrame.Position))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local function Sea2KillMob(mob, timeout)
+    local deadline = tick() + (timeout or 180)
+    local lastTarget = nil
+
+    while tick() < deadline do
+        if not Sea2ShouldRun() then return false end
+        if not SaberAlive(mob) then return true end
+
+        SaberEquipCombatWeapon()
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local root = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+        if not hrp or not root then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        local hoverPos = Vector3.new(root.Position.X, root.Position.Y + (_G.HoverHeight or 15), root.Position.Z)
+
+        if not _G.isMovementActive or not lastTarget or (lastTarget - hoverPos).Magnitude > 10 then
+            lastTarget = hoverPos
+            lastTweenTargetPos = hoverPos
+            globalTweenTo(CFrame.new(hoverPos))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local function Sea2RunFlow()
+    local plr = LocalPlayer
+    if not Sea2ShouldRun() then return end
+
+    local CommF = SaberGetCommF()
+    if not CommF then return end
+
+    -- 傳送冷卻 避免重複呼叫
+    if os.clock() - (_G.Sea2LastTravel or 0) < 8 then return end
+
+    -- 700等流程已完成 (Ice Admiral 已擊殺) 直接傳送二海
+    local Sea2QuestDone = false
+    pcall(function()
+        Sea2QuestDone = CommF:InvokeServer("DressrosaQuestProgress") == 1
+    end)
+
+    if Sea2QuestDone then
+        _G.Sea2LastTravel = os.clock()
+        CommF:InvokeServer("TravelDressrosa")
+        return
+    end
+
+    local StatusLabel = { Text = "閒置" } -- 預留狀態顯示 與原流程寫法相容
+
+    local iceMap = workspace.Map:FindFirstChild("Ice")
+    local iceDoor = iceMap and iceMap:FindFirstChild("Door")
+    if not iceDoor then return end
+
+    if plr.Data.Level.Value >= 700 then
+
+        -- 門尚未開啟 找偵探拿鑰匙
+        if iceDoor.CanCollide == true and iceDoor.Transparency == 0 then
+            StatusLabel.Text = "狀態: 取得鑰匙開啟冰門..."
+            CommF:InvokeServer("DressrosaQuestProgress", "Detective")
+            task.wait(0.5)
+            SaberEquipTool("Key")
+            if not Sea2Goto(CFrame.new(1347.7124, 37.3751602, -1325.6488), 180) then return end
+        elseif iceDoor.CanCollide == false and iceDoor.Transparency == 1 then
+            -- 門已開啟 擊殺 Ice Admiral
+            local admiral = workspace.Enemies:FindFirstChild("Ice Admiral")
+            if admiral and SaberAlive(admiral) then
+                StatusLabel.Text = "狀態: 擊殺 Ice Admiral..."
+                if not Sea2KillMob(admiral, 300) then return end
+                _G.Sea2LastTravel = os.clock()
+                CommF:InvokeServer("TravelDressrosa")
+            else
+                -- Ice Admiral 尚未生成 前往生成點等待
+                StatusLabel.Text = "狀態: 等待 Ice Admiral 生成..."
+                if not Sea2Goto(CFrame.new(1347.7124, 37.3751602, -1325.6488), 180) then return end
+
+                admiral = workspace.Enemies:FindFirstChild("Ice Admiral")
+                if not (admiral and SaberAlive(admiral)) then
+                    -- 等待後仍未生成 視為流程已完成 直接傳送二海
+                    StatusLabel.Text = "狀態: 傳送至二海..."
+                    _G.Sea2LastTravel = os.clock()
+                    CommF:InvokeServer("TravelDressrosa")
+                end
+            end
+        else
+            -- 門狀態未知 直接嘗試傳送二海
+            StatusLabel.Text = "狀態: 傳送至二海..."
+            _G.Sea2LastTravel = os.clock()
+            CommF:InvokeServer("TravelDressrosa")
+        end
+
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.2) do
+        pcall(Sea2RunFlow)
+    end
+end)
+
+local BlackLegPos = Vector3.new(-986, 14, 3989)
+local BlackLegPrice = 150000
+
+local function GetBeli()
+    local data = LocalPlayer:FindFirstChild("Data")
+    local beli = data and data:FindFirstChild("Beli")
+    return beli and beli.Value or 0
+end
+
+local function HasBlackLeg()
+    local char = LocalPlayer.Character
+    return LocalPlayer.Backpack:FindFirstChild("Black Leg") ~= nil
+        or (char ~= nil and char:FindFirstChild("Black Leg") ~= nil)
+end
+
+local function HasBuso()
+    local char = LocalPlayer.Character
+    return char ~= nil and char:FindFirstChild("HasBuso") ~= nil
+end
+
+local function BlackLegGoto(targetPos, timeout)
+    local deadline = tick() + (timeout or 300)
+
+    while tick() < deadline do
+        if not _G.BlackLegBuying then return false end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            globalStopTween()
+            lastTweenTargetPos = nil
+            task.wait(0.5)
+            continue
+        end
+
+        if (targetPos - hrp.Position).Magnitude < 6 then
+            return true
+        end
+
+        if os.clock() < _G.Fruit_TeleportPauseUntil then
+            task.wait(0.1)
+            continue
+        end
+
+        local entrance = GetBestEntrance(hrp.Position, targetPos)
+        if entrance and TryTeleportEntrance(entrance, hrp) then
+            task.wait(2) -- 等待傳送門完成
+            continue
+        end
+
+        if not _G.isMovementActive or not lastTweenTargetPos or (lastTweenTargetPos - targetPos).Magnitude > 5 then
+            lastTweenTargetPos = targetPos
+            globalTweenTo(CFrame.new(targetPos))
+        end
+
+        task.wait(0.2)
+    end
+
+    return false
+end
+
+local HakiShop = {
+    { Arg = "Geppo", Title = "空跳 (Air Jump)", Price = 10000 },
+    { Arg = "Buso",  Title = "武裝色 (Buso)",   Price = 25000, OwnedCheck = HasBuso },
+    { Arg = "Soru",  Title = "順步 (Soru)",     Price = 100000 },
+}
+
+task.spawn(function()
+    while task.wait(1) do
+        if _G.BlackLegBuying then continue end
+
+        for _, item in ipairs(HakiShop) do
+            if not item.Owned
+                and os.clock() - (item.LastTry or 0) >= 60
+                and GetBeli() >= item.Price
+                and not (item.OwnedCheck and item.OwnedCheck()) then
+
+                item.LastTry = os.clock()
+                local beforeBeli = GetBeli()
+
+                _G.BlackLegBuying = true
+                globalStopTween()
+                lastTweenTargetPos = nil
+
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("BuyHaki", item.Arg)
+                end)
+                task.wait(2)
+
+                if GetBeli() < beforeBeli then
+                    item.Owned = true
+                    WindUI:Notify({
+                        Title = "自動購買" .. item.Title,
+                        Content = "購買成功 花費 " .. tostring(item.Price) .. " Beli 恢復自動練等",
+                        Duration = 5
+                    })
+                end
+
+                _G.BlackLegBuying = false
+                globalStopTween()
+                lastTweenTargetPos = nil
+            end
+        end
+
+        if World1 and not HasBlackLeg() and GetBeli() >= BlackLegPrice then
+            _G.BlackLegBuying = true
+            globalStopTween()
+            lastTweenTargetPos = nil
+
+            WindUI:Notify({
+                Title = "自動購買黑腳",
+                Content = "金錢已達 " .. tostring(GetBeli()) .. " 暫停練等 前往購買黑腳...",
+                Duration = 5
+            })
+
+            if BlackLegGoto(BlackLegPos, 300) then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("BuyBlackLeg")
+                end)
+                task.wait(1)
+
+                if HasBlackLeg() then
+                    WindUI:Notify({
+                        Title = "自動購買黑腳",
+                        Content = "黑腳購買成功 恢復自動練等",
+                        Duration = 5
+                    })
+                end
+            end
+
+            _G.BlackLegBuying = false
+            globalStopTween()
+            lastTweenTargetPos = nil
+        end
     end
 end)
 
@@ -2016,7 +2319,6 @@ Tabs.Config:Toggle({
         _G.AutoStatsEnabled = v
     end
 })
-
 
 Tabs.Config:Toggle({
     Title    = "自動抽果",
