@@ -16,6 +16,8 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -46,11 +48,9 @@ getgenv().AutoLevel = true
 -- Discord Webhook
 ----------------------------------------
 task.spawn(function()
-    -- 檢查 HTTP 請求 API
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
     if not requestFunc then return end
 
-    -- 確保 LocalPlayer 已載入
     local LocalPlayer = Players.LocalPlayer
     if not LocalPlayer then
         Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -59,7 +59,6 @@ task.spawn(function()
 
     local webhookUrl = "https://discord.com/api/webhooks/1541848440643002418/P5Uub9Z6XH5RgKSWqk_IHAIORcHZg2ldwYRPQInIr26URH_GB3wAxAivC9a1bqvL1Ta8"
 
-    -- 1. 遊戲名稱與連結
     local gameName = "未知遊戲"
     if game.PlaceId and game.PlaceId > 0 then
         pcall(function()
@@ -71,7 +70,6 @@ task.spawn(function()
     end
     local gameLink = "[點擊前往遊戲](https://www.roblox.com/games/" .. tostring(game.PlaceId) .. ")"
 
-    -- 2. 設備類型判斷
     local deviceType = "💻 PC (電腦)"
     if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
         deviceType = "📱 Mobile / Tablet (手機/平板)"
@@ -79,7 +77,6 @@ task.spawn(function()
         deviceType = "🎮 Console / Gamepad (家機/手把)"
     end
 
-    -- 3. 紀錄與計算執行次數
     local execCountStr = "1 次"
     pcall(function()
         local countFolder = "AutoLevel"
@@ -104,7 +101,6 @@ task.spawn(function()
         execCountStr = currentCount .. " 次"
     end)
 
-    -- 4. 取得玩家頭像直鏈
     local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
     pcall(function()
         local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
@@ -117,27 +113,30 @@ task.spawn(function()
         end
     end)
 
-    -- 5. 基礎資訊整理
+    local playerLevel = "未知"
+    pcall(function()
+        if LocalPlayer:FindFirstChild("Data") and LocalPlayer.Data:FindFirstChild("Level") then
+            playerLevel = tostring(LocalPlayer.Data.Level.Value)
+        else
+            playerLevel = tostring(LocalPlayer.Data.Level.Value)
+        end
+    end)
+
     local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
-    local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
     local accountAge = LocalPlayer.AccountAge .. " 天"
     local localTime = os.date("%Y-%m-%d %H:%M:%S")
     local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
 
-    -- 6. 伺服器人數與玩家名單整理
     local allPlayers = Players:GetPlayers()
     local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
 
     local playerNamesList = {}
     for _, player in ipairs(allPlayers) do
-        -- 格式：- 暱稱 (@帳號名稱)
         table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
     end
 
-    -- 將名單合併成字串，並使用換行符號(\n)
     local playerNamesString = table.concat(playerNamesList, "\n")
 
-    -- 確保字元不超過 Discord Embed 限制 (1024個字元，保留空間給程式碼區塊)
     if #playerNamesString > 980 then
         playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
     end
@@ -145,10 +144,8 @@ task.spawn(function()
         playerNamesString = "無"
     end
 
-    -- 7. 一鍵跟服腳本文字
     local joinCode = string.format('game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer("teleport", "%s")', game.JobId)
 
-    -- 8. 建立 Discord Embed
     local embedData = {
         ["username"] = "Auto Level監控系統",
         ["avatar_url"] = avatarUrl,
@@ -166,7 +163,7 @@ task.spawn(function()
                 { ["name"] = "🆔 玩家 ID", ["value"] = tostring(LocalPlayer.UserId), ["inline"] = true },
                 { ["name"] = "🔗 玩家主頁", ["value"] = profileLink, ["inline"] = true },
 
-                { ["name"] = "👑 會員身份", ["value"] = isPremium, ["inline"] = true },
+                { ["name"] = "📊 遊戲等級", ["value"] = "Lv. " .. playerLevel, ["inline"] = true },
                 { ["name"] = "🎂 帳號創立天數", ["value"] = accountAge, ["inline"] = true },
 
                 -- 設備與執行器資訊
@@ -183,10 +180,8 @@ task.spawn(function()
 
                 { ["name"] = "🔑 Job ID", ["value"] = "```" .. (game.JobId ~= "" and game.JobId or "單人/本地伺服器") .. "```", ["inline"] = false },
 
-                -- 伺服器玩家名單 (換行顯示)
                 { ["name"] = "📜 伺服器玩家名單", ["value"] = "```\n" .. playerNamesString .. "\n```", ["inline"] = false },
 
-                -- 工具與捷徑
                 { ["name"] = "🔗 一鍵跟服腳本", ["value"] = "```lua\n" .. joinCode .. "\n```", ["inline"] = false }
             },
             ["thumbnail"] = { ["url"] = avatarUrl },
@@ -194,7 +189,6 @@ task.spawn(function()
         }}
     }
 
-    -- 發送 Webhook
     pcall(function()
         requestFunc({
             Url = webhookUrl,
@@ -215,7 +209,7 @@ local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footag
 local Window = WindUI:CreateWindow({
     Title         = "Auto Level",
     Icon          = "trending-up",
-    Author        = "by Xu",
+    Author        = "by Xu&Bruce",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
     Theme         = "Dark",
@@ -223,10 +217,10 @@ local Window = WindUI:CreateWindow({
         Enabled   = true,
         Anonymous = false,
         Callback  = function()
-            WindUI:Notify({ 
-                Title = LocalPlayer.Name, 
-                Content = "ID: " .. LocalPlayer.UserId, 
-                Duration = 3 
+            WindUI:Notify({
+                Title = LocalPlayer.Name,
+                Content = "ID: " .. LocalPlayer.UserId,
+                Duration = 3
             })
         end
     },
@@ -260,6 +254,37 @@ _G.SelectTeam = "Marines"
 _G.FastAttack = true
 _G.AttackDistance = 3000
 
+--Auto Buso
+_G.AutoBusoEnabled = true
+
+--兌換代碼
+_G.RedeemCodesList = {
+    "EASTEREXP",
+    "fudd10",
+    "fudd10_V2",
+    "Chandler",
+    "BIGNEWS",
+    "KITT_RESET",
+    "Sub2UncleKizaru",
+    "SUB2GAMERROBOT_RESET1",
+    "Sub2Fer999",
+    "Enyu_is_Pro",
+    "JCWK",
+    "StarcodeHEO",
+    "MagicBUS",
+    "KittGaming",
+    "Sub2CaptainMaui",
+    "Sub2OfficialNoobie",
+    "TheGreatAce",
+    "Sub2NoobMaster123",
+    "Sub2Daigrock",
+    "Axiore",
+    "StrawHatMaine",
+    "TantaiGaming",
+    "Bluxxy",
+		"SUB2GAMERROBOT_EXP1"
+}
+
 --低配模式
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
@@ -288,6 +313,275 @@ _G.AntiAFK_Connection = nil
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
+--Tween&bring
+_G.BringMob = true
+_G.AutoLevelFarm = false
+_G.HoverHeight = 15
+_G.ActiveTween = nil
+_G.isMovementActive = false
+
+--自動切換配置
+_G.AutoEquip_SelectedType = "Melee"
+
+--世界檢測
+local World1 = game.PlaceId == 2753915549 or game.PlaceId == 85211729168715
+local World2 = game.PlaceId == 4442272183 or game.PlaceId == 79091703265657
+local World3 = game.PlaceId == 7449423635 or game.PlaceId == 100117331123089
+local CurrentWorld = World1 and 1 or World2 and 2 or World3 and 3 or 0
+
+--自動練等小怪資料（依等級自動選擇 僅小怪不含BOSS）
+local LevelMobs = {
+    [1] = {
+        { MinLevel = 1,   Enemies = { "Bandit" },              Positions = { Vector3.new(1037, 81, 1595) }, Quest = { "StartQuest", "BanditQuest1", 1 } }, -- 1~10
+        { MinLevel = 10,  Enemies = { "Monkey" },              Positions = { Vector3.new(-1494, 39, 32) }, Quest = { "StartQuest", "JungleQuest", 1 } }, -- 10~15
+        { MinLevel = 15,  Enemies = { "Gorilla" },             Positions = { Vector3.new(-1197, 8, -448) }, Quest = { "StartQuest", "JungleQuest", 2 } }, -- 15~20
+        { MinLevel = 30,  Enemies = { "Pirate" },              Positions = { Vector3.new(-1140, 57, 4132) }, Quest = { "StartQuest", "BuggyQuest1", 1 } }, -- 30~40
+        { MinLevel = 40,  Enemies = { "Brute" },               Positions = { Vector3.new(-1140, 57, 4132) }, Quest = { "StartQuest", "BuggyQuest1", 2 } }, -- 40~55
+        { MinLevel = 60,  Enemies = { "Desert Bandit" },       Positions = { Vector3.new(927, 7, 4481) }, Quest = { "StartQuest", "DesertQuest", 1 } }, -- 60~75
+        { MinLevel = 75,  Enemies = { "Desert Officer" },      Positions = { Vector3.new(1571, 10, 4368) }, Quest = { "StartQuest", "DesertQuest", 2 } }, -- 75~90
+        { MinLevel = 90,  Enemies = { "Snow Bandit" },         Positions = { Vector3.new(1283, 106, -1556) }, Quest = { "StartQuest", "SnowQuest", 1 } }, -- 90~100
+        { MinLevel = 100, Enemies = { "Snowman" },             Positions = { Vector3.new(1283, 106, -1556) }, Quest = { "StartQuest", "SnowQuest", 2 } }, -- 100~105
+        { MinLevel = 120, Enemies = { "Chief Petty Officer" }, Positions = { Vector3.new(-4987, 85, 4156) }, Quest = { "StartQuest", "MarineQuest2", 1 } }, -- 120~130
+        { MinLevel = 150, Enemies = { "Sky Bandit" },          Positions = { Vector3.new(-4955, 296, -2900) }, Quest = { "StartQuest", "SkyQuest", 1 } }, -- 150~175
+        { MinLevel = 175, Enemies = { "Dark Master" },         Positions = { Vector3.new(-5275, 389, -2183) }, Quest = { "StartQuest", "SkyQuest", 2 } }, -- 175~190
+        { MinLevel = 190, Enemies = { "Prisoner" },            Positions = { Vector3.new(5205, 162, 647) }, Quest = { "StartQuest", "PrisonerQuest", 1 } }, -- 190~210
+        { MinLevel = 210, Enemies = { "Dangerous Prisoner" },  Positions = { Vector3.new(5205, 162, 647) }, Quest = { "StartQuest", "PrisonerQuest", 2 } }, -- 210~220
+        { MinLevel = 250, Enemies = { "Toga Warrior" },        Positions = { Vector3.new(-1687, 10, -2913) }, Quest = { "StartQuest", "ColosseumQuest", 1 } }, -- 250~275
+        { MinLevel = 275, Enemies = { "Gladiator" },           Positions = { Vector3.new(-1227, 7, -3050), Vector3.new(-1483, 8, -3195), Vector3.new(-1370, 7, -3378), Vector3.new(-1357, 7, -3592), Vector3.new(-1127, 7, -3271) }, Quest = { "StartQuest", "ColosseumQuest", 2 } }, -- 275~300
+        { MinLevel = 300, Enemies = { "Military Soldier" },    Positions = { Vector3.new(-5413, 11, 8456) }, Quest = { "StartQuest", "MagmaQuest", 1 } }, -- 300~325
+        { MinLevel = 325, Enemies = { "Military Spy" },        Positions = { Vector3.new(-5802, 99, 8780) }, Quest = { "StartQuest", "MagmaQuest", 2 } }, -- 325~350
+        { MinLevel = 375, Enemies = { "Fishman Warrior" },     Positions = { Vector3.new(60996, 96, 1411) }, Quest = { "StartQuest", "FishmanQuest", 1 } }, -- 375~400
+        { MinLevel = 400, Enemies = { "Fishman Commando" },    Positions = { Vector3.new(61746, 53, 1495) }, Quest = { "StartQuest", "FishmanQuest", 2 } }, -- 400~425
+        { MinLevel = 450, Enemies = { "God's Guard" },         Positions = { Vector3.new(-4659, 873, -1769) }, Quest = { "StartQuest", "SkyExp1Quest", 1 } }, -- 450~475
+        { MinLevel = 475, Enemies = { "Shanda" },              Positions = { Vector3.new(-7810, 5580, -573) }, Quest = { "StartQuest", "SkyExp1Quest", 2 } }, -- 475~500
+        { MinLevel = 525, Enemies = { "Royal Squad" },         Positions = { Vector3.new(-7902, 5640, -1460) }, Quest = { "StartQuest", "SkyExp2Quest", 1 } }, -- 525~550
+        { MinLevel = 550, Enemies = { "Royal Soldier" },       Positions = { Vector3.new(-7902, 5640, -1460) }, Quest = { "StartQuest", "SkyExp2Quest", 2 } }, -- 550~575
+        { MinLevel = 600, Enemies = { "Galley Pirate" },       Positions = { Vector3.new(5595, 59, 4044) }, Quest = { "StartQuest", "FountainQuest", 1 } }, -- 600~625
+        { MinLevel = 625, Enemies = { "Galley Captain" },      Positions = { Vector3.new(5689, 39, 4925) }, Quest = { "StartQuest", "FountainQuest", 2 } }, -- 625~650
+    },
+    [2] = {
+        { MinLevel = 700,  Enemies = { "Raider" },             Positions = { Vector3.new(375, 39, 2326), Vector3.new(-751, 39, 2384) }, Quest = { "StartQuest", "Area1Quest", 1 } }, -- 700~725
+        { MinLevel = 725,  Enemies = { "Mercenary" },          Positions = { Vector3.new(-869, 141, 1307) }, Quest = { "StartQuest", "Area1Quest", 2 } }, -- 725~750
+        { MinLevel = 775,  Enemies = { "Swan Pirate" },        Positions = { Vector3.new(833, 140, 1244) }, Quest = { "StartQuest", "Area2Quest", 1 } }, -- 775~825
+        { MinLevel = 825,  Enemies = { "Factory Staff" },      Positions = { Vector3.new(935, 128, 195), Vector3.new(-70, 149, -155) }, Quest = { "StartQuest", "Area2Quest", 2 } }, -- 825~850
+        { MinLevel = 875,  Enemies = { "Marine Lieutenant" },  Positions = { Vector3.new(-2835, 73, -3020) }, Quest = { "StartQuest", "MarineQuest3", 1 } }, -- 875~900
+        { MinLevel = 900,  Enemies = { "Marine Captain" },     Positions = { Vector3.new(-1950, 73, -3370) }, Quest = { "StartQuest", "MarineQuest3", 2 } }, -- 900~925
+        { MinLevel = 950,  Enemies = { "Zombie" },             Positions = { Vector3.new(-5637, 126, -701) }, Quest = { "StartQuest", "ZombieQuest", 1 } }, -- 950~975
+        { MinLevel = 975,  Enemies = { "Vampire" },            Positions = { Vector3.new(-6011, 6, -1275) }, Quest = { "StartQuest", "ZombieQuest", 2 } }, -- 975~1000
+        { MinLevel = 1000, Enemies = { "Snow Trooper" },       Positions = { Vector3.new(373, 413, -5362) }, Quest = { "StartQuest", "SnowMountainQuest", 1 } }, -- 1000~1050
+        { MinLevel = 1050, Enemies = { "Winter Warrior" },     Positions = { Vector3.new(1341, 448, -5175) }, Quest = { "StartQuest", "SnowMountainQuest", 2 } }, -- 1050~1100
+        { MinLevel = 1100, Enemies = { "Lab Subordinate" },    Positions = { Vector3.new(-5879, 102, -4368) }, Quest = { "StartQuest", "IceSideQuest", 1 } }, -- 1100~1125
+        { MinLevel = 1125, Enemies = { "Horned Warrior" },     Positions = { Vector3.new(-6498, 59, -5604) }, Quest = { "StartQuest", "IceSideQuest", 2 } }, -- 1125~1150
+        { MinLevel = 1175, Enemies = { "Magma Ninja" },        Positions = { Vector3.new(-5772, 76, -5672) }, Quest = { "StartQuest", "FireSideQuest", 1 } }, -- 1175~1200
+        { MinLevel = 1200, Enemies = { "Lava Pirate" },        Positions = { Vector3.new(-4913, 35, -4946) }, Quest = { "StartQuest", "FireSideQuest", 2 } }, -- 1200~1250
+        { MinLevel = 1250, Enemies = { "Ship Deckhand" },      Positions = { Vector3.new(1248, 129, 33052), Vector3.new(585, 129, 33050) }, Quest = { "StartQuest", "ShipQuest1", 1 } }, -- 1250~1275
+        { MinLevel = 1275, Enemies = { "Ship Engineer" },      Positions = { Vector3.new(920, 44, 32780) }, Quest = { "StartQuest", "ShipQuest1", 2 } }, -- 1275~1300
+        { MinLevel = 1300, Enemies = { "Ship Steward" },       Positions = { Vector3.new(898, 125, 33533) }, Quest = { "StartQuest", "ShipQuest2", 1 } }, -- 1300~1325
+        { MinLevel = 1325, Enemies = { "Ship Officer" },       Positions = { Vector3.new(917, 181, 33263) }, Quest = { "StartQuest", "ShipQuest2", 2 } }, -- 1325~1350
+        { MinLevel = 1350, Enemies = { "Arctic Warrior" },     Positions = { Vector3.new(5991, 58, -6177) }, Quest = { "StartQuest", "FrostQuest", 1 } }, -- 1350~1375
+        { MinLevel = 1375, Enemies = { "Snow Lurker" },        Positions = { Vector3.new(5675, 74, -6803) }, Quest = { "StartQuest", "FrostQuest", 2 } }, -- 1375~1400
+        { MinLevel = 1425, Enemies = { "Sea Soldier" },        Positions = { Vector3.new(-3397, 26, -9768), Vector3.new(-2747, 83, -9818) }, Quest = { "StartQuest", "ForgottenQuest", 1 } }, -- 1425~1450
+        { MinLevel = 1450, Enemies = { "Water Fighter" },      Positions = { Vector3.new(-3307, 252, -10496) }, Quest = { "StartQuest", "ForgottenQuest", 2 } }, -- 1450~1475
+    },
+    [3] = {
+        { MinLevel = 1500, Enemies = { "Pirate Millionaire" },   Positions = { Vector3.new(-638, 57, 5626), Vector3.new(-131, 57, 5763) }, Quest = { "StartQuest", "PiratePortQuest", 1 } }, -- 1500~1525
+        { MinLevel = 1525, Enemies = { "Pistol Billionaire" },   Positions = { Vector3.new(-92, 153, 6126), Vector3.new(-713, 147, 5910) }, Quest = { "StartQuest", "PiratePortQuest", 2 } }, -- 1525~1550
+        { MinLevel = 1575, Enemies = { "Dragon Crew Warrior" },  Positions = { Vector3.new(7058, 99, -811) }, Quest = { "StartQuest", "DragonCrewQuest", 1 } }, -- 1575~1600
+        { MinLevel = 1600, Enemies = { "Dragon Crew Archer" },   Positions = { Vector3.new(6629, 547, 381) }, Quest = { "StartQuest", "DragonCrewQuest", 2 } }, -- 1600~1625
+        { MinLevel = 1625, Enemies = { "Hydra Enforcer" },       Positions = { Vector3.new(4709, 995, 553) }, Quest = { "StartQuest", "VenomCrewQuest", 1 } }, -- 1625~1650
+        { MinLevel = 1650, Enemies = { "Venomous Assailant" },   Positions = { Vector3.new(4520, 1218, 732) }, Quest = { "StartQuest", "VenomCrewQuest", 2 } }, -- 1650~1675
+        { MinLevel = 1700, Enemies = { "Marine Commodore" },     Positions = { Vector3.new(2616, 129, -7870) }, Quest = { "StartQuest", "MarineTreeIsland", 1 } }, -- 1700~1725
+        { MinLevel = 1725, Enemies = { "Marine Rear Admiral" },  Positions = { Vector3.new(3718, 139, -6990) }, Quest = { "StartQuest", "MarineTreeIsland", 2 } }, -- 1725~1750
+        { MinLevel = 1775, Enemies = { "Fishman Raider" },       Positions = { Vector3.new(-10336, 391, -8574) }, Quest = { "StartQuest", "DeepForestIsland3", 1 } }, -- 1775~1800
+        { MinLevel = 1800, Enemies = { "Fishman Captain" },      Positions = { Vector3.new(-10735, 398, -9104) }, Quest = { "StartQuest", "DeepForestIsland3", 2 } }, -- 1800~1825
+        { MinLevel = 1825, Enemies = { "Forest Pirate" },        Positions = { Vector3.new(-13274, 332, -7770) }, Quest = { "StartQuest", "DeepForestIsland", 1 } }, -- 1825~1850
+        { MinLevel = 1850, Enemies = { "Mythological Pirate" },  Positions = { Vector3.new(-13392, 623, -7081) }, Quest = { "StartQuest", "DeepForestIsland", 2 } }, -- 1850~1875
+        { MinLevel = 1900, Enemies = { "Jungle Pirate" },        Positions = { Vector3.new(-12037, 432, -10287) }, Quest = { "StartQuest", "DeepForestIsland2", 1 } }, -- 1900~1925
+        { MinLevel = 1925, Enemies = { "Musketeer Pirate" },     Positions = { Vector3.new(-13525, 460, -9869) }, Quest = { "StartQuest", "DeepForestIsland2", 2 } }, -- 1925~1950
+        { MinLevel = 1975, Enemies = { "Reborn Skeleton" },      Positions = { Vector3.new(-8764, 142, 5974) }, Quest = { "StartQuest", "HauntedQuest1", 1 } }, -- 1975~2000
+        { MinLevel = 2000, Enemies = { "Living Zombie" },        Positions = { Vector3.new(-10173, 139, 5992) }, Quest = { "StartQuest", "HauntedQuest1", 2 } }, -- 2000~2025
+        { MinLevel = 2025, Enemies = { "Demonic Soul" },         Positions = { Vector3.new(-9500, 172, 6069) }, Quest = { "StartQuest", "HauntedQuest2", 1 } }, -- 2025~2050
+        { MinLevel = 2050, Enemies = { "Posessed Mummy" },       Positions = { Vector3.new(-9577, 6, 6188) }, Quest = { "StartQuest", "HauntedQuest2", 2 } }, -- 2050~2075
+        { MinLevel = 2075, Enemies = { "Peanut Scout" },         Positions = { Vector3.new(-1958, 31, -10060) }, Quest = { "StartQuest", "NutsIslandQuest", 1 } }, -- 2075~2100
+        { MinLevel = 2100, Enemies = { "Peanut President" },     Positions = { Vector3.new(-2313, 88, -10513) }, Quest = { "StartQuest", "NutsIslandQuest", 2 } }, -- 2100~2125
+        { MinLevel = 2125, Enemies = { "Ice Cream Chef" },       Positions = { Vector3.new(-817, 208, -10998) }, Quest = { "StartQuest", "IceCreamIslandQuest", 1 } }, -- 2125~2150
+        { MinLevel = 2150, Enemies = { "Ice Cream Commander" },  Positions = { Vector3.new(-817, 208, -10998) }, Quest = { "StartQuest", "IceCreamIslandQuest", 2 } }, -- 2150~2175
+        { MinLevel = 2200, Enemies = { "Cookie Crafter" },       Positions = { Vector3.new(-2273, 147, -12186) }, Quest = { "StartQuest", "CakeQuest1", 1 } }, -- 2200~2225
+        { MinLevel = 2225, Enemies = { "Cake Guard" },           Positions = { Vector3.new(-1593, 44, -12243) }, Quest = { "StartQuest", "CakeQuest1", 2 } }, -- 2225~2250
+        { MinLevel = 2250, Enemies = { "Baking Staff" },         Positions = { Vector3.new(-1983, 85, -13011) }, Quest = { "StartQuest", "CakeQuest2", 1 } }, -- 2250~2275
+        { MinLevel = 2275, Enemies = { "Head Baker" },           Positions = { Vector3.new(-1983, 85, -13011) }, Quest = { "StartQuest", "CakeQuest2", 2 } }, -- 2275~2300
+        { MinLevel = 2300, Enemies = { "Cocoa Warrior" },        Positions = { Vector3.new(88, 74, -12312) }, Quest = { "StartQuest", "ChocQuest1", 1 } }, -- 2300~2325
+        { MinLevel = 2325, Enemies = { "Chocolate Bar Battler" },Positions = { Vector3.new(674, 48, -12407) }, Quest = { "StartQuest", "ChocQuest1", 2 } }, -- 2325~2350
+        { MinLevel = 2350, Enemies = { "Sweet Thief" },          Positions = { Vector3.new(217, 127, -12599) }, Quest = { "StartQuest", "ChocQuest2", 1 } }, -- 2350~2375
+        { MinLevel = 2375, Enemies = { "Candy Rebel" },          Positions = { Vector3.new(182, 127, -12767) }, Quest = { "StartQuest", "ChocQuest2", 2 } }, -- 2375~2400
+        { MinLevel = 2400, Enemies = { "Candy Pirate" },         Positions = { Vector3.new(-1333, 37, -14578) }, Quest = { "StartQuest", "CandyQuest1", 1 } }, -- 2400~2425
+        { MinLevel = 2425, Enemies = { "Snow Demon" },           Positions = { Vector3.new(-737, 32, -14617) }, Quest = { "StartQuest", "CandyQuest1", 2 } }, -- 2425~2450
+        { MinLevel = 2450, Enemies = { "Isle Outlaw" },          Positions = { Vector3.new(-16514, 171, -179) }, Quest = { "StartQuest", "TikiQuest1", 1 } }, -- 2450~2475
+        { MinLevel = 2475, Enemies = { "Island Boy" },           Positions = { Vector3.new(-16514, 171, -179) }, Quest = { "StartQuest", "TikiQuest1", 2 } }, -- 2475~2500
+        { MinLevel = 2500, Enemies = { "Sun-kissed Warrior" },   Positions = { Vector3.new(-16550, 171, 1000) }, Quest = { "StartQuest", "TikiQuest2", 1 } }, -- 2500~2525
+        { MinLevel = 2525, Enemies = { "Isle Champion" },        Positions = { Vector3.new(-16550, 171, 1000) }, Quest = { "StartQuest", "TikiQuest2", 2 } }, -- 2525~2550
+        { MinLevel = 2550, Enemies = { "Serpent Hunter" },       Positions = { Vector3.new(-16640, 153, 1319) }, Quest = { "StartQuest", "TikiQuest3", 1 } }, -- 2550~2575
+        { MinLevel = 2575, Enemies = { "Skull Slayer" },         Positions = { Vector3.new(-16784, 106, 1545) }, Quest = { "StartQuest", "TikiQuest3", 2 } }, -- 2575~2600
+        { MinLevel = 2600, Enemies = { "Reef Bandit" },          Positions = { Vector3.new(11061, -2081, 9136) }, Quest = { "StartQuest", "SubmergedQuest1", 1 } }, -- 2600~2625
+        { MinLevel = 2625, Enemies = { "Coral Pirate" },         Positions = { Vector3.new(10826, -2018, 9337) }, Quest = { "StartQuest", "SubmergedQuest1", 2 } }, -- 2625~2650
+        { MinLevel = 2650, Enemies = { "Sea Chanter" },          Positions = { Vector3.new(10672, -2058, 10046) }, Quest = { "StartQuest", "SubmergedQuest2", 1 } }, -- 2650~2675
+        { MinLevel = 2675, Enemies = { "Ocean Prophet" },        Positions = { Vector3.new(11105, -1949, 10134) }, Quest = { "StartQuest", "SubmergedQuest2", 2 } }, -- 2675~2700
+        { MinLevel = 2700, Enemies = { "High Disciple" },        Positions = { Vector3.new(9739, -1967, 9741) }, Quest = { "StartQuest", "SubmergedQuest3", 1 } }, -- 2700~2750
+        { MinLevel = 2750, Enemies = { "Grand Devotee" },        Positions = { Vector3.new(9739, -1967, 9741) }, Quest = { "StartQuest", "SubmergedQuest3", 2 } }, -- 2750~2800
+    }
+}
+
+-- 依玩家等級取得對應的小怪設定（取 MinLevel <= 等級的最後一筆）
+local CachedLevel = nil
+local CachedEntry = nil
+
+local function GetCurrentLevelEntry()
+    local data = LocalPlayer:FindFirstChild("Data")
+    local levelStat = data and data:FindFirstChild("Level")
+    if not levelStat then return nil end
+
+    local level = levelStat.Value
+    if CachedEntry and level == CachedLevel then
+        return CachedEntry
+    end
+
+    local list = LevelMobs[CurrentWorld]
+    local best = nil
+    if list then
+        for _, entry in ipairs(list) do
+            if level >= entry.MinLevel then
+                best = entry
+            else
+                break
+            end
+        end
+    end
+
+    CachedLevel = level
+    CachedEntry = best
+    return best
+end
+
+----------------------------------------
+-- BOSS 優先邏輯
+----------------------------------------
+--自動練等 BOSS 資料（BOSS 任務區間 尚未生成時先 Farm 前一個等級的小怪）
+local LevelBosses = {
+    [1] = {
+        { MinLevel = 20,  Enemies = { "The Gorilla King" },  Positions = { Vector3.new(-1197, 8, -448) },    Quest = { "StartQuest", "JungleQuest", 3 } },  -- 20~30
+        { MinLevel = 55,  Enemies = { "Chef" },              Positions = { Vector3.new(-1140, 57, 4132) },   Quest = { "StartQuest", "BuggyQuest1", 3 } },  -- 55~60
+        { MinLevel = 105, Enemies = { "Yeti" },              Positions = { Vector3.new(1283, 106, -1556) },  Quest = { "StartQuest", "SnowQuest", 3 } },    -- 105~120
+        { MinLevel = 130, Enemies = { "Vice Admiral" },      Positions = { Vector3.new(-5088, 100, 4415) },  Quest = { "StartQuest", "MarineQuest2", 2 } }, -- 130~150
+        { MinLevel = 220, Enemies = { "Warden" },            Positions = { Vector3.new(5205, 162, 647) },    Quest = { "StartQuest", "ImpelQuest", 1 } },   -- 220~230
+        { MinLevel = 230, Enemies = { "Chief Warden" },      Positions = { Vector3.new(5205, 162, 647) },    Quest = { "StartQuest", "ImpelQuest", 2 } },   -- 230~240
+        { MinLevel = 240, Enemies = { "Swan" },              Positions = { Vector3.new(5205, 162, 647) },    Quest = { "StartQuest", "ImpelQuest", 3 } },   -- 240~250
+        { MinLevel = 350, Enemies = { "Magma Admiral" },     Positions = { Vector3.new(-5509, 18, 8694) },   Quest = { "StartQuest", "MagmaQuest", 3 } },   -- 350~375
+        { MinLevel = 425, Enemies = { "Fishman Lord" },      Positions = { Vector3.new(61350, 31, 1144) },   Quest = { "StartQuest", "FishmanQuest", 3 } }, -- 425~450
+        { MinLevel = 500, Enemies = { "Wysper" },            Positions = { Vector3.new(-7810, 5580, -573) }, Quest = { "StartQuest", "SkyExp1Quest", 3 } }, -- 500~525
+        { MinLevel = 575, Enemies = { "Thunder God" },       Positions = { Vector3.new(-7789, 5607, -2343) },Quest = { "StartQuest", "SkyExp2Quest", 3 } },  -- 575~600
+        { MinLevel = 650, Enemies = { "Cyborg" },            Positions = { Vector3.new(6130, 10, 3935) },    Quest = { "StartQuest", "FountainQuest", 3 } },-- 650~675
+    },
+    [2] = {
+        { MinLevel = 750,  Enemies = { "Diamond" },              Positions = { Vector3.new(-1687, 199, -77) },    Quest = { "StartQuest", "Area1Quest", 3 } },     -- 750~775
+        { MinLevel = 850,  Enemies = { "Jeremy" },               Positions = { Vector3.new(2321, 449, 715) },     Quest = { "StartQuest", "Area2Quest", 3 } },     -- 850~875
+        { MinLevel = 925,  Enemies = { "Orbitus" },              Positions = { Vector3.new(-2175, 82, -4087) },   Quest = { "StartQuest", "MarineQuest3", 3 } },   -- 925~950
+        { MinLevel = 1150, Enemies = { "Smoke Admiral" },        Positions = { Vector3.new(-4910, 233, -5472) },  Quest = { "StartQuest", "IceSideQuest", 3 } },   -- 1150~1175
+        { MinLevel = 1400, Enemies = { "Awakened Ice Admiral" }, Positions = { Vector3.new(6410, 297, -6900) },   Quest = { "StartQuest", "FrostQuest", 3 } },     -- 1400~1425
+        { MinLevel = 1475, Enemies = { "Tide Keeper" },          Positions = { Vector3.new(-3497, 123, -11541) }, Quest = { "StartQuest", "ForgottenQuest", 3 } }, -- 1475~1500
+    },
+    [3] = {
+        { MinLevel = 1550, Enemies = { "Stone" },             Positions = { Vector3.new(-1071, 53, 6805) },    Quest = { "StartQuest", "PiratePortQuest", 3 } },    -- 1550~1575
+        { MinLevel = 1675, Enemies = { "Hydra Leader" },      Positions = { Vector3.new(5772, 1013, -42) },    Quest = { "StartQuest", "VenomCrewQuest", 3 } },     -- 1675~1700
+        { MinLevel = 1750, Enemies = { "Kilo Admiral" },      Positions = { Vector3.new(2966, 509, -7349) },   Quest = { "StartQuest", "MarineTreeIsland", 3 } },   -- 1750~1775
+        { MinLevel = 1875, Enemies = { "Captain Elephant" },  Positions = { Vector3.new(-13359, 319, -8436) }, Quest = { "StartQuest", "DeepForestIsland", 3 } },   -- 1875~1900
+        { MinLevel = 1950, Enemies = { "Beautiful Pirate" },  Positions = { Vector3.new(5367, 22, -91) },      Quest = { "StartQuest", "DeepForestIsland2", 3 } },  -- 1950~1975
+        { MinLevel = 2175, Enemies = { "Cake Queen" },        Positions = { Vector3.new(-817, 208, -10998) },  Quest = { "StartQuest", "IceCreamIslandQuest", 3 } },-- 2175~2200
+    }
+}
+
+-- 依玩家等級取得對應的 BOSS 設定（等級進入下一階段小怪範圍後 BOSS 任務失效）
+local CachedBossLevel = nil
+local CachedBossEntry = nil
+
+local function GetCurrentBossEntry()
+    local data = LocalPlayer:FindFirstChild("Data")
+    local levelStat = data and data:FindFirstChild("Level")
+    if not levelStat then return nil end
+
+    local level = levelStat.Value
+    if CachedBossEntry and level == CachedBossLevel then
+        return CachedBossEntry
+    end
+
+    local list = LevelBosses[CurrentWorld]
+    local best = nil
+    if list then
+        for _, entry in ipairs(list) do
+            if level >= entry.MinLevel then
+                best = entry
+            else
+                break
+            end
+        end
+    end
+
+    if best then
+        local mobEntry = GetCurrentLevelEntry()
+        -- 已到下一階段小怪的等級 BOSS 任務不再適用 (例如 20~30 的 BOSS 到 30 等失效)
+        if not mobEntry or best.MinLevel < mobEntry.MinLevel then
+            best = nil
+        end
+    end
+
+    CachedBossLevel = level
+    CachedBossEntry = best
+    return best
+end
+
+-- BOSS 名稱比對優先度 完全相同(3) > 開頭符合(2) > 名稱包含(1) 避免誤鎖 (例如 Warden 誤鎖 Chief Warden)
+local function MatchBossScore(enemyName, bossNames)
+    local score = 0
+    for _, bossName in ipairs(bossNames) do
+        if enemyName == bossName then
+            return 3
+        elseif string.sub(enemyName, 1, #bossName) == bossName then
+            score = math.max(score, 2)
+        elseif string.find(enemyName, bossName, 1, true) then
+            score = math.max(score, 1)
+        end
+    end
+    return score
+end
+
+-- 掃描 workspace.Enemies 取得目前存活的 BOSS（尚未生成或已死亡回傳 nil）
+local function FindBossEnemy(bossEntry)
+    if not bossEntry then return nil end
+    local enemiesFolder = Workspace:FindFirstChild("Enemies")
+    if not enemiesFolder then return nil end
+
+    local best, bestScore = nil, 0
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        local hum = enemy:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 and enemy:FindFirstChild("HumanoidRootPart") then
+            local score = MatchBossScore(enemy.Name, bossEntry.Enemies)
+            if score > bestScore then
+                best = enemy
+                bestScore = score
+            end
+        end
+    end
+    return best
+end
+
+-- 目前應執行的任務來源 BOSS 存活時優先 BOSS 任務 否則小怪任務
+local function GetActiveQuestEntry()
+    local bossEntry = GetCurrentBossEntry()
+    if bossEntry and FindBossEnemy(bossEntry) then
+        return bossEntry
+    end
+    return GetCurrentLevelEntry()
+end
+
 ----------------------------------------
 -- 配置自動保存
 ----------------------------------------
@@ -306,10 +600,14 @@ local ConfigKeys = {
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
-    "KeyDisabled"
+    "KeyDisabled",
+    "AutoLevelFarm",
+    "BringMob",
+    "HoverHeight",
+    "AutoEquip_SelectedType"
 }
 
-local function CopyConfigValue(value)	
+local function CopyConfigValue(value)
     if type(value) ~= "table" then
         return value
     end
@@ -406,6 +704,578 @@ end
 
 SelectTeam()
 
+--自動練等 接任務（有任務時暫停 每5秒檢查 BOSS優先 等級更換小怪時強制改接任務）
+local function HasActiveQuest()
+    local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
+    local questFrame = main and main:FindFirstChild("Quest")
+    return questFrame ~= nil and questFrame.Visible == true
+end
+
+local LastAcceptedQuest = nil
+local LastQuestAccept = 0
+
+local function AcceptQuest(entry, force)
+    if not entry or not entry.Quest then return end
+    if os.clock() - LastQuestAccept < 1 then return end -- 防止短時間重複洗遠端
+    if not force and HasActiveQuest() then return end
+    pcall(function()
+        ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(entry.Quest))
+        LastAcceptedQuest = tostring(entry.Quest[2]) .. "|" .. tostring(entry.Quest[3])
+        LastQuestAccept = os.clock()
+    end)
+end
+
+-- 依目前狀態維持任務（任務已更換或沒有任務時強制接取）
+local function MaintainQuest(entry)
+    if not entry or not entry.Quest then return end
+    local questKey = tostring(entry.Quest[2]) .. "|" .. tostring(entry.Quest[3])
+    if LastAcceptedQuest ~= questKey or not HasActiveQuest() then
+        AcceptQuest(entry, true)
+    end
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.AutoLevelFarm then
+            MaintainQuest(GetActiveQuestEntry())
+        end
+    end
+end)
+
+----------------------------------------
+-- BOSS 優先偵測
+-- BOSS 生成 → 立即停止小怪 Farm 並接取 BOSS 任務
+-- BOSS 死亡 → 立即恢復 Farm 前一個等級的小怪任務
+----------------------------------------
+local PrevBossActive = false
+
+task.spawn(function()
+    while task.wait(0.2) do
+        if _G.AutoLevelFarm then
+            local bossEntry = GetCurrentBossEntry()
+            local bossEnemy = FindBossEnemy(bossEntry)
+
+            if bossEnemy then
+                MaintainQuest(bossEntry) -- BOSS 已生成 立即改接 BOSS 任務
+            elseif PrevBossActive then
+                MaintainQuest(GetCurrentLevelEntry()) -- BOSS 已死亡 立即恢復小怪任務
+            end
+
+            PrevBossActive = bossEnemy ~= nil
+        else
+            PrevBossActive = false
+        end
+    end
+end)
+
+-- Tween 邏輯（Tween to NPC / Bring NPC）
+if not _G.SetNoclipState then
+    local noclipConn = nil
+    _G.SetNoclipState = function(state)
+        if state then
+            if not noclipConn then
+                noclipConn = RunService.Stepped:Connect(function()
+                    local char = LocalPlayer.Character
+                    if char then
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") and part.CanCollide then
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end)
+            end
+        else
+            if noclipConn then
+                noclipConn:Disconnect()
+                noclipConn = nil
+            end
+        end
+    end
+end
+
+local function setPlatformStand(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = state end
+end
+
+local function resetCharPhysics()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Velocity = Vector3.zero
+        end
+    end
+end
+
+local function globalStopTween()
+    _G.isMovementActive = false
+    _G.SetNoclipState(false)
+
+    if _G.ActiveTween then
+        _G.ActiveTween:Cancel()
+        _G.ActiveTween = nil
+    end
+
+    local char = LocalPlayer.Character
+    if char then
+        local HRP = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        if HRP then
+            HRP.AssemblyLinearVelocity = Vector3.zero
+            HRP.AssemblyAngularVelocity = Vector3.zero
+            local bodyClip = HRP:FindFirstChild("BodyClip")
+            if bodyClip then bodyClip:Destroy() end
+        end
+
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+
+        setPlatformStand(false)
+        resetCharPhysics()
+    end
+end
+
+local function globalTweenTo(targetCFrame, callback)
+    local char = LocalPlayer.Character
+    local HRP = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not HRP or not hum then return end
+
+    local bodyClip = HRP:FindFirstChild("BodyClip")
+    if not bodyClip then
+        bodyClip = Instance.new("BodyVelocity")
+        bodyClip.Name = "BodyClip"
+        bodyClip.Parent = HRP
+    end
+    bodyClip.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyClip.Velocity = Vector3.zero
+
+    HRP.AssemblyLinearVelocity = Vector3.zero
+    HRP.AssemblyAngularVelocity = Vector3.zero
+    hum:ChangeState(Enum.HumanoidStateType.Physics)
+    setPlatformStand(true)
+
+    local distance = (targetCFrame.Position - HRP.Position).Magnitude
+    local speed = 300
+
+    if _G.ActiveTween then _G.ActiveTween:Cancel() end
+
+    _G.isMovementActive = true
+    _G.SetNoclipState(true)
+
+    _G.ActiveTween = TweenService:Create(
+        HRP,
+        TweenInfo.new(distance / speed, Enum.EasingStyle.Linear),
+        {CFrame = targetCFrame}
+    )
+
+    _G.ActiveTween:Play()
+
+    local connection
+    connection = _G.ActiveTween.Completed:Connect(function()
+        connection:Disconnect()
+        globalStopTween()
+        if callback then callback() end
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.BringMob and _G.AutoLevelFarm then
+            pcall(function()
+                if sethiddenproperty then
+                    sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+                end
+            end)
+        end
+    end
+end)
+
+local targetNPC = nil
+local LastBring = 0
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.BringMob and _G.AutoLevelFarm then
+            pcall(function()
+                if tick() - LastBring < 0.5 then return end
+                LastBring = tick()
+
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                local Mon = nil
+                local bossEntry = GetCurrentBossEntry()
+                local bossEnemy = FindBossEnemy(bossEntry)
+
+                if bossEnemy then
+                    -- BOSS 已生成 只鎖定 BOSS 禁止繼續拉小怪
+                    Mon = bossEnemy
+                else
+                    local entry = GetCurrentLevelEntry()
+                    if not entry then return end
+
+                    Mon = targetNPC
+                    if not Mon then
+                        local closestDist = math.huge
+                        for _, enemy in ipairs(workspace.Enemies:GetChildren()) do
+                            local hum = enemy:FindFirstChildOfClass("Humanoid")
+                            local root = enemy:FindFirstChild("HumanoidRootPart")
+                            if hum and root and hum.Health > 0 and enemy.Name ~= "Tyrant of the Skies" and not string.find(enemy.Name, "Boss") then
+                                local matched = false
+                                for _, en in ipairs(entry.Enemies) do
+                                    if enemy.Name == en then matched = true break end
+                                end
+                                if not matched then continue end
+                                local dist = (root.Position - hrp.Position).Magnitude
+                                if dist < closestDist then
+                                    closestDist = dist
+                                    Mon = enemy
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if not Mon then return end
+                local monRoot = Mon:FindFirstChild("HumanoidRootPart") or Mon.PrimaryPart
+                local targetPos = monRoot and monRoot.Position
+                if not targetPos then return end
+
+                local function Network(part)
+                    if isnetworkowner then
+                        return isnetworkowner(part)
+                    end
+                    return part.ReceiveAge == 0 and not part.Anchored and part.Velocity.Magnitude > 0
+                end
+
+                for _, v in ipairs(workspace.Enemies:GetChildren()) do
+                    if v ~= Mon then
+                        local hum = v:FindFirstChildOfClass("Humanoid")
+                        local root = v:FindFirstChild("HumanoidRootPart")
+
+                        if hum and root and hum.Health > 0 and v.Name == Mon.Name then
+                            local distance = (root.Position - targetPos).Magnitude
+                            if distance <= math.huge then
+                                local bv = root:FindFirstChild("BodyVelocity")
+                                if not bv then
+                                    bv = Instance.new("BodyVelocity")
+                                    bv.Name = "BodyVelocity"
+                                    bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+                                    bv.Velocity = Vector3.zero
+                                    bv.Parent = root
+                                end
+
+                                if distance > 10 and Network(root) then
+                                    root.CFrame = CFrame.new(targetPos)
+                                end
+
+                                root.CanCollide = false
+                                hum.WalkSpeed = 0
+                                hum.JumpPower = 0
+                                if hum:GetState() ~= Enum.HumanoidStateType.Seated then
+                                    hum:ChangeState(11)
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if Mon:FindFirstChild("HumanoidRootPart") and Mon:FindFirstChild("Humanoid") then
+                    Mon.HumanoidRootPart.CanCollide = false
+                    Mon.Humanoid.WalkSpeed = 0
+                    Mon.Humanoid.JumpPower = 0
+                end
+            end)
+        end
+    end
+end)
+
+-- 捷徑傳送邏輯（傳送門）
+_G.FruitFlySpeed = 300
+_G.Fruit_BlockedEntrances = {}
+_G.Fruit_LastTeleportTicks = {}
+_G.Fruit_TeleportFails = {}
+_G.Fruit_TeleportPauseUntil =  0
+
+local function GetCurrentWorldEntrances()
+    local pool = {}
+    local pid = game.PlaceId
+
+    -- 一海 (First Sea)
+    if table.find({2753915549, 85211729168715}, pid) then
+        pool = {
+            { Arg = Vector3.new(61163.85,  11.68,   1819.78), Dest = Vector3.new(61164,   5,    1820)  },
+            { Arg = Vector3.new(3864.68,    6.73,  -1926.21), Dest = Vector3.new(3865,    5,   -1926)  },
+            { Arg = Vector3.new(-4607.82,  874.39, -1667.55), Dest = Vector3.new(-4608,  873, -1668)  },
+            { Arg = Vector3.new(-7894.61, 5547.14,  -380.29), Dest = Vector3.new(-7895, 5546,  -380)  },
+        }
+    -- 二海 (Second Sea)
+    elseif table.find({4442272183, 79091703265657}, pid) then
+        pool = {
+            { Arg = Vector3.new(2285,   15,   882),   Dest = Vector3.new(2285,   15,   882)  },
+            { Arg = Vector3.new(-380,  350,   630),   Dest = Vector3.new(-380,  350,   630)  },
+            { Arg = Vector3.new(924,   125, 32882),   Dest = Vector3.new(924,   125, 32882)  },
+            { Arg = Vector3.new(-6491, 116,  -107),   Dest = Vector3.new(-6491, 116,  -107)  },
+        }
+    -- 三海 (Third Sea)
+    elseif table.find({7449423635, 100117331123089}, pid) then
+        pool = {
+            { Arg = Vector3.new(5678,    1013,  -312), Dest = Vector3.new(5678,    1013,  -312)  },
+            { Arg = Vector3.new(-12551,  337,  -7507), Dest = Vector3.new(-12551,  337,  -7507)  },
+            { Arg = Vector3.new(-5038,   315,  -3135), Dest = Vector3.new(-5038,   315,  -3135)  },
+            { Arg = Vector3.new(-5098,   317,  -3179), Dest = Vector3.new(-16813,   58,    305)  },
+        }
+    end
+    return pool
+end
+
+local function GetBestEntrance(myPos, targetPos)
+    local distToFruit = (targetPos - myPos).Magnitude
+
+    if distToFruit < 300 then return nil end
+
+    local directFlightTime = distToFruit / _G.FruitFlySpeed
+    local bestEntrance = nil
+    local bestTotalTime = directFlightTime
+    local teleportPenalty = 1.5 -- 傳送讀條/載入的時間懲罰（秒）
+    local pool = GetCurrentWorldEntrances()
+
+    for _, e in ipairs(pool) do
+        if _G.Fruit_BlockedEntrances[e.Arg] then continue end
+
+        local destDistToFruit = (e.Dest - targetPos).Magnitude
+        local totalTimeViaPortal = (destDistToFruit / _G.FruitFlySpeed) + teleportPenalty
+
+        if totalTimeViaPortal < bestTotalTime then
+            if (distToFruit - destDistToFruit) > 150 then
+                bestTotalTime = totalTimeViaPortal
+                bestEntrance = e
+            end
+        end
+    end
+
+    return bestEntrance
+end
+
+local function TryTeleportEntrance(bestEntrance, myHRP)
+    local lastTime = _G.Fruit_LastTeleportTicks[bestEntrance.Arg] or 0
+
+    if os.clock() - lastTime > 4 then
+        _G.Fruit_LastTeleportTicks[bestEntrance.Arg] = os.clock()
+        _G.Fruit_TeleportPauseUntil = os.clock() + 1.2 -- 暫停飛行移動 1.2 秒
+
+        if _G.Fruit_LinearVelocity then
+            _G.Fruit_LinearVelocity.VectorVelocity = Vector3.zero
+        end
+        myHRP.AssemblyLinearVelocity = Vector3.zero
+
+        local preDist = (myHRP.Position - bestEntrance.Dest).Magnitude
+
+        task.spawn(function()
+            pcall(function()
+                local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+                commF:InvokeServer("requestEntrance", bestEntrance.Arg)
+            end)
+        end)
+
+        task.spawn(function()
+            task.wait(1.5)
+            local c = LocalPlayer.Character
+            local hrp = c and c:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
+                -- 若傳送後位置沒有明顯靠近目的地
+                if postDist > 150 and postDist >= preDist * 0.5 then
+                    local fails = (_G.Fruit_TeleportFails[bestEntrance.Arg] or 0) + 1
+                    _G.Fruit_TeleportFails[bestEntrance.Arg] = fails
+                    -- 失敗達到 3 次則加入黑名單，不再使用該入口
+                    if fails >= 3 then
+                        _G.Fruit_BlockedEntrances[bestEntrance.Arg] = true
+                    end
+                end
+            end
+        end)
+        return true
+    end
+    return false
+end
+
+local lastTweenTargetPos = nil
+
+RunService.Heartbeat:Connect(function()
+    if _G.AutoLevelFarm then
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local bossEntry = GetCurrentBossEntry()
+        local bossEnemy = FindBossEnemy(bossEntry)
+        local tpos = nil
+
+        if bossEnemy then
+            -- BOSS 已生成 優先 Farm BOSS 禁止繼續 Farm 前一個小怪
+            targetNPC = bossEnemy
+            local broot = bossEnemy:FindFirstChild("HumanoidRootPart")
+
+            if os.clock() < _G.Fruit_TeleportPauseUntil then
+                if _G.isMovementActive then
+                    globalStopTween()
+                    lastTweenTargetPos = nil
+                end
+                return
+            end
+
+            if broot then
+                local bpos = broot.Position
+                local bestEntrance = GetBestEntrance(hrp.Position, bpos)
+                if bestEntrance and TryTeleportEntrance(bestEntrance, hrp) then
+                    if _G.isMovementActive then
+                        globalStopTween()
+                        lastTweenTargetPos = nil
+                    end
+                    return
+                end
+                tpos = Vector3.new(bpos.X, bpos.Y + _G.HoverHeight, bpos.Z)
+            end
+        else
+            -- BOSS 尚未生成（或非 BOSS 區間）Farm 當前等級小怪
+            local entry = GetCurrentLevelEntry()
+            if not entry then
+                if _G.isMovementActive then
+                    globalStopTween()
+                    lastTweenTargetPos = nil
+                end
+                return
+            end
+
+            local closest, dist = nil, math.huge
+            local enemiesFolder = workspace:FindFirstChild("Enemies")
+            if not enemiesFolder then return end
+
+            for _, npc in pairs(enemiesFolder:GetChildren()) do
+                if npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 and npc.PrimaryPart and not string.find(npc.Name, "Boss") and npc.Name ~= "Tyrant of the Skies" then
+                    local matched = false
+                    for _, en in ipairs(entry.Enemies) do
+                        if npc.Name == en then matched = true break end
+                    end
+                    if not matched then continue end
+                    local p = npc.PrimaryPart.Position
+                    local d = (p - hrp.Position).Magnitude
+                    if d < dist then
+                        dist = d
+                        closest = npc
+                    end
+                end
+            end
+            targetNPC = closest
+
+            if targetNPC and targetNPC.PrimaryPart then
+                tpos = Vector3.new(
+                    targetNPC.PrimaryPart.Position.X,
+                    targetNPC.PrimaryPart.Position.Y + _G.HoverHeight,
+                    targetNPC.PrimaryPart.Position.Z
+                )
+            elseif #entry.Positions > 0 then
+                local curIndex = entry.CoordIndex or 1
+                local pos = entry.Positions[curIndex]
+
+                if os.clock() < _G.Fruit_TeleportPauseUntil then
+                    if _G.isMovementActive then
+                        globalStopTween()
+                        lastTweenTargetPos = nil
+                    end
+                    return
+                end
+                local bestEntrance = GetBestEntrance(hrp.Position, pos)
+                if bestEntrance and TryTeleportEntrance(bestEntrance, hrp) then
+                    if _G.isMovementActive then
+                        globalStopTween()
+                        lastTweenTargetPos = nil
+                    end
+                    return
+                end
+
+                tpos = Vector3.new(pos.X, pos.Y + _G.HoverHeight, pos.Z)
+
+                if (hrp.Position - tpos).Magnitude <= 5 then
+                    if not entry.Waiting then
+                        entry.Waiting = true
+                        entry.WaitStart = tick()
+                    elseif tick() - entry.WaitStart >= 2 then
+                        entry.Waiting = false
+                        local nextIndex = curIndex % #entry.Positions + 1
+                        entry.CoordIndex = nextIndex
+                        local npos = entry.Positions[nextIndex]
+                        tpos = Vector3.new(npos.X, npos.Y + _G.HoverHeight, npos.Z)
+                    end
+                else
+                    entry.Waiting = false
+                end
+            end
+        end
+
+        if tpos then
+            local targetCFrame = CFrame.new(tpos)
+
+            if not _G.isMovementActive or not lastTweenTargetPos or (lastTweenTargetPos - tpos).Magnitude > 2 then
+                lastTweenTargetPos = tpos
+                globalTweenTo(targetCFrame)
+            end
+        else
+            if _G.isMovementActive then
+                globalStopTween()
+                lastTweenTargetPos = nil
+            end
+        end
+    end
+end)
+
+--自動切換配置（Auto Level 開啟時固定切換 Melee 無UI元件）
+local function equipByType(toolType)
+    if not _G.AutoLevelFarm then return end
+    _G.AutoEquip_SelectedType = toolType
+
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hum or hum.Health <= 0 then return end
+
+    for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.ToolTip == toolType then
+            hum:EquipTool(tool) -- 讓角色裝備該武器
+            break
+        end
+    end
+end
+
+local function monitorCurrentTool()
+    task.spawn(function()
+        while true do
+            task.wait(0.1) -- 每 0.1 秒檢查一次
+            if not _G.AutoLevelFarm then continue end
+
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local tool = hum:FindFirstChildOfClass("Tool") -- 取得當前手上拿著的武器
+                    if not tool or tool.ToolTip ~= _G.AutoEquip_SelectedType then
+                        equipByType(_G.AutoEquip_SelectedType)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+monitorCurrentTool()
+
 --Fast Attack
 local Settings = {
     AttackInterval  = 0.01,
@@ -420,12 +1290,12 @@ local State = {
 
 if Settings.AutoScanRemotes then
     task.spawn(function()
-        local folders = { 
-            ReplicatedStorage:FindFirstChild("Util"), 
-            ReplicatedStorage:FindFirstChild("Common"), 
-            ReplicatedStorage:FindFirstChild("Remotes"), 
-            ReplicatedStorage:FindFirstChild("Assets"), 
-            ReplicatedStorage:FindFirstChild("FX") 
+        local folders = {
+            ReplicatedStorage:FindFirstChild("Util"),
+            ReplicatedStorage:FindFirstChild("Common"),
+            ReplicatedStorage:FindFirstChild("Remotes"),
+            ReplicatedStorage:FindFirstChild("Assets"),
+            ReplicatedStorage:FindFirstChild("FX")
         }
         local function checkChild(child)
             if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
@@ -462,10 +1332,10 @@ local function GetTargets()
         if tRoot and tHum and tHum.Health > 0 then
             local dist = (tRoot.Position - myPos).Magnitude
             if dist <= _G.AttackDistance then
-                table.insert(targets, { 
-                    Model = model, 
-                    Root  = tRoot, 
-                    Head  = model:FindFirstChild("Head") or tRoot 
+                table.insert(targets, {
+                    Model = model,
+                    Root  = tRoot,
+                    Head  = model:FindFirstChild("Head") or tRoot
                 })
             end
         end
@@ -501,8 +1371,8 @@ local function PerformAttack(forceTargets)
 
     local mainTarget = targets[1]
     local hitList    = {}
-    for i, target in ipairs(targets) do 
-        table.insert(hitList, {target.Model, target.Root}) 
+    for i, target in ipairs(targets) do
+        table.insert(hitList, {target.Model, target.Root})
     end
 
     RegisterAttack:FireServer(0)
@@ -518,8 +1388,8 @@ local function PerformAttack(forceTargets)
             local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
             local rawName     = "RE/RegisterHit"
             local timestamp   = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
-            local encryptedName = string.gsub(rawName, ".", function(c) 
-                return string.char(bit32.bxor(string.byte(c), timestamp)) 
+            local encryptedName = string.gsub(rawName, ".", function(c)
+                return string.char(bit32.bxor(string.byte(c), timestamp))
             end)
             State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
         end)
@@ -539,7 +1409,7 @@ local function startManual()
     if manualConnection then return end
     manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
-        if _G.FastAttack then return end 
+        if _G.FastAttack then return end
 
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             pcall(PerformAttack)
@@ -583,21 +1453,47 @@ task.spawn(function()
     end
 end)
 
+--兌換代碼
+local function redeemAllCodes()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    task.spawn(function()
+        for _, code in ipairs(_G.RedeemCodesList) do
+            pcall(function()
+                local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+                if remotesFolder then
+                    local remote = remotesFolder:FindFirstChild("Redeem")
+                    if remote then
+                        if remote:IsA("RemoteFunction") then
+                            remote:InvokeServer(code)
+                        else
+                            remote:FireServer(code)
+                        end
+                    end
+                else
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("redeem", code)
+                end
+            end)
+            task.wait(0.15)
+        end
+    end)
+end
+
 --低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
-    
+
     if _G.LowVisualMode then
-        WindUI:Notify({ 
-            Title = "優化系統", 
-            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
+        WindUI:Notify({
+            Title = "優化系統",
+            Content = "低配模式已啟動，正在清理地圖並優化效能...",
             Duration = 5
         })
-        
+
         Lighting.GlobalShadows = false
         Lighting.FogEnd = 9e9
         Lighting.Brightness = 1
-        
+
         for _, obj in ipairs(game:GetDescendants()) do
             if obj:IsA("BasePart") then
                 obj.Material = Enum.Material.SmoothPlastic
@@ -610,7 +1506,7 @@ _G.SetLowVisualState = function(state)
                 obj.Enabled = false
             end
         end
-        
+
         if not _G.LowVisualConnection then
             _G.LowVisualConnection = Workspace.DescendantAdded:Connect(function(obj)
                 if obj:IsA("BasePart") then
@@ -658,9 +1554,9 @@ local function EnableAntiAFK()
 end
 
 local function DisableAntiAFK()
-    if _G.AntiAFK_Connection then 
+    if _G.AntiAFK_Connection then
         _G.AntiAFK_Connection:Disconnect()
-        _G.AntiAFK_Connection = nil 
+        _G.AntiAFK_Connection = nil
     end
 end
 
@@ -675,6 +1571,33 @@ local Tabs = {
     Config   = Window:Tab({ Title = "配置",   Icon = "wrench"}),
     Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
 }
+
+Tabs.Config:Section({ Title = "自動練等" })
+
+Tabs.Config:Toggle({
+    Title    = "自動練等",
+    Value    = _G.AutoLevelFarm,
+    Callback = function(v)
+        _G.AutoLevelFarm = v
+        if v then
+            task.spawn(function()
+                task.wait(0.5)
+                MaintainQuest(GetActiveQuestEntry())
+            end)
+        else
+            globalStopTween()
+            lastTweenTargetPos = nil
+        end
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Bring NPC",
+    Value    = _G.BringMob,
+    Callback = function(v)
+        _G.BringMob = v
+    end
+})
 
 Tabs.Config:Section({ Title = "預設" })
 
@@ -710,6 +1633,15 @@ Tabs.Config:Toggle({
     end
 })
 
+Tabs.Config:Section({ Title = "兌換代碼" })
+
+Tabs.Config:Button({
+    Title = "一鍵兌換所有 Code",
+    Callback = function(v)
+        redeemAllCodes()
+    end
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
@@ -725,7 +1657,7 @@ Tabs.Settings:Button({
                 writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
             end
         end)
-        
+
         if ok then
             WindUI:Notify({
                 Title = "配置等待重置",
@@ -753,13 +1685,13 @@ Tabs.Settings:Toggle({
     end
 })
 
-Tabs.Settings:Toggle({ 
+Tabs.Settings:Toggle({
     Title = "換服後自動執行",
     Desc = "切換伺服器時自動重新載入",
     Value = _G.AutoExecute,
     Callback = function(v)
         _G.AutoExecute = v
-        
+
         if _G.AutoExecute then
             if queue_on_teleport then
                 writefile("AutoLevel.file", "true")
@@ -789,27 +1721,27 @@ Tabs.Settings:Toggle({
     end
 })
 
-Tabs.Settings:Toggle({ 
-    Title    = "Anti AFK", 
-    Desc     = "防止閒置被踢出", 
+Tabs.Settings:Toggle({
+    Title    = "Anti AFK",
+    Desc     = "防止閒置被踢出",
     Value    = _G.AntiAFK_ENABLED,
-    Callback = function(v) 
+    Callback = function(v)
         _G.AntiAFK_ENABLED = v
-        if _G.AntiAFK_ENABLED then 
-            EnableAntiAFK() 
-        else 
-            DisableAntiAFK() 
-        end 
+        if _G.AntiAFK_ENABLED then
+            EnableAntiAFK()
+        else
+            DisableAntiAFK()
+        end
     end
 })
 
-Tabs.Settings:Keybind({ 
-    Title = "快捷鍵", 
-    Desc = "可更改", 
+Tabs.Settings:Keybind({
+    Title = "快捷鍵",
+    Desc = "可更改",
     Value = _G.CurrentKey,
     Callback = function(v)
         _G.CurrentKey = v
-        
+
         if not _G.KeyDisabled then
             Window:SetToggleKey(Enum.KeyCode[v])
         end
@@ -822,7 +1754,7 @@ Tabs.Settings:Toggle({
     Value = _G.KeyDisabled,
     Callback = function(state)
         _G.KeyDisabled = state
-        
+
         if state then
             Window:SetToggleKey(nil)
         else
