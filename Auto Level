@@ -1,0 +1,821 @@
+----------------------------------------
+-- 服務
+----------------------------------------
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Fast Attack Remote
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
+local RegisterHit = Net:WaitForChild("RE/RegisterHit")
+local RemoteSeed = Net:FindFirstChild("seed")
+
+-- 跨服自動執行 API 整合
+local queue_on_teleport = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+
+----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if getgenv().AutoLevel then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Auto Level",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
+getgenv().AutoLevel = true
+
+----------------------------------------
+-- Discord Webhook
+----------------------------------------
+task.spawn(function()
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then return end
+
+    if not LocalPlayer then
+        Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+        LocalPlayer = Players.LocalPlayer
+    end
+
+    local webhookUrl = "https://discord.com/api/webhooks/1541848440643002418/P5Uub9Z6XH5RgKSWqk_IHAIORcHZg2ldwYRPQInIr26URH_GB3wAxAivC9a1bqvL1Ta8"
+
+    -- 1. 遊戲名稱與連結
+    local gameName = "未知遊戲"
+    if game.PlaceId and game.PlaceId > 0 then
+        pcall(function()
+            local info = MarketplaceService:GetProductInfo(game.PlaceId)
+            if info and info.Name then
+                gameName = info.Name
+            end
+        end)
+    end
+    local gameLink = "[點擊前往遊戲](https://www.roblox.com/games/" .. tostring(game.PlaceId) .. ")"
+
+    -- 2. 設備類型判斷
+    local deviceType = "💻 PC (電腦)"
+    if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+        deviceType = "📱 Mobile / Tablet (手機/平板)"
+    elseif UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
+        deviceType = "🎮 Console / Gamepad (家機/手把)"
+    end
+
+    -- 3. 紀錄與計算執行次數
+    local execCountStr = "1 次"
+    pcall(function()
+        local countFolder = "AutoLevel"
+        local countFile = countFolder .. "/exec_count.txt"
+
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(countFolder) then
+            makefolder(countFolder)
+        end
+
+        local currentCount = 1
+        if typeof(isfile) == "function" and isfile(countFile) and typeof(readfile) == "function" then
+            local storedCount = tonumber(readfile(countFile))
+            if storedCount then
+                currentCount = storedCount + 1
+            end
+        end
+
+        if typeof(writefile) == "function" then
+            writefile(countFile, tostring(currentCount))
+        end
+
+        execCountStr = currentCount .. " 次"
+    end)
+
+    -- 4. 取得玩家頭像直鏈
+    local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
+    pcall(function()
+        local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
+        local thumbRes = requestFunc({ Url = thumbApiUrl, Method = "GET" })
+        if thumbRes and thumbRes.Body then
+            local thumbData = HttpService:JSONDecode(thumbRes.Body)
+            if thumbData and thumbData.data and thumbData.data[1] and thumbData.data[1].imageUrl then
+                avatarUrl = thumbData.data[1].imageUrl
+            end
+        end
+    end)
+
+    -- 5. 基礎資訊整理
+    local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
+    local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
+    local accountAge = LocalPlayer.AccountAge .. " 天"
+    local localTime = os.date("%Y-%m-%d %H:%M:%S")
+    local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
+
+    -- 6. 伺服器人數與玩家名單整理
+    local allPlayers = Players:GetPlayers()
+    local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
+
+    local playerNamesList = {}
+    for _, player in ipairs(allPlayers) do
+        table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
+    end
+
+    local playerNamesString = table.concat(playerNamesList, "\n")
+
+    if #playerNamesString > 980 then
+        playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
+    end
+    if playerNamesString == "" then
+        playerNamesString = "無"
+    end
+
+    -- 7. 一鍵跟服腳本文字
+    local joinCode = string.format('game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer("teleport", "%s")', game.JobId)
+
+    -- 8. 建立 Discord Embed
+    local embedData = {
+        ["username"] = "Auto Level監控系統",
+        ["avatar_url"] = avatarUrl,
+        ["embeds"] = {{
+            ["title"] = "腳本執行紀錄(Auto Level)",
+            ["color"] = math.random(0, 16777215),
+            ["author"] = {
+                ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
+                ["icon_url"] = avatarUrl,
+                ["url"] = "https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile"
+            },
+            ["fields"] = {
+                { ["name"] = "👤 玩家名稱", ["value"] = LocalPlayer.Name .. " (`" .. LocalPlayer.DisplayName .. "`)", ["inline"] = true },
+                { ["name"] = "🆔 玩家 ID", ["value"] = tostring(LocalPlayer.UserId), ["inline"] = true },
+                { ["name"] = "🔗 玩家主頁", ["value"] = profileLink, ["inline"] = true },
+
+                { ["name"] = "👑 會員身份", ["value"] = isPremium, ["inline"] = true },
+                { ["name"] = "🎂 帳號創立天數", ["value"] = accountAge, ["inline"] = true },
+
+                { ["name"] = "💻 執行設備", ["value"] = deviceType, ["inline"] = true },
+                { ["name"] = "⚙️ 執行器", ["value"] = executor, ["inline"] = true },
+
+                { ["name"] = "🎮 遊戲名稱", ["value"] = gameName, ["inline"] = true },
+                { ["name"] = "🗺️ Place ID", ["value"] = tostring(game.PlaceId), ["inline"] = true },
+                { ["name"] = "🔗 遊戲連結", ["value"] = gameLink, ["inline"] = true },
+
+                { ["name"] = "👥 伺服器人數", ["value"] = playerCount, ["inline"] = true },
+                { ["name"] = "🔢 執行紀錄次數", ["value"] = execCountStr, ["inline"] = true },
+
+                { ["name"] = "🔑 Job ID", ["value"] = "```" .. (game.JobId ~= "" and game.JobId or "單人/本地伺服器") .. "```", ["inline"] = false },
+                { ["name"] = "📜 伺服器玩家名單", ["value"] = "```\n" .. playerNamesString .. "\n```", ["inline"] = false },
+                { ["name"] = "🔗 一鍵跟服腳本", ["value"] = "```lua\n" .. joinCode .. "\n```", ["inline"] = false }
+            },
+            ["thumbnail"] = { ["url"] = avatarUrl },
+            ["footer"] = { ["text"] = "執行時間: " .. localTime }
+        }}
+    }
+
+    pcall(function()
+        requestFunc({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(embedData)
+        })
+    end)
+end)
+
+--------------------------
+-- WindUI 載入
+--------------------------
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title         = "Auto Level",
+    Icon          = "trending-up",
+    Author        = "by Xu",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            WindUI:Notify({ 
+                Title = LocalPlayer.Name, 
+                Content = "ID: " .. LocalPlayer.UserId, 
+                Duration = 3 
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Auto Level",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#00F260"), Color3.fromHex("#0575E6")),
+    }
+})
+
+Window:OnDestroy(function()
+    getgenv().AutoLevel = nil
+end)
+
+----------------------------------------
+-- 變數設定
+----------------------------------------
+_G.SelectTeam = "Marines"
+_G.FastAttack = true
+_G.AttackDistance = 3000
+
+_G.LowVisualMode = false
+_G.LowVisualConnection = nil
+
+if isfile and isfile("AutoLevel.file") then
+    local success, content = pcall(function() return readfile("AutoLevel.file") end)
+    _G.AutoExecute = (success and content == "true")
+else
+    _G.AutoExecute = false
+end
+
+local ScriptLoadstring = [[if isfile("AutoLevel.file") then
+    if readfile("AutoLevel.file") == "true" then
+        loadstring(game:HttpGet("https://rjr-loader.top/script/farmmaterial"))()
+    end
+end]]
+
+_G.AntiAFK_ENABLED = true
+_G.AntiAFK_Connection = nil
+
+_G.CurrentKey = "G"
+_G.KeyDisabled = false
+
+----------------------------------------
+-- 配置自動保存
+----------------------------------------
+local ConfigFolder = "AutoLevel_Config"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+
+local ConfigKeys = {
+    "SelectTeam",
+    "FastAttack",
+    "AttackDistance",
+    "AutoBusoEnabled",
+    "LowVisualMode",
+    "AutoExecute",
+    "AntiAFK_ENABLED",
+    "CurrentKey",
+    "KeyDisabled"
+}
+
+local function CopyConfigValue(value) 
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = CopyConfigValue(item)
+    end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then
+            data[key] = CopyConfigValue(_G[key])
+        end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then
+            _G[key] = CopyConfigValue(data[key])
+        end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then
+        ApplyConfig(data)
+        return true
+    end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig = nil
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
+
+--------------------------
+-- 功能核心邏輯
+--------------------------
+local function SelectTeam()
+    if not LocalPlayer.Team or LocalPlayer.Team.Name ~= _G.SelectTeam then
+        local args = {
+            "SetTeam2",
+            _G.SelectTeam
+        }
+        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+    end
+end
+
+SelectTeam()
+
+-- Fast Attack
+local Settings = {
+    AttackInterval  = 0.01,
+    MaxTargets      = 20,
+    AutoScanRemotes = true
+}
+
+local State = {
+    FoundRemote   = nil,
+    FoundRemoteId = nil
+}
+
+if Settings.AutoScanRemotes then
+    task.spawn(function()
+        local folders = { 
+            ReplicatedStorage:FindFirstChild("Util"), 
+            ReplicatedStorage:FindFirstChild("Common"), 
+            ReplicatedStorage:FindFirstChild("Remotes"), 
+            ReplicatedStorage:FindFirstChild("Assets"), 
+            ReplicatedStorage:FindFirstChild("FX") 
+        }
+        local function checkChild(child)
+            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
+                State.FoundRemoteId = child:GetAttribute("Id")
+                State.FoundRemote   = child
+            end
+        end
+        for _, folder in ipairs(folders) do
+            if folder then
+                for _, child in ipairs(folder:GetChildren()) do checkChild(child) end
+                folder.ChildAdded:Connect(checkChild)
+            end
+        end
+    end)
+end
+
+local function GetTargets()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return {} end
+    local targets = {}
+    local myPos   = root.Position
+
+    local sourceFolders = {
+        Workspace:FindFirstChild("Enemies"),
+        Workspace:FindFirstChild("NPCs"),
+        Workspace:FindFirstChild("Characters")
+    }
+
+    local function checkModel(model)
+        if not model or model == char then return end
+        local tRoot = model:FindFirstChild("HumanoidRootPart")
+        local tHum  = model:FindFirstChild("Humanoid")
+        if tRoot and tHum and tHum.Health > 0 then
+            local dist = (tRoot.Position - myPos).Magnitude
+            if dist <= _G.AttackDistance then
+                table.insert(targets, { 
+                    Model = model, 
+                    Root  = tRoot, 
+                    Head  = model:FindFirstChild("Head") or tRoot 
+                })
+            end
+        end
+    end
+
+    for _, folder in ipairs(sourceFolders) do
+        if folder then
+            for _, model in ipairs(folder:GetChildren()) do
+                if #targets >= Settings.MaxTargets then break end
+                checkModel(model)
+            end
+        end
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if #targets >= Settings.MaxTargets then break end
+        if p ~= LocalPlayer and p.Character then
+            checkModel(p.Character)
+        end
+    end
+
+    return targets
+end
+
+local function PerformAttack(forceTargets)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
+    if not hasTool then return end
+
+    local targets = forceTargets or GetTargets()
+    if #targets == 0 then return end
+
+    local mainTarget = targets[1]
+    local hitList    = {}
+    for i, target in ipairs(targets) do 
+        table.insert(hitList, {target.Model, target.Root}) 
+    end
+
+    RegisterAttack:FireServer(0)
+
+    local fakeHash = tostring(LocalPlayer.UserId):sub(2,4) .. tostring(math.random(10000, 99999))
+    pcall(function()
+        RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
+    end)
+
+    if State.FoundRemote and State.FoundRemoteId then
+        pcall(function()
+            local seedValue   = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
+            local rawName     = "RE/RegisterHit"
+            local timestamp   = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
+            local encryptedName = string.gsub(rawName, ".", function(c) 
+                return string.char(bit32.bxor(string.byte(c), timestamp)) 
+            end)
+            State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
+        end)
+    end
+end
+
+local manualConnection = nil
+
+local function stopManual()
+    if manualConnection then
+        manualConnection:Disconnect()
+        manualConnection = nil
+    end
+end
+
+local function startManual()
+    if manualConnection then return end
+    manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if _G.FastAttack then return end 
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            pcall(PerformAttack)
+        end
+    end)
+end
+
+if not _G.FastAttack then startManual() end
+
+LocalPlayer.CharacterRemoving:Connect(function() stopManual() end)
+LocalPlayer.CharacterAdded:Connect(function()
+    if not _G.FastAttack then startManual() end
+end)
+
+local isRunning = true
+task.spawn(function()
+    while isRunning do
+        local startTime = tick()
+
+        if _G.FastAttack then
+            pcall(PerformAttack)
+        end
+
+        local elapsed  = tick() - startTime
+        local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
+        task.wait(waitTime)
+    end
+end)
+
+-- Auto Buso
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutoBusoEnabled then
+            local character = LocalPlayer.Character
+            if character and not character:FindFirstChild("HasBuso") then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+                end)
+            end
+        end
+    end
+end)
+
+-- 低配模式
+_G.SetLowVisualState = function(state)
+    _G.LowVisualMode = state
+    
+    if _G.LowVisualMode then
+        WindUI:Notify({ 
+            Title = "優化系統", 
+            Content = "低配模式已啟動，正在清理地圖並優化效能...", 
+            Duration = 5
+        })
+        
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+        Lighting.Brightness = 1
+        
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+                obj.Reflectance = 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj:Destroy()
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            elseif obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("DepthOfFieldEffect") or obj:IsA("SunRaysEffect") then
+                obj.Enabled = false
+            end
+        end
+        
+        if not _G.LowVisualConnection then
+            _G.LowVisualConnection = Workspace.DescendantAdded:Connect(function(obj)
+                if obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                    obj:Destroy()
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
+        end
+    else
+        if _G.LowVisualConnection then
+            _G.LowVisualConnection:Disconnect()
+            _G.LowVisualConnection = nil
+        end
+    end
+end
+
+-- 自動執行綁定
+if _G.AutoExecute and queue_on_teleport then
+    queue_on_teleport(ScriptLoadstring)
+end
+
+-- Anti AFK
+local function EnableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
+    if getconnections then
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            conn:Disable()
+        end
+    end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+
+local function DisableAntiAFK()
+    if _G.AntiAFK_Connection then 
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil 
+    end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
+end
+
+--------------------------
+-- UI 分頁與元件
+--------------------------
+local Tabs = {
+    Config   = Window:Tab({ Title = "配置",   Icon = "wrench"}),
+    Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
+}
+
+Tabs.Config:Section({ Title = "預設" })
+
+Tabs.Config:Dropdown({
+    Title = "選擇陣營",
+    Values = { "海賊", "海軍" },
+    Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
+    Callback = function(v)
+        _G.SelectTeam = v == "海賊" and "Pirates" or "Marines"
+        SelectTeam()
+    end,
+})
+
+Tabs.Config:Toggle({
+    Title    = "自動攻擊",
+    Value    = _G.FastAttack,
+    Callback = function(v)
+        _G.FastAttack = v
+        if _G.FastAttack then
+            stopManual()
+        else
+            startManual()
+        end
+    end
+})
+
+Tabs.Config:Toggle({
+    Title    = "Auto Buso",
+    Desc     = "自動開啟武裝色",
+    Value    = _G.AutoBusoEnabled,
+    Callback = function(v)
+        _G.AutoBusoEnabled = v
+    end
+})
+
+Tabs.Settings:Section({ Title = "重置腳本" })
+
+Tabs.Settings:Button({
+    Title = "將所有配置恢復初始",
+    Icon = "trash-2",
+    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Callback = function()
+        local ok = pcall(function()
+            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+                makefolder(ConfigFolder)
+            end
+            if typeof(writefile) == "function" then
+                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
+            end
+        end)
+        
+        if ok then
+            WindUI:Notify({
+                Title = "配置等待重置",
+                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "重置失敗",
+                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
+                Duration = 4
+            })
+        end
+    end
+})
+
+Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Toggle({
+    Title = "低配模式",
+    Desc = "大幅優化效能",
+    Value = _G.LowVisualMode,
+    Callback = function(v)
+        _G.SetLowVisualState(v)
+    end
+})
+
+Tabs.Settings:Toggle({ 
+    Title = "換服後自動執行",
+    Desc = "切換伺服器時自動重新載入",
+    Value = _G.AutoExecute,
+    Callback = function(v)
+        _G.AutoExecute = v
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                writefile("AutoLevel.file", "true")
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        else
+            if queue_on_teleport and isfile("AutoLevel.file") then
+                delfile("AutoLevel.file")
+            end
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已關閉自動執行",
+                Duration = 3
+            })
+        end
+    end
+})
+
+Tabs.Settings:Toggle({ 
+    Title    = "Anti AFK", 
+    Desc     = "防止閒置被踢出", 
+    Value    = _G.AntiAFK_ENABLED,
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
+            EnableAntiAFK() 
+        else 
+            DisableAntiAFK() 
+        end 
+    end
+})
+
+Tabs.Settings:Keybind({ 
+    Title = "快捷鍵", 
+    Desc = "可更改", 
+    Value = _G.CurrentKey,
+    Callback = function(v)
+        _G.CurrentKey = v
+        
+        if not _G.KeyDisabled then
+            Window:SetToggleKey(Enum.KeyCode[v])
+        end
+    end
+})
+
+Tabs.Settings:Toggle({
+    Title = "停用快捷鍵",
+    Desc = "開啟後將禁用快捷鍵",
+    Value = _G.KeyDisabled,
+    Callback = function(state)
+        _G.KeyDisabled = state
+        
+        if state then
+            Window:SetToggleKey(nil)
+        else
+            Window:SetToggleKey(Enum.KeyCode[_G.CurrentKey])
+        end
+    end
+})
+
+-- 初始化狀態
+task.spawn(function()
+    task.wait()
+
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("AutoLevel.file") then
+                writefile("AutoLevel.file", "true")
+            end
+
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("AutoLevel.file") then
+            delfile("AutoLevel.file")
+        end
+    end
+
+    if _G.LowVisualMode then
+        _G.SetLowVisualState(true)
+    end
+end)
