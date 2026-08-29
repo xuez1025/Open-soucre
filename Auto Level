@@ -25,9 +25,6 @@ local RegisterAttack = Net:WaitForChild("RE/RegisterAttack")
 local RegisterHit = Net:WaitForChild("RE/RegisterHit")
 local RemoteSeed = Net:FindFirstChild("seed")
 
--- 跨服自動執行 API 整合
-local queue_on_teleport = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
-
 ----------------------------------------
 -- 防重複啟用
 ----------------------------------------
@@ -49,9 +46,12 @@ getgenv().AutoLevel = true
 -- Discord Webhook
 ----------------------------------------
 task.spawn(function()
+    -- 檢查 HTTP 請求 API
     local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
     if not requestFunc then return end
 
+    -- 確保 LocalPlayer 已載入
+    local LocalPlayer = Players.LocalPlayer
     if not LocalPlayer then
         Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
         LocalPlayer = Players.LocalPlayer
@@ -130,11 +130,14 @@ task.spawn(function()
 
     local playerNamesList = {}
     for _, player in ipairs(allPlayers) do
+        -- 格式：- 暱稱 (@帳號名稱)
         table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
     end
 
+    -- 將名單合併成字串，並使用換行符號(\n)
     local playerNamesString = table.concat(playerNamesList, "\n")
 
+    -- 確保字元不超過 Discord Embed 限制 (1024個字元，保留空間給程式碼區塊)
     if #playerNamesString > 980 then
         playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
     end
@@ -151,13 +154,14 @@ task.spawn(function()
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
             ["title"] = "腳本執行紀錄(Auto Level)",
-            ["color"] = math.random(0, 16777215),
+            ["color"] = math.random(0, 16777215), -- 隨機顏色
             ["author"] = {
                 ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
                 ["icon_url"] = avatarUrl,
                 ["url"] = "https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile"
             },
             ["fields"] = {
+                -- 玩家資訊
                 { ["name"] = "👤 玩家名稱", ["value"] = LocalPlayer.Name .. " (`" .. LocalPlayer.DisplayName .. "`)", ["inline"] = true },
                 { ["name"] = "🆔 玩家 ID", ["value"] = tostring(LocalPlayer.UserId), ["inline"] = true },
                 { ["name"] = "🔗 玩家主頁", ["value"] = profileLink, ["inline"] = true },
@@ -165,9 +169,11 @@ task.spawn(function()
                 { ["name"] = "👑 會員身份", ["value"] = isPremium, ["inline"] = true },
                 { ["name"] = "🎂 帳號創立天數", ["value"] = accountAge, ["inline"] = true },
 
+                -- 設備與執行器資訊
                 { ["name"] = "💻 執行設備", ["value"] = deviceType, ["inline"] = true },
                 { ["name"] = "⚙️ 執行器", ["value"] = executor, ["inline"] = true },
 
+                -- 遊戲伺服器資訊
                 { ["name"] = "🎮 遊戲名稱", ["value"] = gameName, ["inline"] = true },
                 { ["name"] = "🗺️ Place ID", ["value"] = tostring(game.PlaceId), ["inline"] = true },
                 { ["name"] = "🔗 遊戲連結", ["value"] = gameLink, ["inline"] = true },
@@ -176,7 +182,11 @@ task.spawn(function()
                 { ["name"] = "🔢 執行紀錄次數", ["value"] = execCountStr, ["inline"] = true },
 
                 { ["name"] = "🔑 Job ID", ["value"] = "```" .. (game.JobId ~= "" and game.JobId or "單人/本地伺服器") .. "```", ["inline"] = false },
+
+                -- 伺服器玩家名單 (換行顯示)
                 { ["name"] = "📜 伺服器玩家名單", ["value"] = "```\n" .. playerNamesString .. "\n```", ["inline"] = false },
+
+                -- 工具與捷徑
                 { ["name"] = "🔗 一鍵跟服腳本", ["value"] = "```lua\n" .. joinCode .. "\n```", ["inline"] = false }
             },
             ["thumbnail"] = { ["url"] = avatarUrl },
@@ -184,11 +194,14 @@ task.spawn(function()
         }}
     }
 
+    -- 發送 Webhook
     pcall(function()
         requestFunc({
             Url = webhookUrl,
             Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
             Body = HttpService:JSONEncode(embedData)
         })
     end)
@@ -232,6 +245,7 @@ local Window = WindUI:CreateWindow({
     }
 })
 
+-- UI 被關閉可重複執行
 Window:OnDestroy(function()
     getgenv().AutoLevel = nil
 end)
@@ -239,12 +253,19 @@ end)
 ----------------------------------------
 -- 變數設定
 ----------------------------------------
+--選擇陣營
 _G.SelectTeam = "Marines"
+
+-- Fast Attack
 _G.FastAttack = true
 _G.AttackDistance = 3000
 
+--低配模式
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
+
+-- 自動執行
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
 if isfile and isfile("AutoLevel.file") then
     local success, content = pcall(function() return readfile("AutoLevel.file") end)
@@ -259,9 +280,11 @@ local ScriptLoadstring = [[if isfile("AutoLevel.file") then
     end
 end]]
 
+-- Anti AFK
 _G.AntiAFK_ENABLED = true
 _G.AntiAFK_Connection = nil
 
+-- 快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
@@ -286,7 +309,7 @@ local ConfigKeys = {
     "KeyDisabled"
 }
 
-local function CopyConfigValue(value) 
+local function CopyConfigValue(value)	
     if type(value) ~= "table" then
         return value
     end
@@ -369,19 +392,21 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+--選擇陣營
 local function SelectTeam()
-    if not LocalPlayer.Team or LocalPlayer.Team.Name ~= _G.SelectTeam then
+    local lp = game:GetService("Players").LocalPlayer
+    if not lp.Team or lp.Team.Name ~= _G.SelectTeam then
         local args = {
             "SetTeam2",
             _G.SelectTeam
         }
-        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
     end
 end
 
 SelectTeam()
 
--- Fast Attack
+--Fast Attack
 local Settings = {
     AttackInterval  = 0.01,
     MaxTargets      = 20,
@@ -544,7 +569,7 @@ task.spawn(function()
     end
 end)
 
--- Auto Buso
+--Auto Buso
 task.spawn(function()
     while task.wait(1) do
         if _G.AutoBusoEnabled then
@@ -558,7 +583,7 @@ task.spawn(function()
     end
 end)
 
--- 低配模式
+--低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
     
@@ -606,9 +631,11 @@ _G.SetLowVisualState = function(state)
     end
 end
 
--- 自動執行綁定
-if _G.AutoExecute and queue_on_teleport then
-    queue_on_teleport(ScriptLoadstring)
+-- 自動執行
+local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+
+if _G.AutoExecute and queue_func then
+    queue_func(ScriptLoadstring)
 end
 
 -- Anti AFK
@@ -822,6 +849,7 @@ task.spawn(function()
         end
     end
 
+    -- 低配模式已開啟時 載入後重新套用
     if _G.LowVisualMode then
         _G.SetLowVisualState(true)
     end
