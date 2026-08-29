@@ -1,4 +1,11 @@
 ----------------------------------------
+--等待加載
+----------------------------------------
+repeat
+    task.wait()
+until game:IsLoaded() and game:GetService("Players").LocalPlayer
+
+----------------------------------------
 -- 服務
 ----------------------------------------
 local Players = game:GetService("Players")
@@ -248,7 +255,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoLevel.file") then
     if readfile("AutoLevel.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/farmmaterial"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Level"))()
     end
 end]]
 
