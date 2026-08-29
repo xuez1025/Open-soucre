@@ -299,7 +299,7 @@ _G.RedeemCodesList = {
     "StrawHatMaine",
     "TantaiGaming",
     "Bluxxy",
-		"SUB2GAMERROBOT_EXP1"
+    "SUB2GAMERROBOT_EXP1"
 }
 
 --低配模式
@@ -381,6 +381,26 @@ local function Sea2ShouldRun()
 end
 
 ----------------------------------------
+-- 自動檢測：一海大於700等自動傳送二海
+----------------------------------------
+task.spawn(function()
+    while task.wait(2) do
+        if World1 then
+            local data = LocalPlayer:FindFirstChild("Data")
+            local levelStat = data and data:FindFirstChild("Level")
+            if levelStat and levelStat.Value >= 700 then
+                pcall(function()
+                    local commF = SaberGetCommF()
+                    if commF then
+                        commF:InvokeServer("TravelDressrosa")
+                    end
+                end)
+            end
+        end
+    end
+end)
+
+----------------------------------------
 -- 配置自動保存
 ----------------------------------------
 local ConfigFolder = "AutoLevel_Config"
@@ -398,7 +418,7 @@ local ConfigKeys = {
     "FastAttack",
     "AttackDistance",
     "AutoBusoEnabled",
-		"AutoStatsEnabled",
+    "AutoStatsEnabled",
     "LowVisualMode",
     "AutoExecute",
     "AntiAFK_ENABLED",
@@ -1712,7 +1732,7 @@ local function SaberRunFlow()
             end
 
             if boss then
-                -- Saber Expert 已生成 立即停止 Farm 小怪 切換回 Boss 戰鬥
+                -- Saber Expert 已生成 獨立停止 Farm 小怪 切換回 Boss 戰鬥
                 _G.SaberWaitBoss = false
                 if SaberKillMob(boss, 300) then
                     CommF:InvokeServer("ProQuestProgress", "PlaceRelic")
