@@ -1229,7 +1229,7 @@ RunService.Heartbeat:Connect(function()
                     return
                 end
 
-                tpos = Vector3.new(pos.X, pos.Y, pos.Z)
+                tpos = Vector3.new(pos.X, pos.Y + _G.HoverHeight, pos.Z)
 
                 if (hrp.Position - tpos).Magnitude <= 5 then
                     if not entry.Waiting then
@@ -1240,7 +1240,7 @@ RunService.Heartbeat:Connect(function()
                         local nextIndex = curIndex % #entry.Positions + 1
                         entry.CoordIndex = nextIndex
                         local npos = entry.Positions[nextIndex]
-                        tpos = Vector3.new(npos.X, npos.Y, npos.Z)
+                        tpos = Vector3.new(npos.X, npos.Y + _G.HoverHeight, npos.Z)
                     end
                 else
                     entry.Waiting = false
