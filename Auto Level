@@ -247,7 +247,7 @@ end)
 ----------------------------------------
 -- 變數設定
 ----------------------------------------
---自動鍊等
+--自動練等
 _G.BringMob = true
 _G.AutoLevelFarm = false
 _G.HoverHeight = 15
@@ -269,9 +269,6 @@ _G.AutoBusoEnabled = true
 
 --自動點數
 _G.AutoStatsEnabled = true
-
---自動購買
-_G.BlackLegBuying = false
 
 --自動抽果 / 自動存果
 _G.AutoRollFruit = true
@@ -350,7 +347,6 @@ _G.SaberWaitBoss = false
 
 local function SaberShouldRun()
     if _G.SaberWaitBoss then return false end
-    if _G.BlackLegBuying then return false end
     local data = LocalPlayer:FindFirstChild("Data")
     local levelStat = data and data:FindFirstChild("Level")
     local level = levelStat and levelStat.Value or 0
@@ -378,7 +374,6 @@ end
 
 --自動前往二海 (700 等後)
 local function Sea2ShouldRun()
-    if _G.BlackLegBuying then return false end
     local data = LocalPlayer:FindFirstChild("Data")
     local levelStat = data and data:FindFirstChild("Level")
     local level = levelStat and levelStat.Value or 0
@@ -1136,9 +1131,6 @@ RunService.Heartbeat:Connect(function()
     if _G.AutoLevelFarm and (SaberShouldRun() or Sea2ShouldRun()) then
         return
     end
-    if _G.BlackLegBuying then
-        return
-    end
     if _G.AutoLevelFarm then
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1829,10 +1821,8 @@ local function Sea2RunFlow()
     local CommF = SaberGetCommF()
     if not CommF then return end
 
-    -- 傳送冷卻 避免重複呼叫
     if os.clock() - (_G.Sea2LastTravel or 0) < 8 then return end
 
-    -- 700等流程已完成 (Ice Admiral 已擊殺) 直接傳送二海
     local Sea2QuestDone = false
     pcall(function()
         Sea2QuestDone = CommF:InvokeServer("DressrosaQuestProgress") == 1
@@ -1844,7 +1834,7 @@ local function Sea2RunFlow()
         return
     end
 
-    local StatusLabel = { Text = "閒置" } -- 預留狀態顯示 與原流程寫法相容
+    local StatusLabel = { Text = "閒置" }
 
     local iceMap = workspace.Map:FindFirstChild("Ice")
     local iceDoor = iceMap and iceMap:FindFirstChild("Door")
@@ -1852,7 +1842,6 @@ local function Sea2RunFlow()
 
     if plr.Data.Level.Value >= 700 then
 
-        -- 門尚未開啟 找偵探拿鑰匙
         if iceDoor.CanCollide == true and iceDoor.Transparency == 0 then
             StatusLabel.Text = "狀態: 取得鑰匙開啟冰門..."
             CommF:InvokeServer("DressrosaQuestProgress", "Detective")
@@ -1860,7 +1849,6 @@ local function Sea2RunFlow()
             SaberEquipTool("Key")
             if not Sea2Goto(CFrame.new(1347.7124, 37.3751602, -1325.6488), 180) then return end
         elseif iceDoor.CanCollide == false and iceDoor.Transparency == 1 then
-            -- 門已開啟 擊殺 Ice Admiral
             local admiral = workspace.Enemies:FindFirstChild("Ice Admiral")
             if admiral and SaberAlive(admiral) then
                 StatusLabel.Text = "狀態: 擊殺 Ice Admiral..."
@@ -1868,20 +1856,17 @@ local function Sea2RunFlow()
                 _G.Sea2LastTravel = os.clock()
                 CommF:InvokeServer("TravelDressrosa")
             else
-                -- Ice Admiral 尚未生成 前往生成點等待
                 StatusLabel.Text = "狀態: 等待 Ice Admiral 生成..."
                 if not Sea2Goto(CFrame.new(1347.7124, 37.3751602, -1325.6488), 180) then return end
 
                 admiral = workspace.Enemies:FindFirstChild("Ice Admiral")
                 if not (admiral and SaberAlive(admiral)) then
-                    -- 等待後仍未生成 視為流程已完成 直接傳送二海
                     StatusLabel.Text = "狀態: 傳送至二海..."
                     _G.Sea2LastTravel = os.clock()
                     CommF:InvokeServer("TravelDressrosa")
                 end
             end
         else
-            -- 門狀態未知 直接嘗試傳送二海
             StatusLabel.Text = "狀態: 傳送至二海..."
             _G.Sea2LastTravel = os.clock()
             CommF:InvokeServer("TravelDressrosa")
@@ -1896,77 +1881,15 @@ task.spawn(function()
     end
 end)
 
-local BlackLegPos = Vector3.new(-986, 14, 3989)
-local BlackLegPrice = 150000
-
-local function GetBeli()
-    local data = LocalPlayer:FindFirstChild("Data")
-    local beli = data and data:FindFirstChild("Beli")
-    return beli and beli.Value or 0
-end
-
-local function HasBlackLeg()
-    local char = LocalPlayer.Character
-    return LocalPlayer.Backpack:FindFirstChild("Black Leg") ~= nil
-        or (char ~= nil and char:FindFirstChild("Black Leg") ~= nil)
-end
-
-local function HasBuso()
-    local char = LocalPlayer.Character
-    return char ~= nil and char:FindFirstChild("HasBuso") ~= nil
-end
-
-local function BlackLegGoto(targetPos, timeout)
-    local deadline = tick() + (timeout or 300)
-
-    while tick() < deadline do
-        if not _G.BlackLegBuying then return false end
-
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then
-            globalStopTween()
-            lastTweenTargetPos = nil
-            task.wait(0.5)
-            continue
-        end
-
-        if (targetPos - hrp.Position).Magnitude < 6 then
-            return true
-        end
-
-        if os.clock() < _G.Fruit_TeleportPauseUntil then
-            task.wait(0.1)
-            continue
-        end
-
-        local entrance = GetBestEntrance(hrp.Position, targetPos)
-        if entrance and TryTeleportEntrance(entrance, hrp) then
-            task.wait(2) -- 等待傳送門完成
-            continue
-        end
-
-        if not _G.isMovementActive or not lastTweenTargetPos or (lastTweenTargetPos - targetPos).Magnitude > 5 then
-            lastTweenTargetPos = targetPos
-            globalTweenTo(CFrame.new(targetPos))
-        end
-
-        task.wait(0.2)
-    end
-
-    return false
-end
-
 local HakiShop = {
     { Arg = "Geppo", Title = "空跳 (Air Jump)", Price = 10000 },
-    { Arg = "Buso",  Title = "武裝色 (Buso)",   Price = 25000, OwnedCheck = HasBuso },
+    { Arg = "Buso",  Title = "武裝色 (Buso)",   Price = 25000,  OwnedCheck = HasBuso },
     { Arg = "Soru",  Title = "順步 (Soru)",     Price = 100000 },
+    { Arg = "Ken",   Title = "見聞色 (Ken)",    Price = 750000, RemoteArgs = {"KenTalk", "Buy"}, OwnedCheck = HasKen },
 }
 
 task.spawn(function()
     while task.wait(1) do
-        if _G.BlackLegBuying then continue end
-
         for _, item in ipairs(HakiShop) do
             if not item.Owned
                 and os.clock() - (item.LastTry or 0) >= 60
@@ -1981,14 +1904,18 @@ task.spawn(function()
                 lastTweenTargetPos = nil
 
                 pcall(function()
-                    ReplicatedStorage.Remotes.CommF_:InvokeServer("BuyHaki", item.Arg)
+                    if item.RemoteArgs then
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(item.RemoteArgs))
+                    else
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("BuyHaki", item.Arg)
+                    end
                 end)
                 task.wait(2)
 
                 if GetBeli() < beforeBeli then
                     item.Owned = true
                     WindUI:Notify({
-                        Title = "自動購買" .. item.Title,
+                        Title = "自動購買 " .. item.Title,
                         Content = "購買成功 花費 " .. tostring(item.Price) .. " Beli 恢復自動練等",
                         Duration = 5
                     })
@@ -1998,37 +1925,6 @@ task.spawn(function()
                 globalStopTween()
                 lastTweenTargetPos = nil
             end
-        end
-
-        if World1 and not HasBlackLeg() and GetBeli() >= BlackLegPrice then
-            _G.BlackLegBuying = true
-            globalStopTween()
-            lastTweenTargetPos = nil
-
-            WindUI:Notify({
-                Title = "自動購買黑腳",
-                Content = "金錢已達 " .. tostring(GetBeli()) .. " 暫停練等 前往購買黑腳...",
-                Duration = 5
-            })
-
-            if BlackLegGoto(BlackLegPos, 300) then
-                pcall(function()
-                    ReplicatedStorage.Remotes.CommF_:InvokeServer("BuyBlackLeg")
-                end)
-                task.wait(1)
-
-                if HasBlackLeg() then
-                    WindUI:Notify({
-                        Title = "自動購買黑腳",
-                        Content = "黑腳購買成功 恢復自動練等",
-                        Duration = 5
-                    })
-                end
-            end
-
-            _G.BlackLegBuying = false
-            globalStopTween()
-            lastTweenTargetPos = nil
         end
     end
 end)
