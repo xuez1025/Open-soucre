@@ -9,8 +9,13 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local GachaNetworkRF = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net"):WaitForChild("RF/GachaNetworkRF")
 
 local LocalPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
+local LocalPlayer = player
 
 -- Fast Attack Remote
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
@@ -234,12 +239,34 @@ end)
 ----------------------------------------
 -- 變數設定
 ----------------------------------------
+--自動活動
+_G.BringMob = false
+_G.HourlyAutoPatrol = false
+_G.AutoEquip_SelectedType = "Melee"
+
+_G.ActiveTween = nil
+_G.isMovementActive = false
+_G.isTeleporting = false
+
+_G.FruitFlySpeed = 200 -- 速度降至 200
+_G.Fruit_BlockedEntrances = {}
+_G.Fruit_LastTeleportTicks = {}
+_G.Fruit_TeleportFails = {}
+_G.Fruit_TeleportPauseUntil = 0
+_G.SetNoclipState = nil
+
+--自動抽果
+_G.AutoGachaEnabled = false
+
 -- 選擇陣營
 _G.SelectTeam = "Marines"
 
 -- Fast Attack
 _G.FastAttack = true
 _G.AttackDistance = 3000
+
+--Auto Buso
+_G.AutoBusoEnabled = true
 
 -- 低配模式
 _G.LowVisualMode = false
@@ -257,7 +284,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoEvent.file") then
     if readfile("AutoEvent.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/farmmaterial"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Event"))()
     end
 end]]
 
@@ -279,8 +306,14 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+		"BringMob",
+    "HourlyAutoPatrol",
+    "AutoEquip_SelectedType",
+    "FruitFlySpeed",
+		"AutoGachaEnabled",
     "SelectTeam",
     "FastAttack",
+		"AutoBusoEnabled",
     "AttackDistance",
     "LowVisualMode",
     "AutoExecute",
@@ -289,7 +322,7 @@ local ConfigKeys = {
     "KeyDisabled"
 }
 
-local function CopyConfigValue(value) 
+local function CopyConfigValue(value)
     if type(value) ~= "table" then
         return value
     end
@@ -340,7 +373,7 @@ local function LoadConfig()
         return false
     end
     local ok, data = pcall(function()
-        return HttpService:JSONEncode(readfile(ConfigFile))
+        return HttpService:JSONDecode(readfile(ConfigFile))
     end)
     if ok and type(data) == "table" then
         ApplyConfig(data)
@@ -372,6 +405,630 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+--自動活動
+local function SendNotify(title, text, time)
+    if windUI then
+        windUI:Notify({
+            Title = title,
+            Content = text,
+            Duration = time or 3
+        })
+    end
+end
+
+local PlaceId = game.PlaceId
+local World1 = PlaceId == 2753915549 or PlaceId == 85211729168715
+local World2 = PlaceId == 4442272183 or PlaceId == 79091703265657
+local World3 = PlaceId == 7449423635 or PlaceId == 100117331123089
+
+local CheckLocations = {}
+
+if World1 then
+    CheckLocations = {
+        {Name = "叢林1", Pos = CFrame.new(-1696, 50, 176)},
+        {Name = "叢林2", Pos = CFrame.new(-1313, 34, -608)},
+        {Name = "海盜村", Pos = CFrame.new(-1134, 83, 4187)},
+        {Name = "水下1", Pos = CFrame.new(60865, 25, 1419)},
+        {Name = "水下2", Pos = CFrame.new(61913, 25, 1322)},
+        {Name = "可樂1", Pos = CFrame.new(-1105, 12, -3076)},
+        {Name = "可樂2", Pos = CFrame.new(-1201, 12, -3315)},
+        {Name = "可樂3", Pos = CFrame.new(-1652, 22, -2822)},
+        {Name = "溫泉1", Pos = CFrame.new(5578, 71, 3991)},
+        {Name = "溫泉2", Pos = CFrame.new(5640, 71, 4844)},
+        {Name = "上天空1", Pos = CFrame.new(-5971, 5469, 1931)},
+        {Name = "上天空2", Pos = CFrame.new(-6923, 5591, 1096)},
+        {Name = "沙漠1", Pos = CFrame.new(935, 6, 4515)},
+        {Name = "沙漠2", Pos = CFrame.new(1563, 14, 4158)},
+        {Name = "天空1", Pos = CFrame.new(-4208, 1174, -370)},
+        {Name = "天空2", Pos = CFrame.new(-5252, 508, -299)},
+        {Name = "天空3", Pos = CFrame.new(-5119, 279, -1041)},
+        {Name = "火山", Pos = CFrame.new(-5464, 18, 8423)},
+        {Name = "監獄", Pos = CFrame.new(5202, 130, 736)},
+        {Name = "海軍堡壘", Pos = CFrame.new(-4827, 25, 4272)},
+        {Name = "雪地", Pos = CFrame.new(1336, 102, -1504)},
+    }
+elseif World2 then
+    CheckLocations = {
+        {Name = "碼頭二1", Pos = CFrame.new(374, 39, 2329)},
+        {Name = "碼頭二2", Pos = CFrame.new(-720, 39, 2374)},
+        {Name = "碼頭二3", Pos = CFrame.new(-859, 135, 1407)},
+        {Name = "碼頭二4", Pos = CFrame.new(831, 140, 1244)},
+        {Name = "咖啡廳1", Pos = CFrame.new(934, 128, 200)},
+        {Name = "咖啡廳2", Pos = CFrame.new(-159, 149, -254)},
+        {Name = "鬼船", Pos = CFrame.new(920, 181, 33259)},
+        {Name = "骷髏島1", Pos = CFrame.new(-3307, 252, -10495)},
+        {Name = "骷髏島2", Pos = CFrame.new(-3396, 27, -9815)},
+        {Name = "骷髏島3", Pos = CFrame.new(-2744, 83, -9819)},
+        {Name = "岩漿1", Pos = CFrame.new(-5021, 35, -5101)},
+        {Name = "岩漿2", Pos = CFrame.new(-5625, 52, -5461)},
+        {Name = "碼頭四1", Pos = CFrame.new(-5870, 102, -4361)},
+        {Name = "碼頭四2", Pos = CFrame.new(-6307, 35, -5885)},
+        {Name = "雪山1", Pos = CFrame.new(1229, 463, -5034)},
+        {Name = "雪山2", Pos = CFrame.new(531, 432, -5495)},
+        {Name = "殭屍島1", Pos = CFrame.new(-5723, 126, -733)},
+        {Name = "殭屍島2", Pos = CFrame.new(-6021, 6, -1292)},
+        {Name = "冬日城堡", Pos = CFrame.new(5839, 99, -6518)},
+        {Name = "碼頭三1", Pos = CFrame.new(-2855, 73, -3016)},
+        {Name = "碼頭三2", Pos = CFrame.new(-1843, 91, -3204)},
+    }
+elseif World3 then
+    CheckLocations = {
+        {Name = "港口1", Pos = CFrame.new(-637, 57, 5626)},
+        {Name = "港口2", Pos = CFrame.new(-722, 85, 5875)},
+        {Name = "港口3", Pos = CFrame.new(-131, 57, 5765)},
+        {Name = "港口4", Pos = CFrame.new(-181, 85, 6023)},
+        {Name = "大媽島", Pos = CFrame.new(-808, 208, -11009)},
+        {Name = "海德拉", Pos = CFrame.new(4617, 1002, 551)},
+        {Name = "司法島1", Pos = CFrame.new(-16488, 171, -154)},
+        {Name = "司法島2", Pos = CFrame.new(-16640, 153, 1317)},
+        {Name = "烏龜屋1", Pos = CFrame.new(-13238, 428, -7761)},
+        {Name = "烏龜屋2", Pos = CFrame.new(-13384, 623, -7084)},
+        {Name = "大樹1", Pos = CFrame.new(3674, 124, -7162)},
+        {Name = "大樹2", Pos = CFrame.new(2619, 133, -7845)},
+        {Name = "烏龜山1", Pos = CFrame.new(-13290, 520, -9908)},
+        {Name = "烏龜山2", Pos = CFrame.new(-12096, 332, -10543)},
+        {Name = "鬧鬼城堡", Pos = CFrame.new(-9504, 172, 6054)},
+        {Name = "花生島", Pos = CFrame.new(-2113, 193, -10235)},
+        {Name = "烏龜入口", Pos = CFrame.new(-10583, 477, -8843)},
+        {Name = "海德拉競技場1", Pos = CFrame.new(6955, 145, -1019)},
+        {Name = "海德拉競技場2", Pos = CFrame.new(6660, 546, 258)},
+        {Name = "可可島", Pos = CFrame.new(215, 127, -12604)},
+        {Name = "蛋糕島", Pos = CFrame.new(-2125, 70, -12254)},
+    }
+end
+
+local function equipByType(toolType)
+    if not _G.HourlyAutoPatrol then return end
+    _G.AutoEquip_SelectedType = toolType
+
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hum or hum.Health <= 0 then return end
+
+    for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.ToolTip == toolType then
+            hum:EquipTool(tool)
+            break
+        end
+    end
+end
+
+local function monitorCurrentTool()
+    task.spawn(function()
+        while true do
+            task.wait(0.1)
+            if not _G.HourlyAutoPatrol then continue end
+
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    local tool = hum:FindFirstChildOfClass("Tool")
+                    if not tool or tool.ToolTip ~= _G.AutoEquip_SelectedType then
+                        equipByType(_G.AutoEquip_SelectedType)
+                    end
+                end
+            end
+        end
+    end)
+end
+monitorCurrentTool()
+
+local noclipConn = nil
+_G.SetNoclipState = function(state)
+    if state then
+        if not noclipConn then
+            noclipConn = RunService.Stepped:Connect(function()
+                local char = player.Character
+                if char then
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") and part.CanCollide then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        end
+    else
+        if noclipConn then
+            noclipConn:Disconnect()
+            noclipConn = nil
+        end
+    end
+end
+
+local function GetCurrentWorldEntrances()
+    local pool = {}
+    local pid = game.PlaceId
+    if table.find({2753915549, 85211729168715}, pid) then
+        pool = {
+            { Arg = Vector3.new(3864.68798828125, 6.73699951171875, -1926.2139892578125), Dest = Vector3.new(3865, 8, -1926) },
+            { Arg = Vector3.new(61163.8515625, 11.680007934570312, 1819.7840576171875), Dest = Vector3.new(61164, 5, 1820) },
+            { Arg = Vector3.new(-6023.57666015625, 5469.7197265625, 2203.308349609375), Dest = Vector3.new(-6024, 5469, 2203) },
+            { Arg = Vector3.new(-4166.60986328125, 1093.697998046875, -347.1622619628906), Dest = Vector3.new(-4167, 1092, -347) },
+        }
+    elseif table.find({4442272183, 79091703265657}, pid) then
+        pool = {
+            { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
+            { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
+            { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
+            { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) },
+        }
+    elseif table.find({7449423635, 100117331123089}, pid) then
+        pool = {
+            { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
+            { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
+            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
+            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
+        }
+    end
+    return pool
+end
+
+local function GetBestEntrance(myPos, targetPos)
+    local distToFruit = (targetPos - myPos).Magnitude
+    if distToFruit < 300 then return nil end
+
+    local directFlightTime = distToFruit / _G.FruitFlySpeed
+    local bestEntrance = nil
+    local bestTotalTime = directFlightTime
+    local teleportPenalty = 1.5
+    local pool = GetCurrentWorldEntrances()
+
+    for _, e in ipairs(pool) do
+        if _G.Fruit_BlockedEntrances[e.Arg] then continue end
+        local destDistToFruit = (e.Dest - targetPos).Magnitude
+        local totalTimeViaPortal = (destDistToFruit / _G.FruitFlySpeed) + teleportPenalty
+        if totalTimeViaPortal < bestTotalTime then
+            if (distToFruit - destDistToFruit) > 150 then
+                bestTotalTime = totalTimeViaPortal
+                bestEntrance = e
+            end
+        end
+    end
+    return bestEntrance
+end
+
+local function TryTeleportEntrance(bestEntrance, myHRP)
+    local lastTime = _G.Fruit_LastTeleportTicks[bestEntrance.Arg] or 0
+    if os.clock() - lastTime > 4 then
+        _G.Fruit_LastTeleportTicks[bestEntrance.Arg] = os.clock()
+        _G.Fruit_TeleportPauseUntil = os.clock() + 1.2
+        myHRP.AssemblyLinearVelocity = Vector3.zero
+        local preDist = (myHRP.Position - bestEntrance.Dest).Magnitude
+
+        task.spawn(function()
+            pcall(function()
+                local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+                commF:InvokeServer("requestEntrance", bestEntrance.Arg)
+            end)
+        end)
+
+        task.spawn(function()
+            task.wait(1.5)
+            local c = LocalPlayer.Character
+            local hrp = c and c:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
+                if postDist > 150 and postDist >= preDist * 0.5 then
+                    local fails = (_G.Fruit_TeleportFails[bestEntrance.Arg] or 0) + 1
+                    _G.Fruit_TeleportFails[bestEntrance.Arg] = fails
+                    if fails >= 1 then
+                        _G.Fruit_BlockedEntrances[bestEntrance.Arg] = true
+                    end
+                end
+            end
+        end)
+        return true
+    end
+    return false
+end
+
+local function setPlatformStand(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = state end
+end
+
+local function resetCharPhysics()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Velocity = Vector3.zero
+        end
+    end
+end
+
+local function globalStopTween()
+    _G.isMovementActive = false
+    _G.isTeleporting = false
+    _G.SetNoclipState(false)
+
+    if _G.ActiveTween then
+        _G.ActiveTween:Cancel()
+        _G.ActiveTween = nil
+    end
+
+    local char = LocalPlayer.Character
+    if char then
+        local HRP = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        if HRP then
+            HRP.AssemblyLinearVelocity = Vector3.zero
+            HRP.AssemblyAngularVelocity = Vector3.zero
+            local bodyClip = HRP:FindFirstChild("BodyClip")
+            if bodyClip then bodyClip:Destroy() end
+        end
+
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+
+        setPlatformStand(false)
+        resetCharPhysics()
+    end
+end
+
+local function globalTweenTo(targetCFrame, callback)
+    local char = LocalPlayer.Character
+    local HRP = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChild("Humanoid") or char and char:FindFirstChildOfClass("Humanoid")
+    if not HRP or not hum then return end
+
+    if os.clock() >= _G.Fruit_TeleportPauseUntil then
+        local bestEntrance = GetBestEntrance(HRP.Position, targetCFrame.Position)
+        if bestEntrance then
+            local teleported = TryTeleportEntrance(bestEntrance, HRP)
+            if teleported then
+                task.wait(1.2)
+                char = LocalPlayer.Character
+                HRP = char and char:FindFirstChild("HumanoidRootPart")
+                hum = char and char:FindFirstChildOfClass("Humanoid")
+                if not HRP or not hum then return end
+            end
+        end
+    else
+        local waitTime = _G.Fruit_TeleportPauseUntil - os.clock()
+        if waitTime > 0 then task.wait(waitTime) end
+        char = LocalPlayer.Character
+        HRP = char and char:FindFirstChild("HumanoidRootPart")
+        hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not HRP or not hum then return end
+    end
+
+    local bodyClip = HRP:FindFirstChild("BodyClip")
+    if not bodyClip then
+        bodyClip = Instance.new("BodyVelocity")
+        bodyClip.Name = "BodyClip"
+        bodyClip.Parent = HRP
+    end
+    bodyClip.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bodyClip.Velocity = Vector3.zero
+
+    HRP.AssemblyLinearVelocity = Vector3.zero
+    HRP.AssemblyAngularVelocity = Vector3.zero
+    hum:ChangeState(Enum.HumanoidStateType.Physics)
+    setPlatformStand(true)
+
+    local distance = (targetCFrame.Position - HRP.Position).Magnitude
+    local speed = _G.FruitFlySpeed or 200
+
+    if _G.ActiveTween then _G.ActiveTween:Cancel() end
+
+    _G.isMovementActive = true
+    _G.SetNoclipState(true)
+
+    _G.ActiveTween = TweenService:Create(
+        HRP,
+        TweenInfo.new(distance / speed, Enum.EasingStyle.Linear),
+        {CFrame = targetCFrame}
+    )
+
+    _G.ActiveTween:Play()
+
+    local connection
+    connection = _G.ActiveTween.Completed:Connect(function(playbackState)
+        connection:Disconnect()
+        if playbackState == Enum.PlaybackState.Completed then
+            globalStopTween()
+            if callback then callback() end
+        end
+    end)
+end
+
+local _isAutoChecking = false
+local _isTargeting = false
+local targetTrackConn = nil 
+local unvisitedLocations = {}
+local hoverHeight = 15
+local ProcessNextLocation
+
+local function CheckForMagnet()
+    local enemiesFolder = workspace:FindFirstChild("Enemies")
+    if not enemiesFolder then return false, nil end
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        local hum = enemy:FindFirstChildOfClass("Humanoid")
+        if enemy:FindFirstChild("MagnetModeProxy") and hum and hum.Health > 0 then
+            return true, enemy
+        end
+    end
+    return false, nil
+end
+
+local function GetAndRemoveClosestLocation()
+    local char = LocalPlayer.Character
+    local HRP = char and char:FindFirstChild("HumanoidRootPart")
+    if not HRP or #unvisitedLocations == 0 then return nil end
+
+    local currentPos = HRP.Position
+    local closestIndex = 1
+    local minDistance = math.huge
+
+    for i, loc in ipairs(unvisitedLocations) do
+        local dist = (loc.Pos.Position - currentPos).Magnitude
+        if dist < minDistance then
+            minDistance = dist
+            closestIndex = i
+        end
+    end
+    local closestLoc = unvisitedLocations[closestIndex]
+    table.remove(unvisitedLocations, closestIndex)
+    return closestLoc
+end
+
+local function EngageTarget(enemyObj, locationName)
+    if _isTargeting then return end
+    _isTargeting = true
+    globalStopTween()
+
+    local enemyName = enemyObj.Name
+    SendNotify("🚨 發現目標!", "在 [" .. (locationName or "中途") .. "] 找到目標怪物 ["..enemyName.."]，啟動動態鎖定...", 5)
+    local lastTweenTargetPos = nil
+
+    local function cleanupAndNext()
+        if targetTrackConn then 
+            targetTrackConn:Disconnect() 
+            targetTrackConn = nil 
+        end
+        globalStopTween()
+        _isTargeting = false
+        if not _isAutoChecking then return end
+        SendNotify("目標已消滅", "[" .. enemyName .. "] 已死亡，繼續巡邏下一個座標點", 3)
+        ProcessNextLocation()
+    end
+
+    targetTrackConn = RunService.Heartbeat:Connect(function()
+        if not _isAutoChecking then
+            cleanupAndNext()
+            return
+        end
+        if not enemyObj or not enemyObj.Parent then
+            cleanupAndNext()
+            return
+        end
+        local hum = enemyObj:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then
+            cleanupAndNext()
+            return
+        end
+        local root = enemyObj:FindFirstChild("HumanoidRootPart") or enemyObj.PrimaryPart
+        if root then
+            local tpos = Vector3.new(root.Position.X, root.Position.Y + hoverHeight, root.Position.Z)
+            local targetCFrame = CFrame.new(tpos)
+            if not _G.isMovementActive or not lastTweenTargetPos or (lastTweenTargetPos - tpos).Magnitude > 2 then
+                lastTweenTargetPos = tpos
+                globalTweenTo(targetCFrame)
+            end
+        else
+            cleanupAndNext()
+        end
+    end)
+end
+
+ProcessNextLocation = function()
+    if not _isAutoChecking or _isTargeting then return end
+    if #unvisitedLocations == 0 then
+        SendNotify("巡邏完畢", "已歷遍所有座標，未發現 MagnetModeProxy，等待下個整點", 5)
+        _isAutoChecking = false
+        _isTargeting = false
+        return
+    end
+
+    local currentLoc = GetAndRemoveClosestLocation()
+    if not currentLoc then return end
+
+    globalTweenTo(currentLoc.Pos, function()
+        if not _isAutoChecking or _isTargeting then return end
+        task.wait(2)
+        if not _isAutoChecking or _isTargeting then return end
+        local found, enemyObj = CheckForMagnet()
+        if found and enemyObj then
+            EngageTarget(enemyObj, currentLoc.Name)
+        else
+            ProcessNextLocation()
+        end
+    end)
+end
+
+local function StartPatrol()
+    if #CheckLocations == 0 then
+        SendNotify("錯誤", "無法辨識當前地圖，或地圖無預設座標。", 3)
+        return
+    end
+    _isAutoChecking = true
+    _isTargeting = false
+    unvisitedLocations = {}
+    for _, loc in ipairs(CheckLocations) do
+        table.insert(unvisitedLocations, loc)
+    end
+    SendNotify("整點巡邏開始", "啟動 Magnet Proxy 全圖搜索", 3)
+    
+    task.spawn(function()
+        while _isAutoChecking do
+            task.wait(0.3)
+            if _isAutoChecking and not _isTargeting then
+                local found, enemyObj = CheckForMagnet()
+                if found and enemyObj then
+                    EngageTarget(enemyObj, "巡邏中途")
+                end
+            end
+        end
+    end)
+    ProcessNextLocation()
+end
+
+local function StopPatrol()
+    _isAutoChecking = false
+    _isTargeting = false
+    unvisitedLocations = {}
+    if targetTrackConn then 
+        targetTrackConn:Disconnect() 
+        targetTrackConn = nil 
+    end
+    globalStopTween()
+end
+
+task.spawn(function()
+    while task.wait(1) do
+        if _G.HourlyAutoPatrol then
+            local t = os.date("*t")
+            if t.min == 0 and t.sec == 0 then
+                if not _isAutoChecking then
+                    StartPatrol()
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.BringMob then
+            pcall(function()
+                if sethiddenproperty then
+                    sethiddenproperty(player, "SimulationRadius", math.huge)
+                end
+            end)
+        end
+    end
+end)
+
+local LastBring = 0
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.BringMob then
+            pcall(function()
+                if tick() - LastBring < 0.5 then return end
+                LastBring = tick()
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                local enemiesFolder = workspace:FindFirstChild("Enemies")
+                if not enemiesFolder then return end
+
+                local Mon = nil
+                local closestDist = math.huge
+                for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                    local hum = enemy:FindFirstChildOfClass("Humanoid")
+                    local root = enemy:FindFirstChild("HumanoidRootPart")
+                    if hum and root and hum.Health > 0 and enemy:FindFirstChild("MagnetModeProxy") then
+                        local dist = (root.Position - hrp.Position).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            Mon = enemy
+                        end
+                    end
+                end
+
+                if not Mon then return end
+                local targetPos = Mon.PrimaryPart and Mon.PrimaryPart.Position
+                if not targetPos then return end
+
+                local function Network(part)
+                    if isnetworkowner then return isnetworkowner(part) end
+                    return part.ReceiveAge == 0 and not part.Anchored and part.Velocity.Magnitude > 0
+                end
+
+                for _, v in ipairs(enemiesFolder:GetChildren()) do
+                    if v ~= Mon then
+                        local hum = v:FindFirstChildOfClass("Humanoid")
+                        local root = v:FindFirstChild("HumanoidRootPart")
+                        if hum and root and hum.Health > 0 and v.Name == Mon.Name and v:FindFirstChild("MagnetModeProxy") then
+                            local distance = (root.Position - targetPos).Magnitude
+                            local bv = root:FindFirstChild("BodyVelocity")
+                            if not bv then
+                                bv = Instance.new("BodyVelocity")
+                                bv.Name = "BodyVelocity"
+                                bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+                                bv.Velocity = Vector3.zero
+                                bv.Parent = root
+                            end
+                            if distance > 10 and Network(root) then
+                                root.CFrame = CFrame.new(targetPos)
+                            end
+                            root.CanCollide = false
+                            hum.WalkSpeed = 0
+                            hum.JumpPower = 0
+                            if hum:GetState() ~= Enum.HumanoidStateType.Seated then
+                                hum:ChangeState(11)
+                            end
+                        end
+                    end
+                end
+
+                if Mon:FindFirstChild("HumanoidRootPart") and Mon:FindFirstChild("Humanoid") then
+                    Mon.HumanoidRootPart.CanCollide = false
+                    Mon.Humanoid.WalkSpeed = 0
+                    Mon.Humanoid.JumpPower = 0
+                end
+            end)
+        end
+    end
+end)
+
+-- 自動抽果
+task.spawn(function()
+    while true do
+        if _G.AutoGachaEnabled then
+            pcall(function()
+                local args = {
+                    {
+                        Context = "Purchase",
+                        BoxName = "MagnetEventGacha26"
+                    }
+                }
+                GachaNetworkRF:InvokeServer(unpack(args))
+            end)
+            task.wait(0.5)
+        else
+            task.wait(0.2)
+        end
+    end
+end)
+
 -- 選擇陣營
 local function SelectTeam()
     if not LocalPlayer.Team or LocalPlayer.Team.Name ~= _G.SelectTeam then
@@ -548,6 +1205,20 @@ task.spawn(function()
     end
 end)
 
+--Auto Buso
+task.spawn(function()
+    while task.wait(1) do
+        if _G.AutoBusoEnabled then
+            local character = LocalPlayer.Character
+            if character and not character:FindFirstChild("HasBuso") then
+                pcall(function()
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+                end)
+            end
+        end
+    end
+end)
+
 -- 低配模式
 _G.SetLowVisualState = function(state)
     _G.LowVisualMode = state
@@ -639,6 +1310,40 @@ local Tabs = {
     Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
 }
 
+Tabs.Auto:Section({ Title = "活動" })
+
+Tabs.Auto:Toggle({
+    Title = "自動活動",
+    Value = _G.HourlyAutoPatrol,
+    Callback = function(state)
+        _G.HourlyAutoPatrol = state
+        if state then
+            _G.AutoEquip_SelectedType = "Melee"
+            equipByType("Melee")
+        else
+            StopPatrol()
+        end
+    end
+})
+
+Tabs.Auto:Toggle({
+    Title = "bring NPC",
+    Value = _G.BringMob,
+    Callback = function(state)
+        _G.BringMob = state
+    end
+})
+
+Tabs.Auto:Section({ Title = "自動兌獎" })
+
+Tabs.Auto:Toggle({
+    Title = "自動兌獎",
+    Value = _G.AutoGachaEnabled,
+    Callback = function(v)
+        _G.AutoGachaEnabled = v
+    end
+})
+
 Tabs.Auto:Section({ Title = "配置" })
 
 Tabs.Auto:Dropdown({
@@ -661,6 +1366,14 @@ Tabs.Auto:Toggle({
         else
             startManual()
         end
+    end
+})
+
+Tabs.Auto:Toggle({
+    Title    = "自動武裝色",
+    Value    = _G.AutoBusoEnabled,
+    Callback = function(v)
+        _G.AutoBusoEnabled = v
     end
 })
 
