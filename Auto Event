@@ -249,7 +249,7 @@ _G.ActiveTween = nil
 _G.isMovementActive = false
 _G.isTeleporting = false
 
-_G.FruitFlySpeed = 200 -- 速度降至 200
+_G.FruitFlySpeed = 150 -- 速度降至 150
 _G.Fruit_BlockedEntrances = {}
 _G.Fruit_LastTeleportTicks = {}
 _G.Fruit_TeleportFails = {}
