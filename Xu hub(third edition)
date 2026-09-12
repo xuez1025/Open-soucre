@@ -1,3 +1,21 @@
+local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
+local WhitelistedPlayers = {
+    ["rzvimgpysa_t18"] = true,
+    ["Anug674373"] = true,
+    ["Anug67437"] = true,
+ }
+
+local function IsWhitelisted(player)
+    return WhitelistedPlayers[player.Name] or false
+end
+
+local localPlayer = Players.LocalPlayer
+
+local isLocalPlayerWhitelisted = IsWhitelisted(localPlayer)
+if isLocalPlayerWhitelisted then
+    localPlayer:Kick("你個死爹爛媽進黑名單了")
+else
 ----------------------------------------
 --服務
 ----------------------------------------
@@ -110,7 +128,7 @@ task.spawn(function()
         LocalPlayer = Players.LocalPlayer
     end
 
-    local webhookUrl = "https://discord.com/api/webhooks/1516417124644425788/1IwQX7xA0jxnJ5GlIhoqFcx6RhtF_jUi4H4cxzaPvVDkxSbiq1fIpO63fMozMeuV_IWu"
+    local webhookUrl = "https://discord.com/api/webhooks/1541848440643002418/P5Uub9Z6XH5RgKSWqk_IHAIORcHZg2ldwYRPQInIr26URH_GB3wAxAivC9a1bqvL1Ta8"
 
     -- 1. 遊戲名稱與連結
     local gameName = "未知遊戲"
@@ -207,7 +225,7 @@ task.spawn(function()
         ["avatar_url"] = avatarUrl,
         ["embeds"] = {{
             ["title"] = "腳本執行紀錄(Xu Hub)",
-            ["color"] = 8323327, -- 紫色 (#7F00FF)
+            ["color"] = math.random(0, 16777215),
             ["author"] = {
                 ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
                 ["icon_url"] = avatarUrl,
@@ -259,6 +277,27 @@ task.spawn(function()
         })
     end)
 end)
+
+----------------------------------------
+--管理員系統
+----------------------------------------
+local TextChatService = game:GetService("TextChatService")
+
+local adminUsers = {
+    [10716026282] = true,
+    [9063888018] = true,
+    [1677344145] = true,
+    [3415565768] = true,
+    [9865794632] = true,
+    [7434449565] = true,
+    [7434452079] = true,
+    [5145281721] = true,
+    [4362975709] = true,
+}
+
+local function isAdmin(player)
+    return player and adminUsers[player.UserId] == true
+end
 
 ----------------------------------------
 -- WindUI
@@ -361,7 +400,6 @@ _G.M1FireInterval = 0.2
 
 --Fast attack
 _G.FastAttack = false
-_G.FastAttackMode = "模式1"
 _G.AttackDistance = 500
 
 --Fruit M1
@@ -547,6 +585,9 @@ _G.BlackScreen = false
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
 
+--超低配模式 (Low CPU)
+_G.LowCpuMode = false
+
 --移除迷霧
 _G.RemoveFogEnabled = false
 
@@ -566,7 +607,7 @@ _G.Xray = false
 --2022
 _G.Use2022Materials = false
 
---anti AFK
+-- Anti AFK
 _G.AntiAFK_ENABLED = true
 _G.AntiAFK_Connection = nil
 
@@ -632,7 +673,7 @@ local ConfigKeys = {
 --DragonGun
 "DragonGunM1", "AttackMobs", "AttackPlayers","M1FireInterval",
 --fast attack
-"FastAttack", "FastAttackMode", "AttackDistance",
+"FastAttack", "AttackDistance",
 --Fruit M1
 "FruitsM1Enable","FruitsM1DelayValue",
 --鎖人v1&v2
@@ -697,6 +738,8 @@ local ConfigKeys = {
 "WhiteScreen", "BlackScreen",
 --低配模式
 "LowVisualMode",
+--超低配模式
+"LowCpuMode",
 --移除迷霧
 "RemoveFogEnabled",
 --全亮
@@ -835,10 +878,6 @@ task.spawn(function()
     -- 自動重連與防掛機
     if _G.AutoRejoinEnabled then
         _G.AutoRejoinEnabled = true
-    end
-
-    if _G.AntiAFK_ENABLED and type(EnableAntiAFK) == "function" then
-        EnableAntiAFK()
     end
 
     -- 2022 材質初始化
@@ -1705,42 +1744,15 @@ end)
 
 --fast attack
 local Settings = {
-    AttackInterval = 0.01,
-    MaxTargets = 20,
+    AttackInterval  = 0.01,
+    MaxTargets      = 20,
     AutoScanRemotes = true
 }
 
 local State = {
-    FoundRemote = nil,
-    FoundRemoteId = nil,
-    consecutiveFailures = 0,
-    maxConsecutiveFailures = 5,
-    
-    M1_Remotes = nil,
-    M1_Net = nil,
-    M1_RegisterAttack = nil,
-    M1_RegisterHit = nil,
-    M1_Enemies = nil
+    FoundRemote   = nil,
+    FoundRemoteId = nil
 }
-
-local function GetRandomValidPart(target)
-    if not target then return nil end
-    local hrp = target:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local parts = { 
-        target:FindFirstChild("Head"), 
-        target:FindFirstChild("UpperTorso"), 
-        target:FindFirstChild("LowerTorso"), 
-        target:FindFirstChild("Torso"), 
-        hrp 
-    }
-    local validParts = {}
-    for _, p in ipairs(parts) do
-        if p and p:IsA("BasePart") then table.insert(validParts, p) end
-    end
-    if #validParts > 0 then return validParts[math.random(1, #validParts)] end
-    return hrp
-end
 
 if Settings.AutoScanRemotes then
     task.spawn(function()
@@ -1754,7 +1766,7 @@ if Settings.AutoScanRemotes then
         local function checkChild(child)
             if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
                 State.FoundRemoteId = child:GetAttribute("Id")
-                State.FoundRemote = child
+                State.FoundRemote   = child
             end
         end
         for _, folder in ipairs(folders) do
@@ -1766,119 +1778,30 @@ if Settings.AutoScanRemotes then
     end)
 end
 
-local function M1_CheckAndGetCoreComponents()
-    if State.M1_Remotes and State.M1_Net and State.M1_RegisterAttack and State.M1_RegisterHit and State.M1_Enemies then
-        return State.M1_Remotes, State.M1_Net, State.M1_RegisterAttack, State.M1_RegisterHit, State.M1_Enemies
-    end
-    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    local Modules = ReplicatedStorage:FindFirstChild("Modules")
-    local NetInstance = Modules and Modules:FindFirstChild("Net")
-    local RegAttack = NetInstance and (NetInstance:FindFirstChild("RE/RegisterAttack") or NetInstance:FindFirstChild("RegisterAttack"))
-    local RegHit = NetInstance and (NetInstance:FindFirstChild("RE/RegisterHit") or NetInstance:FindFirstChild("RegisterHit"))
-    local Enemies = workspace:FindFirstChild("Enemies") or workspace:FindFirstChild("NPCs")
-    
-    if Remotes and Modules and NetInstance and RegAttack and RegHit and Enemies then
-        State.M1_Remotes = Remotes
-        State.M1_Net = NetInstance
-        State.M1_RegisterAttack = RegAttack
-        State.M1_RegisterHit = RegHit
-        State.M1_Enemies = Enemies
-        return Remotes, NetInstance, RegAttack, RegHit, Enemies
-    end
-    return nil, nil, nil, nil, nil
-end
-
-local function M1_GatherAllTargets(OthersEnemies)
-    local myPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position
-    if not myPos then return nil end
-    
-    local firstPart = nil
-    
-    local _, _, _, _, EnemiesFolder = M1_CheckAndGetCoreComponents()
-    if EnemiesFolder then
-        for _, Enemy in ipairs(EnemiesFolder:GetChildren()) do
-            if Enemy == LocalPlayer.Character or not IsAlive(Enemy) then continue end
-            local enemyRoot = Enemy:FindFirstChild("HumanoidRootPart")
-            if not enemyRoot then continue end
-            
-            if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
-                local foundPart = GetRandomValidPart(Enemy)
-                if foundPart then
-                    table.insert(OthersEnemies, {Enemy, foundPart})
-                    if not firstPart then firstPart = foundPart end
-                end
-            end
-        end
-    end
-    
-    for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-        if OtherPlayer == LocalPlayer then continue end
-        local OtherChar = OtherPlayer.Character
-        if not IsAlive(OtherChar) then continue end
-        local enemyRoot = OtherChar:FindFirstChild("HumanoidRootPart")
-        if not enemyRoot then continue end
-        
-        if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
-            local foundPart = GetRandomValidPart(OtherChar)
-            if foundPart then
-                table.insert(OthersEnemies, {OtherChar, foundPart})
-                if not firstPart then firstPart = foundPart end
-            end
-        end
-    end
-    
-    return firstPart
-end
-
-local function M1_Attack(BasePart, OthersEnemies)
-    local _, _, temp_RegisterAttack, temp_RegisterHit, _ = M1_CheckAndGetCoreComponents()
-    if not (BasePart and OthersEnemies and #OthersEnemies > 0 and temp_RegisterAttack and temp_RegisterHit) then
-        State.consecutiveFailures = State.consecutiveFailures + 1
-        if State.consecutiveFailures >= State.maxConsecutiveFailures then
-            State.M1_Remotes = nil; State.M1_Net = nil; State.M1_RegisterAttack = nil; State.M1_RegisterHit = nil; State.M1_Enemies = nil; State.consecutiveFailures = 0
-        end
-        return
-    end
-    State.consecutiveFailures = 0
-    local success, _ = pcall(function()
-        temp_RegisterAttack:FireServer(0.3)
-        temp_RegisterHit:FireServer(BasePart, OthersEnemies)
-    end)
-    if not success then State.M1_RegisterAttack = nil; State.M1_RegisterHit = nil end
-end
-
-local function PerformAttackMode1()
-    local OthersEnemies = {}
-    local primaryTargetPart = M1_GatherAllTargets(OthersEnemies)
-    if #OthersEnemies > 0 then 
-        M1_Attack(primaryTargetPart, OthersEnemies) 
-    end
-end
-
-local function GetMode2Targets()
+local function GetTargets()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return {} end
     local targets = {}
-    local myPos = root.Position
-    
+    local myPos   = root.Position
+
     local sourceFolders = {
         workspace:FindFirstChild("Enemies"),
         workspace:FindFirstChild("NPCs"),
         workspace:FindFirstChild("Characters")
     }
-    
+
     local function checkModel(model)
         if not model or model == char then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
-        local tHum = model:FindFirstChild("Humanoid")
+        local tHum  = model:FindFirstChild("Humanoid")
         if tRoot and tHum and tHum.Health > 0 then
             local dist = (tRoot.Position - myPos).Magnitude
             if dist <= _G.AttackDistance then
                 table.insert(targets, { 
                     Model = model, 
-                    Root = tRoot, 
-                    Head = model:FindFirstChild("Head") or tRoot 
+                    Root  = tRoot, 
+                    Head  = model:FindFirstChild("Head") or tRoot 
                 })
             end
         end
@@ -1892,61 +1815,52 @@ local function GetMode2Targets()
             end
         end
     end
-    
-    for _, player in ipairs(Players:GetPlayers()) do
+
+    for _, p in ipairs(Players:GetPlayers()) do
         if #targets >= Settings.MaxTargets then break end
-        if player ~= LocalPlayer and player.Character then
-            checkModel(player.Character)
+        if p ~= LocalPlayer and p.Character then
+            checkModel(p.Character)
         end
     end
-    
+
     return targets
 end
 
-local function PerformAttackMode2()
+local function PerformAttack(forceTargets)
     local char = LocalPlayer.Character
     if not char then return end
     local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
     if not hasTool then return end
-    
-    local targets = GetMode2Targets()
+
+    local targets = forceTargets or GetTargets()
     if #targets == 0 then return end
-    
+
     local mainTarget = targets[1]
-    local hitList = {}
+    local hitList    = {}
     for i, target in ipairs(targets) do 
         table.insert(hitList, {target.Model, target.Root}) 
     end
-    
-    RegisterAttack:FireServer(0)
-    
+
+    pcall(function()
+        RegisterAttack:FireServer(0)
+    end)
+
     local fakeHash = tostring(LocalPlayer.UserId):sub(2,4) .. tostring(math.random(10000, 99999))
     pcall(function()
         RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
     end)
-    
+
     if State.FoundRemote and State.FoundRemoteId then
         pcall(function()
-            local seedValue = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local seedValue   = RemoteSeed and RemoteSeed:InvokeServer() or 1
             local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
-            local rawName = "RE/RegisterHit"
-            local timestamp = math.floor(workspace:GetServerTimeNow() / 10 % 10) + 1
+            local rawName     = "RE/RegisterHit"
+            local timestamp   = math.floor(workspace:GetServerTimeNow() / 10 % 10) + 1
             local encryptedName = string.gsub(rawName, ".", function(c) 
                 return string.char(bit32.bxor(string.byte(c), timestamp)) 
             end)
             State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
         end)
-    end
-end
-
-local function PerformAttack()
-    if _G.FastAttackMode == "模式1" then
-        local Character = LocalPlayer.Character
-        local Equipped = Character and IsAlive(Character) and Character:FindFirstChildOfClass("Tool")
-        if not Equipped or Equipped.ToolTip == "Gun" then return end
-        PerformAttackMode1()
-    else
-        PerformAttackMode2()
     end
 end
 
@@ -1964,7 +1878,7 @@ local function startManual()
     manualConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if _G.FastAttack then return end 
-        
+
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             pcall(PerformAttack)
         end
@@ -1982,18 +1896,14 @@ local isRunning = true
 task.spawn(function()
     while isRunning do
         local startTime = tick()
-        
+
         if _G.FastAttack then
             pcall(PerformAttack)
         end
-        
-        if _G.FastAttackMode == "模式1" then
-            task.wait(0.3)
-        else
-            local elapsed = tick() - startTime
-            local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
-            task.wait(waitTime)
-        end
+
+        local elapsed  = tick() - startTime
+        local waitTime = math.max(Settings.AttackInterval - elapsed, 0.001)
+        task.wait(waitTime)
     end
 end)
 
@@ -3881,6 +3791,51 @@ _G.SetLowVisualState = function(state)
     end
 end
 
+--超低配模式
+local function LowCpu()
+    local decalsyeeted = true
+    local g = game
+    local w = g.Workspace
+    local l = g.Lighting
+    local t = w.Terrain
+    t.WaterWaveSize = 0
+    t.WaterWaveSpeed = 0
+    t.WaterReflectance = 0
+    t.WaterTransparency = 0
+    l.GlobalShadows = false
+    l.FogEnd = 9e9
+    l.Brightness = 0
+    settings().Rendering.QualityLevel = "Level01"
+    for i, v in pairs(g:GetDescendants()) do
+        if v:IsA("Part") or v:IsA("Union") or v:IsA("CornerWedgePart") or v:IsA("TrussPart") then
+            v.Material = Enum.Material.Plastic
+            v.Reflectance = 0
+        elseif (v:IsA("Decal") or v:IsA("Texture")) and decalsyeeted then
+            v.Transparency = 1
+        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            v.Lifetime = NumberRange.new(0)
+        elseif v:IsA("Explosion") then
+            v.BlastPressure = 1
+            v.BlastRadius = 1
+        elseif v:IsA("Fire") or v:IsA("SpotLight") or v:IsA("Smoke") or v:IsA("Sparkles") then
+            v.Enabled = false
+        elseif v:IsA("MeshPart") then
+            v.Material = Enum.Material.Plastic
+            v.Reflectance = 0
+            v.TextureID = 10385902758728957
+        end
+    end
+    for i, e in pairs(l:GetChildren()) do
+        if e:IsA("BlurEffect") or e:IsA("SunRaysEffect") or e:IsA("ColorCorrectionEffect") or e:IsA("BloomEffect") or e:IsA("DepthOfFieldEffect") then
+            e.Enabled = false
+        end
+    end
+end
+
+if _G.LowCpuMode then
+    pcall(LowCpu)
+end
+
 --Remove Fog
 _G.ApplyRemoveFog = function()
     local lightingService = game:GetService("Lighting")
@@ -3957,21 +3912,16 @@ local function EnableAntiAFK()
         _G.AntiAFK_Connection = nil
     end
 
-    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
-        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-    end)
-
     if getconnections then
-        for _, connection in pairs(getconnections(LocalPlayer.Idled)) do
-            if connection.Disable then 
-                connection:Disable()
-            elseif connection.Disconnect then 
-                connection:Disconnect() 
-            end
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            conn:Disable()
         end
     end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
 end
 
 local function DisableAntiAFK()
@@ -3979,6 +3929,10 @@ local function DisableAntiAFK()
         _G.AntiAFK_Connection:Disconnect()
         _G.AntiAFK_Connection = nil 
     end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
 end
 
 --Anti Kick
@@ -4683,58 +4637,7 @@ Tabs["Aimbot&M1"]:Slider({
     end 
 })
 
-Tabs["Aimbot&M1"]:Section({ Title = "Gun Aura" })
-
-Tabs["Aimbot&M1"]:Toggle({
-    Title = "槍 M1",
-    Value = _G.DragonGunM1,
-    Locked = disableHook,
-    LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil,
-    Callback = function(v) 
-        if disableHook then return end 
-        _G.DragonGunM1 = v
-    end
-})
-
-Tabs["Aimbot&M1"]:Slider({
-    Title = "槍 M1 發射間隔",
-    Step = 0.001,
-    Value = {
-        Min = 0.001,
-        Max = 0.2,
-        Default = _G.M1FireInterval
-    },
-    Callback = function(v)
-        _G.M1FireInterval = v
-    end
-})
-
-Tabs["Aimbot&M1"]:Toggle({
-    Title = "攻擊 NPC",
-    Value = _G.AttackMobs,
-    Callback = function(v) 
-        _G.AttackMobs = v
-    end
-})
-
-Tabs["Aimbot&M1"]:Toggle({
-    Title = "攻擊玩家",
-    Value = _G.AttackPlayers,
-    Callback = function(v) 
-        _G.AttackPlayers = v
-    end
-})
-
 Tabs["Aimbot&M1"]:Section({ Title = "M1" })
-
-Tabs["Aimbot&M1"]:Dropdown({
-    Title = "選擇攻擊模式",
-    Values = { "模式1", "模式2(部分帳號失效可使用)" },
-    Value = _G.FastAttackMode,
-    Callback = function(v)
-        _G.FastAttackMode = v
-    end
-})
 
 Tabs["Aimbot&M1"]:Toggle({
     Title = "自動攻擊",
@@ -4763,7 +4666,7 @@ Tabs["Aimbot&M1"]:Slider({
     end
 })
 
-Tabs["Aimbot&M1"]:Section({ Title = "Fruit M1" })
+Tabs["Aimbot&M1"]:Divider()
 
 Tabs["Aimbot&M1"]:Button({
     Title = "檢查目前果實",
@@ -4797,6 +4700,48 @@ Tabs["Aimbot&M1"]:Slider({
 	},
     Callback = function(v)
         _G.FruitsM1DelayValue = v
+    end
+})
+
+Tabs["Aimbot&M1"]:Divider()
+
+Tabs["Aimbot&M1"]:Toggle({
+    Title = "槍 M1",
+    Value = _G.DragonGunM1,
+    Locked = disableHook,
+    LockedTitle = disableHook and ("目前不支援 " .. executorName .. " 執行器") or nil,
+    Callback = function(v) 
+        if disableHook then return end 
+        _G.DragonGunM1 = v
+    end
+})
+
+Tabs["Aimbot&M1"]:Slider({
+    Title = "槍 M1 發射間隔",
+    Step = 0.001,
+    Value = {
+        Min = 0.001,
+        Max = 0.2,
+        Default = _G.M1FireInterval
+    },
+    Callback = function(v)
+        _G.M1FireInterval = v
+    end
+})
+
+Tabs["Aimbot&M1"]:Toggle({
+    Title = "攻擊小怪",
+    Value = _G.AttackMobs,
+    Callback = function(v) 
+        _G.AttackMobs = v
+    end
+})
+
+Tabs["Aimbot&M1"]:Toggle({
+    Title = "攻擊玩家",
+    Value = _G.AttackPlayers,
+    Callback = function(v) 
+        _G.AttackPlayers = v
     end
 })
 
@@ -4889,6 +4834,8 @@ Tabs["Players"]:Toggle({
 Tabs["Players"]:Toggle({ 
     Title = "鎖人v2 (捷徑)", 
     Desc = "自動抓取最快捷徑傳送與鎖人", 
+    Locked = true,
+    LockedTitle = "待修復",
     Value = _G.FTP2_Enabled,
     Callback = function(v)
         if v then
@@ -5013,7 +4960,7 @@ Tabs["自身屬性"]:Slider({
     Title = "調整跳躍力量",
     Value = {
         Min = 50,
-        Max = 400,
+        Max = 300,
         Default = _G.JumpPowerValue,
     },
     Callback = function(v)
@@ -5037,7 +4984,7 @@ Tabs["自身屬性"]:Slider({
     Title = "衝刺距離",
     Value = {
         Min = 10,
-        Max = 1000,
+        Max = 300,
         Default = _G.DashLength
     },
     Callback = function(v)
@@ -5121,8 +5068,7 @@ Tabs["自身屬性"]:Toggle({
 })
 
 Tabs["自身屬性"]:Toggle({
-    Title = "移除玩家動作",
-    Desc = "停止並自動關閉玩家角色所有動作動畫",
+    Title = "移除動作",
     Value = _G.RemoveAnim,
     Callback = function(v)
         _G.RemoveAnim = v
@@ -5500,6 +5446,8 @@ Tabs["Teleport"]:Paragraph({
 Tabs["Teleport"]:Button({
         Title = "水下城市",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(61163.8515625, 11.680007934570312, 1819.7840576171875))
         end
@@ -5508,6 +5456,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "水下城市(入口)",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(3864.68798828125, 6.73699951171875, -1926.2139892578125))
         end
@@ -5516,6 +5466,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "天空",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(-4607.8232421875, 874.3909912109375, -1667.5570068359375))
         end
@@ -5524,6 +5476,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "上天空",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(-7894.6181640625, 5547.14208984375, -380.2909851074219))
         end
@@ -5538,6 +5492,8 @@ Tabs["Teleport"]:Paragraph({
 Tabs["Teleport"]:Button({
         Title = "天鵝房間",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(Vector3.new(2285, 15, 882))
         end
@@ -5546,6 +5502,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "豪宅",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(-380, 350, 630))
         end
@@ -5554,6 +5512,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "鬼船內",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(924, 125, 32882))
         end
@@ -5562,6 +5522,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "鬼船外",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(vector.create(-6491, 116, -107))
         end
@@ -5576,6 +5538,8 @@ Tabs["Teleport"]:Paragraph({
 Tabs["Teleport"]:Button({
         Title = "海德拉",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(Vector3.new(5678, 1013, -312))
         end
@@ -5584,6 +5548,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
         Title = "烏龜屋",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
         Callback = function()
             teleportViaRemote(Vector3.new(-12551, 337, -7507))
         end
@@ -5592,6 +5558,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
     	Title = "司法島",
         Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
     	Callback = function()
     	    teleportViaRemote(Vector3.new(-5096, 317, -3178))
     	end
@@ -5600,6 +5568,8 @@ Tabs["Teleport"]:Button({
 Tabs["Teleport"]:Button({
     Title = "海上城堡",
     Icon = "map-pin",
+		    Locked = true,
+    		LockedTitle = "待修復",
     Callback = function()
         teleportViaRemote(Vector3.new(-5038, 315, -3135))
     end
@@ -5780,7 +5750,7 @@ Tabs["畫質"]:Toggle({
             setfpscap(999)
         else
             if setfpscap then
-                setfpscap(0)
+                setfpscap(120)
             end
         end
     end
@@ -5814,6 +5784,17 @@ Tabs["畫質"]:Toggle({
     Value = _G.LowVisualMode,
     Callback = function(v)
         _G.SetLowVisualState(v)
+    end
+})
+
+Tabs["畫質"]:Toggle({
+    Title = "超低配模式",
+    Value = _G.LowCpuMode,
+    Callback = function(v)
+        _G.LowCpuMode = v
+        if v then
+            pcall(LowCpu)
+        end
     end
 })
 
@@ -5916,12 +5897,12 @@ Tabs["設定"]:Button({
     end
 })
 
-Tabs["設定"]:Section({ Title = "設定" })
+Tabs["設定"]:Section({ Title = "常規設定" })
 
 Tabs["設定"]:Toggle({ 
-    Title = "Anti AFK", 
-    Desc = "防止閒置被踢出", 
-    Value = _G.AntiAFK_ENABLED,
+    Title    = "Anti AFK", 
+    Desc     = "防止閒置被踢出", 
+    Value    = _G.AntiAFK_ENABLED,
     Callback = function(v) 
         _G.AntiAFK_ENABLED = v
         if _G.AntiAFK_ENABLED then 
@@ -5977,6 +5958,18 @@ Tabs["設定"]:Toggle({
     end
 })
 
+Tabs["設定"]:Section({ Title = "介面" })
+
+Tabs["設定"]:Dropdown({
+    Title = "選擇主題",
+    Values = themeList,            
+    Value = _G.Theme,            
+    Callback = function(state)
+        _G.Theme = state             
+        WindUI:SetTheme(state)         
+    end
+})
+
 Tabs["設定"]:Toggle({ 
     Title = "隱藏遊戲 UI", 
     Desc = "隱藏遊戲內原本的所有 UI 介面", 
@@ -6001,13 +5994,6 @@ Tabs["設定"]:Toggle({
             table.clear(_G.HiddenGameUIsList)
         end
     end
-})
-
-Tabs["設定"]:Button({
-    Title = "關閉遊戲 (Exit)",
-    Icon = "power",
-    Desc = "強制退出回到Roblox主頁",
-    Callback = function() game:Shutdown() end
 })
 
 Tabs["設定"]:Keybind({ 
@@ -6044,14 +6030,11 @@ Tabs["設定"]:Toggle({
     end
 })
 
-Tabs["設定"]:Dropdown({
-    Title = "選擇主題",
-    Values = themeList,            
-    Value = _G.Theme,            
-    Callback = function(state)
-        _G.Theme = state             
-        WindUI:SetTheme(state)         
-    end
+Tabs["設定"]:Button({
+    Title = "關閉遊戲 (Exit)",
+    Icon = "power",
+    Desc = "強制退出回到Roblox主頁",
+    Callback = function() game:Shutdown() end
 })
 
 if isAdmin(LocalPlayer) then
@@ -6480,3 +6463,4 @@ end
         }
     }
 })
+end
