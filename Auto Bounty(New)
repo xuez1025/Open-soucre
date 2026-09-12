@@ -237,7 +237,7 @@ _G.FTP2_TimeoutLimit = 120
 
 _G.FTP2_HistoryWindow = 0.35
 _G.FTP2_ClearTimeout = 10
-_G.FTP2_FlySpeed = 275
+_G.FTP2_FlySpeed = 150
 _G.FTP2_HeightOffset = 30
 _G.FTP2_OrbitRadius = 50
 _G.FTP2_OrbitInterval = 0.016
@@ -328,9 +328,6 @@ local SkillKeyMap = {
 }
 local SkillCoolDownTrack = {}
 
---FPS
-_G.UnlockFPS = true
-
 --低配模式
 _G.LowVisualMode = false
 _G.LowVisualConnection = nil
@@ -357,7 +354,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoBounty.file") then
     if readfile("AutoBounty.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Bounty(New)"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/autobounty"))()
     end
 end]]
 
@@ -407,7 +404,6 @@ local ConfigKeys = {
     "SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
     "CamlockEnabled",
     "AutoSkillMainEnable", "AutoSkillWeapons",
-    "UnlockFPS",
     "LowVisualMode",
     "RemoveFogEnabled",
     "AntiAFK_ENABLED", "AutoRejoinEnabled",
@@ -843,6 +839,108 @@ local function StartServerHop()
             task.wait(5)
         end
     end)
+end
+
+--自動列賞換服（核心跳服邏輯）
+local function StartBountyServerHop()
+    if getgenv().IsServerHopping == true then
+        return
+    end
+
+    getgenv().IsServerHopping = true
+    getgenv().ShuttingDown = true
+
+    local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not PlayerGui or not PlayerGui:FindFirstChild("ServerBrowser") then
+        getgenv().IsServerHopping = false
+        return
+    end
+
+    PlayerGui.ServerBrowser.Enabled = true
+    task.wait(0.1)
+
+    local Filters = PlayerGui.ServerBrowser.Frame:FindFirstChild("Filters")
+    local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
+    local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
+
+    if not TextBox then
+        getgenv().IsServerHopping = false
+        return
+    end
+
+    TextBox.Text = _G.ServerRegion
+
+    -- 展開完整列表
+    local Full = Filters and Filters:FindFirstChild("Full")
+    local FullCheck = Full and Full:FindFirstChild("Check")
+    if FullCheck then
+        FullCheck.Text = "\226\156\148\239\184\143"
+        task.wait(0.1)
+    end
+
+    local ScrollingFrame = PlayerGui.ServerBrowser.Frame.ScrollingFrame
+    local FakeScroll = PlayerGui.ServerBrowser.Frame.FakeScroll
+    local Inside = FakeScroll.Inside
+
+    task.spawn(function()
+        while getgenv().IsServerHopping do
+            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
+            task.wait(0.3)
+        end
+    end)
+
+    task.wait()
+
+    local currentJobId = game.JobId
+    local ServerBrowserRemote = ReplicatedStorage:WaitForChild("__ServerBrowser")
+
+    while getgenv().IsServerHopping do
+        for _, template in ipairs(Inside:GetChildren()) do
+            if template.Name == "Template" then
+                local joinButton = template:FindFirstChild("Join")
+                local textLabel = template:FindFirstChild("TextLabel")
+                local info = textLabel and ParseServerInfo(textLabel.Text)
+
+                if joinButton and info and IsServerAllowed(info) then
+                    local job = joinButton:GetAttribute("Job")
+                    if job and tostring(job):find("-", 1, true) then
+                        job = tostring(job)
+
+                        if job ~= currentJobId then
+                            WindUI:Notify({
+                                Title = "匹配到伺服器",
+                                Content = "嘗試跳服\n"
+                                    .. "地區: " .. tostring(info.Region) .. "\n"
+                                    .. "人數: " .. info.Players .. "/" .. info.MaxPlayers .. "\n"
+                                    .. "賞金: " .. FormatNumber(info.Bounty),
+                                Icon = "wind",
+                                Duration = 5
+                            })
+
+                            local success = pcall(function()
+                                ServerBrowserRemote:InvokeServer("teleport", job)
+                            end)
+                            if not success then
+                                local success2 = pcall(function()
+                                    ServerBrowserRemote:InvokeServer("teleport", job)
+                                end)
+                                if not success2 then
+                                    WindUI:Notify({
+                                        Title = "自動跳服",
+                                        Content = "跳服失敗\n\n請重新加入遊戲",
+                                        Icon = "wind",
+                                        Duration = 10
+                                    })
+                                end
+                            end
+                            task.wait(0.3)
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(3)
+    end
 end
 
 --Fast Attack
@@ -1802,7 +1900,7 @@ local function StartAutoFlee()
                     end
                     -- 持續往上飛，速度 300
                     if fleeLinearVelocity then
-                        fleeLinearVelocity.VectorVelocity = Vector3.new(0, 300, 0)
+                        fleeLinearVelocity.VectorVelocity = Vector3.new(0, 150, 0)
                     end
                 elseif wasFleeing then
                     -- 血量恢復，停止逃跑
@@ -2048,12 +2146,12 @@ local function CheckAndNotifyCombatStatus()
     if status == "NotInCombat" then
         _G.FTP2_HasTriggeredHop = true
         task.spawn(function()
-            if StartServerHop then StartServerHop() end
+            if StartBountyServerHop then StartBountyServerHop() end
         end)
     elseif status == "InCombatNoRisk" then
         _G.FTP2_HasTriggeredHop = true
         task.spawn(function()
-            if StartServerHop then StartServerHop() end
+            if StartBountyServerHop then StartBountyServerHop() end
         end)
     elseif status == "BountyAtRisk" then
     end
@@ -3878,23 +3976,6 @@ Tabs.Settings:Button({
 Tabs.Settings:Section({ Title = "畫質設定" })
 
 Tabs.Settings:Toggle({
-    Title = "突破FPS上限",
-    Value = _G.UnlockFPS,
-    Callback = function(state)
-        _G.UnlockFPS = state
-
-        if _G.UnlockFPS and setfpscap then
-            setfpscap(999)
-        else
-            if setfpscap then
-                setfpscap(0)
-            end
-        end
-        MarkConfigDirty()
-    end
-})
-
-Tabs.Settings:Toggle({
     Title = "低配模式",
     Desc = "大幅優化效能",
     Value = _G.LowVisualMode,
@@ -4067,14 +4148,6 @@ task.spawn(function()
 
     if _G.RemoveFogEnabled then
         _G.ApplyRemoveFog()
-    end
-
-    if setfpscap then
-        if _G.UnlockFPS then
-            setfpscap(999)
-        else
-            setfpscap(0)
-        end
     end
 
     if _G.AntiAFK_ENABLED then
