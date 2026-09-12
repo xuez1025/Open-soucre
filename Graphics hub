@@ -274,7 +274,6 @@ Tabs.Graphics:Toggle({
 
 Tabs.Graphics:Toggle({
     Title = "超低配模式",
-    Desc = "降低渲染等級與水面效果 (Low CPU)",
     Value = _G.LowCpuMode,
     Callback = function(v)
         _G.LowCpuMode = v
