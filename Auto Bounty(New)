@@ -149,9 +149,8 @@ local FilterParagraph = nil
 
 -- Fast Attack
 _G.FastAttack = true
-_G.FastAttackMode = "模式2(部分帳號失效可使用)"
-_G.AttackDistance = 500
-_G.FastAttackSpeed = 0.05
+_G.AttackDistance = 3000
+_G.FastAttackSpeed = 0.01
 
 --Fruit m1
 _G.FruitsM1Enable = true
@@ -224,27 +223,21 @@ local ghostShipLavaRemoved = false
 _G.FTP2_Enabled = false
 _G.FTP2_FlightConn = nil
 _G.FTP2_PlayerLeaveConn = nil
-_G.FTP2_Attachment = nil
-_G.FTP2_LinearVelocity = nil
-_G.FTP2_AntiGravity = nil
-_G.FTP2_LastTeleportTicks = {}
-_G.FTP2_TeleportPauseUntil = 0
-_G.FTP2_TeleportFails = {}
-_G.FTP2_BlockedEntrances = {}
 _G.FTP2_Blacklist = {}
 _G.FTP2_HasTriggeredHop = false
 _G.FTP2_TimeoutLimit = 120
 
 _G.FTP2_HistoryWindow = 0.35
 _G.FTP2_ClearTimeout = 10
-_G.FTP2_FlySpeed = 150
+_G.FTP2_FlySpeed = 170
 _G.FTP2_HeightOffset = 30
 _G.FTP2_OrbitRadius = 50
 _G.FTP2_OrbitInterval = 0.016
 _G.FTP2_LowHpLockPercent = 30
-_G.FTP2_NoTeleportRange = 300
 _G.FTP2_CurrentTarget = nil
-_G.FTP2_TargetLockTime = 0
+_G.FTP2_TargetLockTime = 0        -- 已累積的鎖定時間（僅在實際交戰時累加）
+_G.FTP2_TargetLockTick = 0        -- 上一幀時間，用於計算鎖定時間的累加量
+_G.FTP2_LastSkillCastTime = 0     -- 最近一次實際施放技能的時間
 _G.TargetHistory = {}
 _G.FTP2_StartTime = 0
 _G.FTP2_FleeReturnPos = nil
@@ -385,7 +378,7 @@ local ConfigDirty = false
 
 local ConfigKeys = {
     "ServerRegion", "HopMinPlayers", "HopMaxPlayers","HopMinBounty", "HopMaxBounty",
-    "FastAttack", "FastAttackMode", "AttackDistance", "FastAttackSpeed", "FruitsM1Enable", "FruitsM1DelayValue",
+    "FastAttack", "AttackDistance", "FastAttackSpeed", "FruitsM1Enable", "FruitsM1DelayValue",
     "ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_TeamColor", "ESP_ShowLevel", "ESP_ShowPVPStatus", "ESP_FontSize",
     "AutoEnablePVP",
     "AutoBusoEnabled",
@@ -400,7 +393,7 @@ local ConfigKeys = {
     "RemoveLavaEnabled",
     "RemoveGhostShipLavaEnabled",
     "SelectTeam",
-    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_HeightOffset", "FTP2_OrbitRadius", "FTP2_OrbitInterval", "FTP2_LowHpLockPercent", "FTP2_NoTeleportRange", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
+    "FTP2_Enabled", "FTP2_FlySpeed", "FTP2_HeightOffset", "FTP2_OrbitRadius", "FTP2_OrbitInterval", "FTP2_LowHpLockPercent", "FTP2_TimeoutLimit", "FTP2_HistoryWindow", "FTP2_ClearTimeout",
     "SilentAimEnabled", "SilentAimTargetMode", "SilentAimTeamCheck",
     "CamlockEnabled",
     "AutoSkillMainEnable", "AutoSkillWeapons",
@@ -744,19 +737,13 @@ local function StartServerHop()
         end
 
         useHiddenGui = true
-        getgenv().ServerHopHiddenGui = true
-
-        pcall(function()
-            if serverBrowser:FindFirstChild("Frame") then
-                serverBrowser.Frame.Visible = false
-            end
-        end)
 
         serverBrowser.Enabled = true
 
+        -- 與列賞換服一致：顯示 ServerBrowser 介面
         pcall(function()
             if serverBrowser:FindFirstChild("Frame") then
-                serverBrowser.Frame.Visible = false
+                serverBrowser.Frame.Visible = true
             end
         end)
 
@@ -951,41 +938,15 @@ local function IsAlive(char)
 end
 
 local Settings = {
-    MaxTargets = 20,
+    AttackInterval  = _G.FastAttackSpeed or 0.01,
+    MaxTargets      = 20,
     AutoScanRemotes = true
 }
 
 local State = {
     FoundRemote = nil,
-    FoundRemoteId = nil,
-    consecutiveFailures = 0,
-    maxConsecutiveFailures = 5,
-    
-    M1_Remotes = nil,
-    M1_Net = nil,
-    M1_RegisterAttack = nil,
-    M1_RegisterHit = nil,
-    M1_Enemies = nil
+    FoundRemoteId = nil
 }
-
-local function GetRandomValidPart(target)
-    if not target then return nil end
-    local hrp = target:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local parts = { 
-        target:FindFirstChild("Head"), 
-        target:FindFirstChild("UpperTorso"), 
-        target:FindFirstChild("LowerTorso"), 
-        target:FindFirstChild("Torso"), 
-        hrp 
-    }
-    local validParts = {}
-    for _, p in ipairs(parts) do
-        if p and p:IsA("BasePart") then table.insert(validParts, p) end
-    end
-    if #validParts > 0 then return validParts[math.random(1, #validParts)] end
-    return hrp
-end
 
 if Settings.AutoScanRemotes then
     task.spawn(function()
@@ -1011,119 +972,30 @@ if Settings.AutoScanRemotes then
     end)
 end
 
-local function M1_CheckAndGetCoreComponents()
-    if State.M1_Remotes and State.M1_Net and State.M1_RegisterAttack and State.M1_RegisterHit and State.M1_Enemies then
-        return State.M1_Remotes, State.M1_Net, State.M1_RegisterAttack, State.M1_RegisterHit, State.M1_Enemies
-    end
-    local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-    local Modules = ReplicatedStorage:FindFirstChild("Modules")
-    local NetInstance = Modules and Modules:FindFirstChild("Net")
-    local RegAttack = NetInstance and (NetInstance:FindFirstChild("RE/RegisterAttack") or NetInstance:FindFirstChild("RegisterAttack"))
-    local RegHit = NetInstance and (NetInstance:FindFirstChild("RE/RegisterHit") or NetInstance:FindFirstChild("RegisterHit"))
-    local Enemies = workspace:FindFirstChild("Enemies") or workspace:FindFirstChild("NPCs")
-    
-    if Remotes and Modules and NetInstance and RegAttack and RegHit and Enemies then
-        State.M1_Remotes = Remotes
-        State.M1_Net = NetInstance
-        State.M1_RegisterAttack = RegAttack
-        State.M1_RegisterHit = RegHit
-        State.M1_Enemies = Enemies
-        return Remotes, NetInstance, RegAttack, RegHit, Enemies
-    end
-    return nil, nil, nil, nil, nil
-end
-
-local function M1_GatherAllTargets(OthersEnemies)
-    local myPos = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart and LocalPlayer.Character.PrimaryPart.Position
-    if not myPos then return nil end
-    
-    local firstPart = nil
-    
-    local _, _, _, _, EnemiesFolder = M1_CheckAndGetCoreComponents()
-    if EnemiesFolder then
-        for _, Enemy in ipairs(EnemiesFolder:GetChildren()) do
-            if Enemy == LocalPlayer.Character or not IsAlive(Enemy) then continue end
-            local enemyRoot = Enemy:FindFirstChild("HumanoidRootPart")
-            if not enemyRoot then continue end
-            
-            if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
-                local foundPart = GetRandomValidPart(Enemy)
-                if foundPart then
-                    table.insert(OthersEnemies, {Enemy, foundPart})
-                    if not firstPart then firstPart = foundPart end
-                end
-            end
-        end
-    end
-    
-    for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-        if OtherPlayer == LocalPlayer then continue end
-        local OtherChar = OtherPlayer.Character
-        if not IsAlive(OtherChar) then continue end
-        local enemyRoot = OtherChar:FindFirstChild("HumanoidRootPart")
-        if not enemyRoot then continue end
-        
-        if (enemyRoot.Position - myPos).Magnitude < _G.AttackDistance then
-            local foundPart = GetRandomValidPart(OtherChar)
-            if foundPart then
-                table.insert(OthersEnemies, {OtherChar, foundPart})
-                if not firstPart then firstPart = foundPart end
-            end
-        end
-    end
-    
-    return firstPart
-end
-
-local function M1_Attack(BasePart, OthersEnemies)
-    local _, _, temp_RegisterAttack, temp_RegisterHit, _ = M1_CheckAndGetCoreComponents()
-    if not (BasePart and OthersEnemies and #OthersEnemies > 0 and temp_RegisterAttack and temp_RegisterHit) then
-        State.consecutiveFailures = State.consecutiveFailures + 1
-        if State.consecutiveFailures >= State.maxConsecutiveFailures then
-            State.M1_Remotes = nil; State.M1_Net = nil; State.M1_RegisterAttack = nil; State.M1_RegisterHit = nil; State.M1_Enemies = nil; State.consecutiveFailures = 0
-        end
-        return
-    end
-    State.consecutiveFailures = 0
-    local success, _ = pcall(function()
-        temp_RegisterAttack:FireServer(0.3)
-        temp_RegisterHit:FireServer(BasePart, OthersEnemies)
-    end)
-    if not success then State.M1_RegisterAttack = nil; State.M1_RegisterHit = nil end
-end
-
-local function PerformAttackMode1()
-    local OthersEnemies = {}
-    local primaryTargetPart = M1_GatherAllTargets(OthersEnemies)
-    if #OthersEnemies > 0 then 
-        M1_Attack(primaryTargetPart, OthersEnemies) 
-    end
-end
-
-local function GetMode2Targets()
+local function GetTargets()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return {} end
     local targets = {}
-    local myPos = root.Position
-    
+    local myPos   = root.Position
+
     local sourceFolders = {
-        workspace:FindFirstChild("Enemies"),
-        workspace:FindFirstChild("NPCs"),
-        workspace:FindFirstChild("Characters")
+        Workspace:FindFirstChild("Enemies"),
+        Workspace:FindFirstChild("NPCs"),
+        Workspace:FindFirstChild("Characters")
     }
-    
+
     local function checkModel(model)
         if not model or model == char then return end
         local tRoot = model:FindFirstChild("HumanoidRootPart")
-        local tHum = model:FindFirstChild("Humanoid")
+        local tHum  = model:FindFirstChild("Humanoid")
         if tRoot and tHum and tHum.Health > 0 then
             local dist = (tRoot.Position - myPos).Magnitude
             if dist <= _G.AttackDistance then
                 table.insert(targets, { 
                     Model = model, 
-                    Root = tRoot, 
-                    Head = model:FindFirstChild("Head") or tRoot 
+                    Root  = tRoot, 
+                    Head  = model:FindFirstChild("Head") or tRoot 
                 })
             end
         end
@@ -1137,61 +1009,50 @@ local function GetMode2Targets()
             end
         end
     end
-    
-    for _, player in ipairs(Players:GetPlayers()) do
+
+    for _, p in ipairs(Players:GetPlayers()) do
         if #targets >= Settings.MaxTargets then break end
-        if player ~= LocalPlayer and player.Character then
-            checkModel(player.Character)
+        if p ~= LocalPlayer and p.Character then
+            checkModel(p.Character)
         end
     end
-    
+
     return targets
 end
 
-local function PerformAttackMode2()
+local function PerformAttack(forceTargets)
     local char = LocalPlayer.Character
     if not char then return end
     local hasTool = char:FindFirstChildOfClass("Tool") or char:FindFirstChild("EquippedWeapon")
     if not hasTool then return end
-    
-    local targets = GetMode2Targets()
+
+    local targets = forceTargets or GetTargets()
     if #targets == 0 then return end
-    
+
     local mainTarget = targets[1]
-    local hitList = {}
+    local hitList    = {}
     for i, target in ipairs(targets) do 
         table.insert(hitList, {target.Model, target.Root}) 
     end
-    
+
     RegisterAttack:FireServer(0)
-    
+
     local fakeHash = tostring(LocalPlayer.UserId):sub(2,4) .. tostring(math.random(10000, 99999))
     pcall(function()
         RegisterHit:FireServer(mainTarget.Head, hitList, {}, fakeHash)
     end)
-    
+
     if State.FoundRemote and State.FoundRemoteId then
         pcall(function()
-            local seedValue = RemoteSeed and RemoteSeed:InvokeServer() or 1
+            local seedValue   = RemoteSeed and RemoteSeed:InvokeServer() or 1
             local encryptedId = bit32.bxor(State.FoundRemoteId + 909090, seedValue * 2)
-            local rawName = "RE/RegisterHit"
-            local timestamp = math.floor(workspace:GetServerTimeNow() / 10 % 10) + 1
+            local rawName     = "RE/RegisterHit"
+            local timestamp   = math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1
             local encryptedName = string.gsub(rawName, ".", function(c) 
                 return string.char(bit32.bxor(string.byte(c), timestamp)) 
             end)
             State.FoundRemote:FireServer(encryptedName, encryptedId, mainTarget.Head, hitList)
         end)
-    end
-end
-
-local function PerformAttack()
-    if _G.FastAttackMode == "模式1" then
-        local Character = LocalPlayer.Character
-        local Equipped = Character and IsAlive(Character) and Character:FindFirstChildOfClass("Tool")
-        if not Equipped or Equipped.ToolTip == "Gun" then return end
-        PerformAttackMode1()
-    else
-        PerformAttackMode2()
     end
 end
 
@@ -1233,7 +1094,7 @@ task.spawn(function()
         end
         
         local elapsed = tick() - startTime
-        local waitTime = math.max((_G.FastAttackSpeed or 0.05) - elapsed, 0.001)
+        local waitTime = math.max((Settings.AttackInterval or 0.01) - elapsed, 0.001)
         task.wait(waitTime)
     end
 end)
@@ -1590,10 +1451,12 @@ end)
 
 -- Auto Ken
 local function toggleKenVision()
-    if UserInputService:GetFocusedTextBox() then return end
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(0.05)
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    local commE = remotes and remotes:FindFirstChild("CommE")
+    if not commE then return end
+    pcall(function()
+        commE:FireServer("Ken", true)
+    end)
 end
 
 task.spawn(function()
@@ -1793,8 +1656,81 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ========= 統一移動系統（LinearVelocity 飛行，速度 170） =========
+local MOVE_SPEED = 170          -- 統一移動速度 (studs/s)
+
+_G.FTP_LinearVelocity = nil
+_G.FTP_AntiGravity = nil
+_G.FTP_Attachment = nil
+
+local function ClearFTPFlightComponents()
+    if _G.FTP_LinearVelocity then _G.FTP_LinearVelocity:Destroy(); _G.FTP_LinearVelocity = nil end
+    if _G.FTP_AntiGravity    then _G.FTP_AntiGravity:Destroy();    _G.FTP_AntiGravity    = nil end
+    if _G.FTP_Attachment     then _G.FTP_Attachment:Destroy();     _G.FTP_Attachment     = nil end
+end
+
+local function SetupFTPFlightComponents(hrp)
+    ClearFTPFlightComponents()
+
+    local att = Instance.new("Attachment")
+    att.Name = "XuHub_FlightAttachment"
+    att.Parent = hrp
+    _G.FTP_Attachment = att
+
+    local lv = Instance.new("LinearVelocity")
+    lv.Name = "XuHub_FlightVelocity"
+    lv.MaxForce = math.huge
+    lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+    lv.VectorVelocity = Vector3.new(0, 0, 0)
+    lv.Attachment0 = att
+    lv.Parent = hrp
+    _G.FTP_LinearVelocity = lv
+
+    -- 計算角色總質量以抵消重力
+    local totalMass = 0
+    local char = hrp.Parent
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and not part.Massless then
+                totalMass = totalMass + part:GetMass()
+            end
+        end
+    end
+
+    local vf = Instance.new("VectorForce")
+    vf.Name = "XuHub_AntiGravity"
+    vf.ApplyAtCenterOfMass = true
+    vf.Attachment0 = att
+    vf.Force = Vector3.new(0, totalMass * workspace.Gravity, 0)
+    vf.Parent = hrp
+    _G.FTP_AntiGravity = vf
+end
+
+-- 統一移動函式：所有移動（追人、逃跑）皆透過此函式，以固定速度 170 朝指定位置飛行
+local function MoveTo(Pos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local HRP = char:FindFirstChild("HumanoidRootPart")
+    if not HRP then return end
+
+    if not _G.FTP_LinearVelocity or _G.FTP_LinearVelocity.Parent ~= HRP then
+        SetupFTPFlightComponents(HRP)
+    end
+
+    local dir = Pos - HRP.Position
+    if dir.Magnitude > 0.1 then
+        _G.FTP_LinearVelocity.VectorVelocity = dir.Unit * MOVE_SPEED
+    end
+end
+
+-- 停止統一移動
+local function StopMove()
+    if _G.FTP_LinearVelocity then
+        _G.FTP_LinearVelocity.VectorVelocity = Vector3.zero
+    end
+end
+
 --Auto flee（修改版）
--- 穿牆輔助：啟用/停用角色的無碰撞
 local function SetCharNoclip(char, enabled)
     if not char then return end
     for _, part in ipairs(char:GetDescendants()) do
@@ -1808,65 +1744,14 @@ local function StartAutoFlee()
     if _G.AutoFleeConn then return end
     _G.AutoFleeConn = task.spawn(function()
         local wasFleeing = false
-        -- 獨立逃跑用的飛行組件（不與自動列賞共用，避免互相覆蓋）
-        local fleeAttachment = nil
-        local fleeLinearVelocity = nil
-        local fleeAntiGravity = nil
-
-        local function SetupFleeComponents(hrp)
-            -- 清理舊的組件
-            if fleeLinearVelocity then fleeLinearVelocity:Destroy() fleeLinearVelocity = nil end
-            if fleeAntiGravity then fleeAntiGravity:Destroy() fleeAntiGravity = nil end
-            if fleeAttachment then fleeAttachment:Destroy() fleeAttachment = nil end
-
-            local att = Instance.new("Attachment")
-            att.Name = "AutoFlee_Attachment"
-            att.Parent = hrp
-            fleeAttachment = att
-
-            local lv = Instance.new("LinearVelocity")
-            lv.Name = "AutoFlee_LinearVelocity"
-            lv.MaxForce = math.huge
-            lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
-            lv.VectorVelocity = Vector3.new(0, 0, 0)
-            lv.Attachment0 = att
-            lv.Parent = hrp
-            fleeLinearVelocity = lv
-
-            -- 計算角色總質量以抵消重力
-            local totalMass = 0
-            local char = hrp.Parent
-            if char then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") and not part.Massless then
-                        totalMass = totalMass + part:GetMass()
-                    end
-                end
-            end
-
-            local vf = Instance.new("VectorForce")
-            vf.Name = "AutoFlee_AntiGravity"
-            vf.ApplyAtCenterOfMass = true
-            vf.Attachment0 = att
-            vf.Force = Vector3.new(0, totalMass * workspace.Gravity, 0)
-            vf.Parent = hrp
-            fleeAntiGravity = vf
-        end
-
-        local function ClearFleeComponents()
-            if fleeLinearVelocity then fleeLinearVelocity:Destroy() fleeLinearVelocity = nil end
-            if fleeAntiGravity then fleeAntiGravity:Destroy() fleeAntiGravity = nil end
-            if fleeAttachment then fleeAttachment:Destroy() fleeAttachment = nil end
-        end
 
         while _G.AutoFlee do
             task.wait(0.05)
             pcall(function()
-                -- 自動列賞開啟時不接管，讓自動列賞自己處理逃跑
                 if _G.FTP2_Enabled then
                     if wasFleeing then
                         wasFleeing = false
-                        ClearFleeComponents()
+                        ClearFTPFlightComponents()
                         SetCharNoclip(LocalPlayer.Character, false)
                     end
                     return
@@ -1878,7 +1763,7 @@ local function StartAutoFlee()
                 if not hum or not hrp or hum.Health <= 0 then
                     if wasFleeing then
                         wasFleeing = false
-                        ClearFleeComponents()
+                        ClearFTPFlightComponents()
                         SetCharNoclip(char, false)
                     end
                     return
@@ -1888,37 +1773,25 @@ local function StartAutoFlee()
                 if hpPercent <= _G.AutoFleeHP then
                     if not wasFleeing then
                         wasFleeing = true
-                        -- 穿牆 + 建立飛行組件
+                        -- 穿牆
                         SetCharNoclip(char, true)
-                        SetupFleeComponents(hrp)
-                    else
-                        -- 每次都確認組件仍然存在於正確的 hrp
-                        local needSetup = not fleeLinearVelocity or fleeLinearVelocity.Parent ~= hrp
-                        if needSetup then
-                            SetupFleeComponents(hrp)
-                        end
                     end
-                    -- 持續往上飛，速度 300
-                    if fleeLinearVelocity then
-                        fleeLinearVelocity.VectorVelocity = Vector3.new(0, 150, 0)
-                    end
+                    -- 統一移動：持續往上飛離
+                    MoveTo(hrp.Position + Vector3.new(0, 100, 0))
                 elseif wasFleeing then
                     -- 血量恢復，停止逃跑
                     wasFleeing = false
-                    ClearFleeComponents()
+                    ClearFTPFlightComponents()
                     SetCharNoclip(char, false)
                 end
             end)
         end
 
-        -- 迴圈結束時恢復碰撞並清理組件
+        -- 迴圈結束時恢復碰撞
         pcall(function()
             if wasFleeing then
                 SetCharNoclip(LocalPlayer.Character, false)
             end
-            if fleeLinearVelocity then fleeLinearVelocity:Destroy() fleeLinearVelocity = nil end
-            if fleeAntiGravity then fleeAntiGravity:Destroy() fleeAntiGravity = nil end
-            if fleeAttachment then fleeAttachment:Destroy() fleeAttachment = nil end
         end)
         _G.AutoFleeConn = nil
     end)
@@ -2299,33 +2172,30 @@ local function IsTargetLowHP(plr)
     return percent < (_G.FTP2_LowHpLockPercent or 30)
 end
 
-local function GetCurrentWorldEntrances()
-    local pool = {}
-    local placeId = game.PlaceId
+-- 鎖定時間計時條件：角色實際接近目標玩家，且正在施放技能（交戰中）
+local FTP2_ATTACK_RANGE = 80        -- 「實際接近目標」判定距離
+local FTP2_CAST_ACTIVE_WINDOW = 1.5 -- 視為「正在施放技能」的時間窗
 
-    if table.find({2753915549, 85211729168715}, placeId) then
-        pool = {
-            { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
-            { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
-            { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
-            { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
-        }
-    elseif table.find({4442272183, 79091703265657}, placeId) then
-        pool = {
-            { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
-            { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
-            { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
-            { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) }
-        }
-    elseif table.find({7449423635, 100117331123089}, placeId) then
-        pool = {
-            { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
-            { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
-            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
-            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
-        }
+local function IsWithinAttackRange(plr)
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local tgHRP = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+    if not myHRP or not tgHRP then return false end
+    return (tgHRP.Position - myHRP.Position).Magnitude <= FTP2_ATTACK_RANGE
+end
+
+local function IsCastingSkill()
+    -- 近期實際施放過技能
+    if _G.FTP2_LastSkillCastTime and (os.clock() - _G.FTP2_LastSkillCastTime) <= FTP2_CAST_ACTIVE_WINDOW then
+        return true
     end
-    return pool
+    -- 未使用自動技能時，以其他攻擊手段作為「交戰中」判定
+    return _G.FastAttack or _G.FruitsM1Enable
+end
+
+-- 只有實際接近目標且正在施放技能的期間，鎖定時間才會累加
+local function IsLockCountingActive(plr)
+    return IsWithinAttackRange(plr) and IsCastingSkill()
 end
 
 local function UpdatePositionHistory()
@@ -2493,50 +2363,10 @@ local function GetNearestPlayer()
     return nearestPlayer
 end
 
-local function ClearFTP2FlightComponents()
-    if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity:Destroy() _G.FTP2_LinearVelocity = nil end
-    if _G.FTP2_AntiGravity then _G.FTP2_AntiGravity:Destroy() _G.FTP2_AntiGravity = nil end
-    if _G.FTP2_Attachment then _G.FTP2_Attachment:Destroy() _G.FTP2_Attachment = nil end
-end
-
-local function SetupFTP2FlightComponents(hrp)
-    ClearFTP2FlightComponents()
-
-    local att = Instance.new("Attachment")
-    att.Name = "XuHub_FlightAttachment2"
-    att.Parent = hrp
-    _G.FTP2_Attachment = att
-
-    local lv = Instance.new("LinearVelocity")
-    lv.Name = "XuHub_FlightVelocity2"
-    lv.MaxForce = math.huge
-    lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
-    lv.VectorVelocity = Vector3.new(0, 0, 0)
-    lv.Attachment0 = att
-    lv.Parent = hrp
-    _G.FTP2_LinearVelocity = lv
-
-    local totalMass = 0
-    local char = hrp.Parent
-    if char then
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and not part.Massless then
-                totalMass = totalMass + part:GetMass()
-            end
-        end
-    end
-
-    local vf = Instance.new("VectorForce")
-    vf.Name = "XuHub_AntiGravity2"
-    vf.ApplyAtCenterOfMass = true
-    vf.Attachment0 = att
-    vf.Force = Vector3.new(0, totalMass * workspace.Gravity, 0)
-    vf.Parent = hrp
-    _G.FTP2_AntiGravity = vf
-end
-
-local FTP2_OrbitOffset = nil
-local FTP2_NextOrbitTime = 0
+-- ========= 追人移動（LinearVelocity 飛行，使用 AutoBounty 預判） =========
+_G.G_TeleportOffsetX = _G.G_TeleportOffsetX or 0
+_G.G_TeleportOffsetY = _G.G_TeleportOffsetY or 0
+_G.G_TeleportOffsetZ = _G.G_TeleportOffsetZ or 0
 
 local function FlyToTargetLogic2(plr)
     if not plr or not plr.Character then return end
@@ -2544,103 +2374,17 @@ local function FlyToTargetLogic2(plr)
     local myChar = LocalPlayer.Character
     local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local tgHRP = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not (myHRP and tgHRP) then return end
 
-    if not myHRP or not tgHRP then return end
+    -- 保留原本 Auto Bounty 的預判位置
+    local off = Vector3.new(_G.G_TeleportOffsetX, _G.G_TeleportOffsetY, _G.G_TeleportOffsetZ)
+    local targetPos = (GetPredictedPosition2(plr) or tgHRP.Position) + off
 
-    if os.clock() < _G.FTP2_TeleportPauseUntil then
-        if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
-        myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        return
-    end
+    -- 統一移動：以固定速度 170 朝預判位置飛行
+    MoveTo(targetPos)
 
-    local rawTargetPos = GetPredictedPosition2(plr) or tgHRP.Position
-
-    local now = os.clock()
-    if not FTP2_OrbitOffset or now >= FTP2_NextOrbitTime then
-        local maxRadius = _G.FTP2_OrbitRadius or 50
-        local distance = math.random(1, maxRadius)
-        local dir = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1)
-        if dir.Magnitude > 0 then dir = dir.Unit end
-        FTP2_OrbitOffset = dir * distance
-        FTP2_NextOrbitTime = now + (_G.FTP2_OrbitInterval or 0.016)
-    end
-    local targetPos = rawTargetPos + FTP2_OrbitOffset
-
-    local dir = targetPos - myHRP.Position
-
-    local flySpeed = _G.FTP2_FlySpeed
-
-    local distToTargetCenter = (rawTargetPos - myHRP.Position).Magnitude
-    local directFlightTime = distToTargetCenter / _G.FTP2_FlySpeed
-    local bestEntrance = nil
-    local bestTotalTime = directFlightTime 
-    local teleportPenalty = 1.5 
-    local pool = GetCurrentWorldEntrances()
-
-    if distToTargetCenter < (_G.FTP2_NoTeleportRange or 300) then
-        pool = {}
-    end
-
-    for _, e in ipairs(pool) do
-        if _G.FTP2_BlockedEntrances[e.Arg] then continue end
-
-        local destDistToTarget = (e.Dest - rawTargetPos).Magnitude
-        local totalTimeViaPortal = (destDistToTarget / _G.FTP2_FlySpeed) + teleportPenalty
-        
-        if totalTimeViaPortal < bestTotalTime then
-            if (distToTargetCenter - destDistToTarget) > 150 then
-                bestTotalTime = totalTimeViaPortal
-                bestEntrance = e
-            end
-        end
-    end
-
-    if bestEntrance then
-        local lastTime = _G.FTP2_LastTeleportTicks[bestEntrance.Arg] or 0
-        if os.clock() - lastTime > 4 then
-            _G.FTP2_LastTeleportTicks[bestEntrance.Arg] = os.clock()
-            _G.FTP2_TeleportPauseUntil = os.clock() + 1.2
-
-            local preDist = (myHRP.Position - bestEntrance.Dest).Magnitude
-            
-            if _G.FTP2_LinearVelocity then _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0) end
-            myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            
-            task.spawn(function()
-                pcall(function()
-                    local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-                    commF:InvokeServer("requestEntrance", bestEntrance.Arg)
-                end)
-            end)
-
-            task.spawn(function()
-                task.wait(1.5)
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
-                    if postDist > 150 and postDist >= preDist * 0.5 then
-                        local fails = (_G.FTP2_TeleportFails[bestEntrance.Arg] or 0) + 1
-                        _G.FTP2_TeleportFails[bestEntrance.Arg] = fails
-                        if fails >= 3 then
-                            _G.FTP2_BlockedEntrances[bestEntrance.Arg] = true
-                            if WindUI then
-                                WindUI:Notify({ Title = "自動列賞", Content = "傳送點 3 次無法到達，已改用其他傳送點", Duration = 3 })
-                            end
-                        end
-                    end
-                end
-            end)
-            return 
-        end
-    end
-
-    local needSetup = not _G.FTP2_LinearVelocity or _G.FTP2_LinearVelocity.Parent ~= myHRP
-    if needSetup then SetupFTP2FlightComponents(myHRP) end
-
-    _G.FTP2_LinearVelocity.VectorVelocity = dir.Unit * flySpeed
-
-    local lookAt = Vector3.new(rawTargetPos.X, myHRP.Position.Y, rawTargetPos.Z)
+    -- 面向目標(保留水平朝向)
+    local lookAt = Vector3.new(tgHRP.Position.X, myHRP.Position.Y, tgHRP.Position.Z)
     if (lookAt - myHRP.Position).Magnitude > 0.1 then
         myHRP.CFrame = CFrame.new(myHRP.Position, lookAt)
     end
@@ -2656,13 +2400,8 @@ local function FleeUpLogic()
         -- 穿牆：關閉碰撞，避免被建築卡住
         SetCharNoclip(char, true)
 
-        -- 確保飛行組件存在且掛在正確的 hrp 上
-        local needSetup = not _G.FTP2_LinearVelocity or _G.FTP2_LinearVelocity.Parent ~= hrp
-        if needSetup then
-            SetupFTP2FlightComponents(hrp)
-        end
-
-        _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 300, 0)
+        -- 統一移動：持續往上飛離
+        MoveTo(hrp.Position + Vector3.new(0, 100, 0))
     end)
 end
 
@@ -2714,18 +2453,15 @@ local function StartFTPFlight2()
     if not _G.FTP2_Enabled then return end
 
     _G.FTP2_Enabled = true
-    table.clear(_G.FTP2_LastTeleportTicks) 
-    table.clear(_G.FTP2_TeleportFails)
-    table.clear(_G.FTP2_BlockedEntrances)
     table.clear(_G.FTP2_Blacklist)
-    _G.FTP2_TeleportPauseUntil = 0 
     _G.FTP2_HasTriggeredHop = false
     _G.FTP2_CurrentTarget = nil
-    _G.FTP2_TargetLockTime = os.clock()
+    _G.FTP2_TargetLockTime = 0
+    _G.FTP2_TargetLockTick = os.clock()
+    _G.FTP2_LastSkillCastTime = 0
     _G.FTP2_StartTime = os.clock()
     _G.FTP2_FleeReturnPos = nil
-    FTP2_OrbitOffset = nil
-    FTP2_NextOrbitTime = 0
+    StopMove()
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
     
@@ -2746,7 +2482,7 @@ local function StartFTPFlight2()
     local cachedChar = nil
     local cachedParts = nil
 
-    _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
+_G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         if not _G.FTP2_Enabled then return end
 
         local currentChar = LocalPlayer.Character
@@ -2777,10 +2513,8 @@ local function StartFTPFlight2()
             if fHRP and fHum and fHum.Health > 0 then
                 fHRP.CFrame = CFrame.new(_G.FTP2_FleeReturnPos)
                 _G.FTP2_FleeReturnPos = nil
-                -- 恢復後停止上飛，重新啟用飛行組件給列賞使用
-                if _G.FTP2_LinearVelocity then
-                    _G.FTP2_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
-                end
+                -- 恢復後停止上飛
+                StopMove()
                 SetCharNoclip(fChar, false)
                 if WindUI then
                     WindUI:Notify({ Title = "自動列賞", Content = "血量已恢復，傳送回原位置繼續列賞", Duration = 3 })
@@ -2847,21 +2581,33 @@ local function StartFTPFlight2()
             end
         end
 
+        local lockNow = os.clock()
         if _G.FTP2_CurrentTarget then
             if _G.FTP2_CurrentTarget ~= oldTarget then
-                _G.FTP2_TargetLockTime = os.clock()
+                -- 更換目標：重新開始累積鎖定時間
+                _G.FTP2_TargetLockTime = 0
+                _G.FTP2_TargetLockTick = lockNow
             end
 
-            if not lowHpLock and os.clock() - _G.FTP2_TargetLockTime >= _G.FTP2_TimeoutLimit then
+            -- 只有實際接近目標且正在施放技能(交戰中)的期間，鎖定時間才會累加
+            local dt = lockNow - (_G.FTP2_TargetLockTick or lockNow)
+            _G.FTP2_TargetLockTick = lockNow
+            if not lowHpLock and IsLockCountingActive(_G.FTP2_CurrentTarget) then
+                _G.FTP2_TargetLockTime = _G.FTP2_TargetLockTime + dt
+            end
+
+            if not lowHpLock and _G.FTP2_TargetLockTime >= _G.FTP2_TimeoutLimit then
                 _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
                 if WindUI then
                     WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，已跳過玩家: " .. _G.FTP2_CurrentTarget.Name, duration = 3 })
                 end
                 _G.FTP2_CurrentTarget = nil
-                _G.FTP2_TargetLockTime = os.clock()
+                _G.FTP2_TargetLockTime = 0
+                _G.FTP2_TargetLockTick = lockNow
             end
         else
-            _G.FTP2_TargetLockTime = os.clock()
+            _G.FTP2_TargetLockTime = 0
+            _G.FTP2_TargetLockTick = lockNow
         end
 
         if _G.FTP2_CurrentTarget then
@@ -2878,10 +2624,10 @@ end
 
 local function StopFTPFlight2()
     _G.FTP2_Enabled = false
-    _G.FTP2_TeleportPauseUntil = 0
     _G.FTP2_CurrentTarget = nil
     _G.FTP2_FleeReturnPos = nil
-    
+    StopMove()
+    ClearFTPFlightComponents()
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(false) end
 
     if _G.FTP2_FlightConn then 
@@ -2893,8 +2639,6 @@ local function StopFTPFlight2()
         _G.FTP2_PlayerLeaveConn:Disconnect()
         _G.FTP2_PlayerLeaveConn = nil
     end
-
-    ClearFTP2FlightComponents()
 
     if type(setPlatformStand) == "function" then setPlatformStand(false) end
     
@@ -3257,6 +3001,7 @@ task.spawn(function()
 
                         local keyEnum = SkillKeyMap[chosen.Skill]
                         if keyEnum then
+                            _G.FTP2_LastSkillCastTime = os.clock()
                             SkillPressKey(keyEnum, chosen.HoldTime)
                         end
                         task.wait(0.2)
@@ -3404,15 +3149,15 @@ end
 -- 分頁
 ----------------------------------------
 local Tabs = {
+    Auto     = Window:Tab({ Title = "自動",   Icon = "crosshair" }),
     Config   = Window:Tab({ Title = "配置",  Icon = "wrench"}),
-    Skills   = Window:Tab({ Title = "列賞&技能", Icon = "zap"}),
-    Settings = Window:Tab({ Title = "畫質&設定", Icon = "settings"}),
+    Settings = Window:Tab({ Title = "設定",  Icon = "settings" }),
 }
 
 ----------------------------------------
 -- 元件
 ----------------------------------------
-Tabs.Config:Section({ Title = "自動換服" })
+Tabs.Config:Section({ Title = "伺服器" })
 
 FilterParagraph = Tabs.Config:Paragraph({
     Title = "當前篩選",
@@ -3448,16 +3193,6 @@ Tabs.Config:Button({
 
 Tabs.Config:Section({ Title = "Fast Attack" })
 
-Tabs.Config:Dropdown({
-    Title = "選擇攻擊模式",
-    Values = { "模式1", "模式2(部分帳號失效可使用)" },
-    Value = _G.FastAttackMode,
-    Callback = function(v)
-        _G.FastAttackMode = v
-        MarkConfigDirty()
-    end
-})
-
 Tabs.Config:Toggle({
     Title = "自動攻擊",
     Value = _G.FastAttack,
@@ -3473,30 +3208,17 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Config:Slider({
-    Title = "攻擊距離",
-    Desc = "設定攻擊距離(已失效)",
-    Value = {
-        Min = 10,
-        Max = 3000,
-        Default = _G.AttackDistance
-    },
-    Callback = function(v)
-        _G.AttackDistance = v
-        MarkConfigDirty()
-    end
-})
-
-Tabs.Config:Slider({
     Title = "攻擊速度",
     Desc = "調整攻擊間隔 (秒)",
-    Step = 0.05,
+    Step = 0.01,
     Value = {
-        Min = 0.05,
-        Max = 2,
+        Min = 0.01,
+        Max = 1,
         Default = _G.FastAttackSpeed
     },
     Callback = function(v)
         _G.FastAttackSpeed = v
+        Settings.AttackInterval = v
         MarkConfigDirty()
     end
 })
@@ -3737,8 +3459,9 @@ Tabs.Config:Toggle({
     end
 })
 
-Tabs.Skills:Section({ Title = "自動列賞" })
-Tabs.Skills:Dropdown({
+Tabs.Auto:Section({ Title = "列賞" })
+
+Tabs.Auto:Dropdown({
     Title = "選擇陣營",
     Values = { "海賊", "海軍" },
     Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
@@ -3748,8 +3471,15 @@ Tabs.Skills:Dropdown({
         MarkConfigDirty()
     end,
 })
-Tabs.Skills:Toggle({ 
-    Title = "自動列賞", 
+
+Tabs.Auto:Space()
+
+Tabs.Auto:Divider()
+
+Tabs.Auto:Space()
+
+Tabs.Auto:Toggle({ 
+    Title = "開始列賞", 
     Value = _G.FTP2_Enabled,
     Callback = function(v)
         _G.FTP2_Enabled = v
@@ -3771,7 +3501,7 @@ Tabs.Skills:Toggle({
     end
 })
 
-Tabs.Skills:Slider({
+Tabs.Auto:Slider({
     Title = "鎖定玩家限時時間",
     Value = {
         Min = 60,
@@ -3784,14 +3514,15 @@ Tabs.Skills:Slider({
     end
 })
 
-Tabs.Skills:Button({
+Tabs.Auto:Button({
     Title = "跳過當前目標玩家",
     Callback = function()
         if _G.FTP2_CurrentTarget then
             local skippedName = _G.FTP2_CurrentTarget.Name
             _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
             _G.FTP2_CurrentTarget = nil
-            _G.FTP2_TargetLockTime = os.clock()
+            _G.FTP2_TargetLockTime = 0
+            _G.FTP2_TargetLockTick = os.clock()
             if WindUI then
                 WindUI:Notify({ Title = "手動跳過", Content = "已跳過該名目標玩家", duration = 3 })
             end
@@ -3803,9 +3534,9 @@ Tabs.Skills:Button({
     end
 })
 
-Tabs.Skills:Section({ Title = "自瞄" })
+Tabs.Config:Section({ Title = "自瞄" })
 
-Tabs.Skills:Toggle({
+Tabs.Config:Toggle({
     Title = "開啟自瞄 (技能 & M1)",
     Value = _G.SilentAimEnabled,
     Locked = disableHook,
@@ -3817,7 +3548,7 @@ Tabs.Skills:Toggle({
     end
 })
 
-Tabs.Skills:Toggle({
+Tabs.Config:Toggle({
     Title = "畫面鎖定",
     Desc = "供無法使用自瞄的啟動器",
     Value = _G.CamlockEnabled,
@@ -3827,7 +3558,7 @@ Tabs.Skills:Toggle({
     end
 })
 
-Tabs.Skills:Toggle({
+Tabs.Config:Toggle({
     Title = "隊伍檢測(不瞄隊友)",
     Value = _G.SilentAimTeamCheck,
     Callback = function(v)
@@ -3836,7 +3567,7 @@ Tabs.Skills:Toggle({
     end
 })
 
-Tabs.Skills:Section({ Title = "使用技能" })
+Tabs.Auto:Section({ Title = "使用技能" })
 
 local function GetEnabledWeaponList()
     local list = {}
@@ -3861,7 +3592,7 @@ local function GetEnabledSkillList(weaponType)
     return list
 end
 
-Tabs.Skills:Toggle({
+Tabs.Auto:Toggle({
     Title = "Auto Skills",
     Value = _G.AutoSkillMainEnable,
     Callback = function(v)
@@ -3870,7 +3601,7 @@ Tabs.Skills:Toggle({
     end
 })
 
-Tabs.Skills:Dropdown({
+Tabs.Auto:Dropdown({
     Title = "配置",
     Desc = "Melee,Fruit,Sword,Gun",
     Multi = true,
@@ -3891,13 +3622,13 @@ Tabs.Skills:Dropdown({
     end
 })
 
-Tabs.Skills:Space()
+Tabs.Auto:Space()
 
-Tabs.Skills:Divider()
+Tabs.Auto:Divider()
 
-Tabs.Skills:Space()
+Tabs.Auto:Space()
 
-Tabs.Skills:Dropdown({
+Tabs.Auto:Dropdown({
     Title = "拳法(Melee)",
     Multi = true,
     Value = GetEnabledSkillList("Melee"),
@@ -3908,7 +3639,7 @@ Tabs.Skills:Dropdown({
     end
 })
 
-Tabs.Skills:Dropdown({
+Tabs.Auto:Dropdown({
     Title = "果實(Blox Fruit)",
     Multi = true,
     Value = GetEnabledSkillList("Blox Fruit"),
@@ -3919,7 +3650,7 @@ Tabs.Skills:Dropdown({
     end
 })
 
-Tabs.Skills:Dropdown({
+Tabs.Auto:Dropdown({
     Title = "刀(Sword)",
     Multi = true,
     Value = GetEnabledSkillList("Sword"),
@@ -3930,7 +3661,7 @@ Tabs.Skills:Dropdown({
     end
 })
 
-Tabs.Skills:Dropdown({
+Tabs.Auto:Dropdown({
     Title = "槍(Gun)",
     Multi = true,
     Value = GetEnabledSkillList("Gun"),
