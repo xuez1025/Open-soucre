@@ -52,10 +52,6 @@ local Window = WindUI:CreateWindow({
 ----------------------------------------
 -- 變數
 ----------------------------------------
---衝刺修改
-_G.DashLengthEnabled = false
-_G.DashLength = 100
-
 --突破FPS
 _G.UnlockFPS = false
 
@@ -81,47 +77,6 @@ _G.KeyDisabled = false
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
---衝刺修改
-local DashConnection = nil
-
-local function ManageDashLength()
-    if _G.DashLengthEnabled then
-        if DashConnection then 
-            task.cancel(DashConnection) 
-            DashConnection = nil
-        end
-        
-        DashConnection = task.spawn(function()
-            while _G.DashLengthEnabled do
-                local character = LocalPlayer and LocalPlayer.Character
-                if character then
-                    local currentValue = character:GetAttribute("DashLength")
-                    if currentValue ~= _G.DashLength then
-                        character:SetAttribute("DashLength", _G.DashLength)
-                        character:SetAttribute("DashLengthAir", _G.DashLength)
-                    end
-                end
-                task.wait(0.1)
-            end
-        end)
-    else
-        if DashConnection then
-            task.cancel(DashConnection)
-            DashConnection = nil
-        end
-        
-        local character = LocalPlayer and LocalPlayer.Character
-        if character then
-            character:SetAttribute("DashLength", 1)
-            character:SetAttribute("DashLengthAir", 1)
-        end
-    end
-end
-
-if _G.DashLengthEnabled then 
-    ManageDashLength() 
-end
-
 --突破FPS
 local function applyFPSCap(state)
     if state then
@@ -232,7 +187,6 @@ end)
 --分頁
 ----------------------------------------
 local Tabs = {
-    Attributes   = Window:Tab({ Title = "自身屬性", Icon = "shield" }),
     Graphics   = Window:Tab({ Title = "畫質", Icon = "tv" }),
     Settings   = Window:Tab({ Title = "設定", Icon = "settings" })
 }
@@ -240,32 +194,6 @@ local Tabs = {
 ----------------------------------------
 --元件
 ----------------------------------------
-Tabs.Attributes:Section({ Title = "屬性" })
-
-Tabs.Attributes:Toggle({
-    Title = "修改衝刺",
-    Value = _G.DashLengthEnabled,
-    Callback = function(v)
-        _G.DashLengthEnabled = v
-        ManageDashLength()
-    end
-})
-
-Tabs.Attributes:Slider({
-    Title = "衝刺距離",
-    Value = {
-        Min = 10,
-        Max = 500,
-        Default = _G.DashLength
-    },
-    Callback = function(v)
-        _G.DashLength = v
-        if _G.DashLengthEnabled then 
-            ManageDashLength() 
-        end
-    end
-})
-
 Tabs.Graphics:Section({ Title = "畫質設定" })
 
 Tabs.Graphics:Toggle({
