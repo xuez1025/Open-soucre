@@ -1656,8 +1656,10 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ========= 統一移動系統（LinearVelocity 飛行，速度 170） =========
-local MOVE_SPEED = 170          -- 統一移動速度 (studs/s)
+-- ========= 統一移動系統（LinearVelocity 飛行，動態速度） =========
+local MOVE_SPEED = 170          -- 基礎移動速度 (studs/s)
+local MAX_MOVE_SPEED = 300      -- 接近玩家時的最高速度上限
+local SPEED_RAMP_DIST = 150     -- 進入此距離(studs)內開始加速
 
 _G.FTP_LinearVelocity = nil
 _G.FTP_AntiGravity = nil
@@ -1706,7 +1708,22 @@ local function SetupFTPFlightComponents(hrp)
     _G.FTP_AntiGravity = vf
 end
 
--- 統一移動函式：所有移動（追人、逃跑）皆透過此函式，以固定速度 170 朝指定位置飛行
+-- 動態移動速度：與目標玩家距離越近越快；>=150 維持 170，貼近時最高 300
+local function GetMoveSpeed()
+    local target = _G.FTP2_CurrentTarget
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local tgHRP = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    if not myHRP or not tgHRP then return MOVE_SPEED end
+
+    local dist = (tgHRP.Position - myHRP.Position).Magnitude
+    if dist >= SPEED_RAMP_DIST then return MOVE_SPEED end
+
+    local t = 1 - (dist / SPEED_RAMP_DIST)   -- 距離 150→0 對應係數 0→1
+    return MOVE_SPEED + (MAX_MOVE_SPEED - MOVE_SPEED) * t
+end
+
+-- 統一移動函式：所有移動（追人、逃跑）皆透過此函式，朝指定位置飛行
 local function MoveTo(Pos)
     local char = LocalPlayer.Character
     if not char then return end
@@ -1719,7 +1736,7 @@ local function MoveTo(Pos)
 
     local dir = Pos - HRP.Position
     if dir.Magnitude > 0.1 then
-        _G.FTP_LinearVelocity.VectorVelocity = dir.Unit * MOVE_SPEED
+        _G.FTP_LinearVelocity.VectorVelocity = dir.Unit * GetMoveSpeed()
     end
 end
 
