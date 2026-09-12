@@ -2363,6 +2363,124 @@ local function GetNearestPlayer()
     return nearestPlayer
 end
 
+-- ========= 中轉傳送點（先飛往傳送點等待 2 秒，再前往玩家） =========
+local TRANSIT_WAIT_TIME = 2        -- 抵達傳送點後等待秒數
+local TRANSIT_ARRIVE_DIST = 1     -- 判定「抵達傳送點」的距離
+
+local TransitPoints = {
+    -- 一海
+    World1 = {
+        { point = Vector3.new(61177, -5, 1954),    dest = Vector3.new(3865, 8, -1926) },
+        { point = Vector3.new(4056, -4, -1814),    dest = Vector3.new(61164, 5, 1819) },
+        { point = Vector3.new(-4197, 1092, -362),  dest = Vector3.new(-6024, 5469, 2203) },
+        { point = Vector3.new(-6022, 5469, 2215),  dest = Vector3.new(-4167, 1092, -347) },
+    },
+    -- 二海
+    World2 = {
+        { point = Vector3.new(2283, 16, 910),      dest = Vector3.new(-287, 306, 599) },
+        { point = Vector3.new(-288, 306, 593),     dest = Vector3.new(2285, 15, 904) },
+        { point = Vector3.new(922, 125, 32843),    dest = Vector3.new(-6509, 83, -133) },
+        { point = Vector3.new(-6501, 83, -125),    dest = Vector3.new(923, 125, 32853) },
+    },
+    -- 三海
+    World3 = {
+        { point = Vector3.new(-5060, 317, -3193),  dest = Vector3.new(-12464, 376, -7566) },
+        { point = Vector3.new(-12464, 376, -7566), dest = Vector3.new(-5060, 317, -3193) },
+        { point = Vector3.new(-5096, 317, -3178),  dest = Vector3.new(-16813, 58, 305) },
+        { point = Vector3.new(-5027, 317, -3207),  dest = Vector3.new(5651, 1015, -350) },
+    },
+}
+
+local function GetWorldTransitPoints()
+    local pid = game.PlaceId
+    if pid == 2753915549 or pid == 85211729168715 then
+        return TransitPoints.World1
+    elseif pid == 4442272183 or pid == 79091703265657 then
+        return TransitPoints.World2
+    elseif pid == 7449423635 or pid == 100117331123089 then
+        return TransitPoints.World3
+    end
+    return {}
+end
+
+-- 依「智慧距離」規劃中轉路線：回傳依序要飛往的傳送點位置（最多兩段）
+local function PlanTransitRoute(fromPos, targetPos)
+    local portals = GetWorldTransitPoints()
+    if #portals == 0 then return {} end
+
+    local bestCost = (targetPos - fromPos).Magnitude   -- 直飛作為基準
+    local bestIndices = {}
+
+    -- 單一中轉：目前位置 → 傳送點 → 目的地 → 目標玩家
+    for i, p in ipairs(portals) do
+        local cost = (p.point - fromPos).Magnitude + (p.dest - targetPos).Magnitude
+        if cost < bestCost then
+            bestCost = cost
+            bestIndices = { i }
+        end
+    end
+
+    -- 兩段中轉：目前位置 → 傳送點A → 目的地A(接近傳送點B) → 傳送點B → 目的地B → 目標玩家
+    for i, p in ipairs(portals) do
+        for j, q in ipairs(portals) do
+            if i ~= j then
+                local cost = (p.point - fromPos).Magnitude
+                           + (p.dest - q.point).Magnitude
+                           + (q.dest - targetPos).Magnitude
+                if cost < bestCost then
+                    bestCost = cost
+                    bestIndices = { i, j }
+                end
+            end
+        end
+    end
+
+    local waypoints = {}
+    for _, idx in ipairs(bestIndices) do
+        table.insert(waypoints, portals[idx].point)
+    end
+    return waypoints
+end
+
+-- 中轉狀態
+_G.FTP2_Transit = nil          -- { waypoints = {Vector3...}, index = 1, waiting = false, waitUntil = 0 }
+_G.FTP2_TransitTarget = nil    -- 已規劃中轉的目標玩家
+
+-- 執行中轉：飛往傳送點 → 抵達後等待 2 秒 → 前往下一段 / 目標玩家
+local function RunTransit()
+    local transit = _G.FTP2_Transit
+    if not transit then return end
+
+    local char = LocalPlayer.Character
+    local myHRP = char and char:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+
+    if transit.waiting then
+        StopMove()
+        if os.clock() >= transit.waitUntil then
+            transit.waiting = false
+            transit.index = transit.index + 1
+            if transit.index > #transit.waypoints then
+                _G.FTP2_Transit = nil   -- 中轉完成，改為飛往玩家
+            end
+        end
+        return
+    end
+
+    local wp = transit.waypoints[transit.index]
+    if not wp then
+        _G.FTP2_Transit = nil
+        return
+    end
+
+    MoveTo(wp)   -- 先飛行至選定的傳送點
+    if (wp - myHRP.Position).Magnitude <= TRANSIT_ARRIVE_DIST then
+        transit.waiting = true
+        transit.waitUntil = os.clock() + TRANSIT_WAIT_TIME
+        StopMove()
+    end
+end
+
 -- ========= 追人移動（LinearVelocity 飛行，使用 AutoBounty 預判） =========
 _G.G_TeleportOffsetX = _G.G_TeleportOffsetX or 0
 _G.G_TeleportOffsetY = _G.G_TeleportOffsetY or 0
@@ -2461,6 +2579,8 @@ local function StartFTPFlight2()
     _G.FTP2_LastSkillCastTime = 0
     _G.FTP2_StartTime = os.clock()
     _G.FTP2_FleeReturnPos = nil
+    _G.FTP2_Transit = nil
+    _G.FTP2_TransitTarget = nil
     StopMove()
 
     if type(setPlatformStand) == "function" then setPlatformStand(true) end
@@ -2581,6 +2701,25 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
             end
         end
 
+        -- 中轉規劃：目標變更時，依智慧距離重新選擇傳送點
+        if _G.FTP2_CurrentTarget then
+            if _G.FTP2_CurrentTarget ~= _G.FTP2_TransitTarget then
+                _G.FTP2_TransitTarget = _G.FTP2_CurrentTarget
+                _G.FTP2_Transit = nil
+                local myH = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local tgH = _G.FTP2_CurrentTarget.Character and _G.FTP2_CurrentTarget.Character:FindFirstChild("HumanoidRootPart")
+                if myH and tgH then
+                    local waypoints = PlanTransitRoute(myH.Position, tgH.Position)
+                    if #waypoints > 0 then
+                        _G.FTP2_Transit = { waypoints = waypoints, index = 1, waiting = false, waitUntil = 0 }
+                    end
+                end
+            end
+        else
+            _G.FTP2_Transit = nil
+            _G.FTP2_TransitTarget = nil
+        end
+
         local lockNow = os.clock()
         if _G.FTP2_CurrentTarget then
             if _G.FTP2_CurrentTarget ~= oldTarget then
@@ -2611,7 +2750,12 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         end
 
         if _G.FTP2_CurrentTarget then
-            FlyToTargetLogic2(_G.FTP2_CurrentTarget)
+            if _G.FTP2_Transit then
+                -- 中轉中：先飛往傳送點並等待，完成後才飛往玩家
+                RunTransit()
+            else
+                FlyToTargetLogic2(_G.FTP2_CurrentTarget)
+            end
         else
             FleeUpLogic()
 
@@ -2626,6 +2770,8 @@ local function StopFTPFlight2()
     _G.FTP2_Enabled = false
     _G.FTP2_CurrentTarget = nil
     _G.FTP2_FleeReturnPos = nil
+    _G.FTP2_Transit = nil
+    _G.FTP2_TransitTarget = nil
     StopMove()
     ClearFTPFlightComponents()
     if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(false) end
