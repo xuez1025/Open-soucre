@@ -2091,26 +2091,26 @@ local function GetCurrentWorldEntrances()
     -- 一海 (World 1)
     if table.find({2753915549, 85211729168715}, placeId) then
         pool = {
-            { Arg = Vector3.new(61163.85, 11.68, 1819.78), Dest = Vector3.new(61164, 5, 1820) },
-            { Arg = Vector3.new(3864.68, 6.73, -1926.21), Dest = Vector3.new(3865, 5, -1926) },
-            { Arg = Vector3.new(-4607.82, 874.39, -1667.55), Dest = Vector3.new(-4608, 873, -1668) },
-            { Arg = Vector3.new(-7894.61, 5547.14, -380.29), Dest = Vector3.new(-7895, 5546, -380) }
+            { Arg = Vector3.new(61177, -5, 1954),   Dest = Vector3.new(3865, 8, -1926) },    -- 傳送點1
+            { Arg = Vector3.new(4056, -4, -1814),   Dest = Vector3.new(61164, 5, 1819) },    -- 傳送點2
+            { Arg = Vector3.new(-4197, 1092, -362), Dest = Vector3.new(-6024, 5469, 2203) }, -- 傳送點3
+            { Arg = Vector3.new(-6022, 5469, 2215), Dest = Vector3.new(-4167, 1092, -347) }, -- 傳送點4
         }
     -- 二海 (World 2)
     elseif table.find({4442272183, 79091703265657}, placeId) then
         pool = {
-            { Arg = Vector3.new(2285, 15, 882), Dest = Vector3.new(2285, 15, 882) },
-            { Arg = Vector3.new(-380, 350, 630), Dest = Vector3.new(-380, 350, 630) },
-            { Arg = Vector3.new(924, 125, 32882), Dest = Vector3.new(924, 125, 32882) },
-            { Arg = Vector3.new(-6491, 116, -107), Dest = Vector3.new(-6491, 116, -107) }
+            { Arg = Vector3.new(2283, 16, 910),   Dest = Vector3.new(-287, 306, 599) },  -- 傳送點5
+            { Arg = Vector3.new(-288, 306, 593),  Dest = Vector3.new(2285, 15, 904) },   -- 傳送點6
+            { Arg = Vector3.new(922, 125, 32843), Dest = Vector3.new(-6509, 83, -133) }, -- 傳送點7
+            { Arg = Vector3.new(-6501, 83, -125), Dest = Vector3.new(923, 125, 32853) }, -- 傳送點8
         }
     -- 三海 (World 3)
     elseif table.find({7449423635, 100117331123089}, placeId) then
         pool = {
-            { Arg = Vector3.new(5678, 1013, -312), Dest = Vector3.new(5678, 1013, -312) },
-            { Arg = Vector3.new(-12551, 337, -7507), Dest = Vector3.new(-12551, 337, -7507) },
-            { Arg = Vector3.new(-5098, 317, -3179), Dest = Vector3.new(-16813, 58, 305) },
-            { Arg = Vector3.new(-5038, 315, -3135), Dest = Vector3.new(-5038, 315, -3135) },
+            { Arg = Vector3.new(-5060, 317, -3193),  Dest = Vector3.new(-12464, 376, -7566) }, -- 傳送點9
+            { Arg = Vector3.new(-12464, 376, -7566), Dest = Vector3.new(-5060, 317, -3193) },  -- 傳送點10
+            { Arg = Vector3.new(-5096, 317, -3178),  Dest = Vector3.new(-16813, 58, 305) },    -- 傳送點11
+            { Arg = Vector3.new(-5027, 317, -3207),  Dest = Vector3.new(5651, 1015, -350) },   -- 傳送點12
         }
     end
     
@@ -3498,22 +3498,22 @@ if _G.AutoFlee then StartAutoFlee() end
 --Teleport
 local TeleportData = {
     World1 = {
-        ["海軍戰艦"] = CFrame.new(-3161, 209, 2067),
-        ["新手村"]   = CFrame.new(1106, 16, 1431),
-        ["叢林"]     = CFrame.new(-1422, 48, 21),
-        ["海盜村"]   = CFrame.new(-1151, 131, 4166),
-        ["中城"]     = CFrame.new(-786, 74, 1607),
-        ["可樂"]     = CFrame.new(-1880, 25, -3320),
-        ["水下"]     = CFrame.new(4039, 2, -1820),
-        ["噴泉"]     = CFrame.new(5668, 580, 4301),
-        ["上空島"]   = CFrame.new(-7950, 5814, -1968),
-        ["空島"]     = CFrame.new(-4913, 738, -2578),
-        ["沙漠"]     = CFrame.new(1055, 52, 4490),
-        ["火山"]     = CFrame.new(-5412, 11, 8454),
-        ["監獄"]     = CFrame.new(5327, 89, 717),
-        ["海洋堡壘"] = CFrame.new(-5150, 375, 4445),
-        ["雪地"]     = CFrame.new(1486, 87, -1281),
-        ["暴徒領地"] = CFrame.new(-2836, 7, 5325),
+        ["海軍戰艦"] = CFrame.new(-2924, 87, 2079),
+        ["新手村"]   = CFrame.new(1115, 15, 1430),
+        ["叢林"]     = CFrame.new(-1502, 73, 20),
+        ["海盜村"]   = CFrame.new(-1131, 83, 4169),
+        ["中城"]     = CFrame.new(-828, 70, 1621),
+        ["可樂"]     = CFrame.new(-1848, 179, -3335),
+        ["水下"]     = CFrame.new(61351, 65, 1263),
+        ["噴泉"]     = CFrame.new(5172, 76, 4045),
+        ["上空島"]   = CFrame.new(-6110, 5513, 1806),
+        ["空島"]     = CFrame.new(-4700, 967, -778),
+        ["沙漠"]     = CFrame.new(1151, 33, 4403),
+        ["火山"]     = CFrame.new(-5216, 18, 8375),
+        ["監獄"]     = CFrame.new(4955, 12, 739),
+        ["海洋堡壘"] = CFrame.new(-4661, 6, 4167),
+        ["雪地"]     = CFrame.new(1462, 78, -1283),
+        ["暴徒領地"] = CFrame.new(-2830, 3, 5313),
     },
     World2 = {
         ["碼頭(2)"]   = CFrame.new(-11, 38, 2724),
@@ -3644,9 +3644,12 @@ local function SmartTeleportTo(targetCFrame)
         if not myHRP or not myHum then return end
 
         local targetPos = targetCFrame.Position
-        local currentDist = (targetPos - myHRP.Position).Magnitude
+        local startPos = myHRP.Position
         local speed = _G.TP_FlySpeed or 300
 
+        -- 智慧路徑規劃：比較「直飛目標」與「飛往傳送門 + 啟用傳送 + 從目的地飛往目標」的總時間，
+        -- 挑出最快抵達目標島嶼的捷徑傳送門 (其目的地離目標最近)
+        local currentDist = (targetPos - startPos).Magnitude
         local directFlightTime = currentDist / speed
         local bestEntrance = nil
         local bestTotalTime = directFlightTime
@@ -3654,38 +3657,41 @@ local function SmartTeleportTo(targetCFrame)
         local pool = GetCurrentWorldEntrances()
 
         for _, e in ipairs(pool) do
-            local destDistToTarget = (e.Dest - targetPos).Magnitude
-            local totalTimeViaPortal = (destDistToTarget / speed) + teleportPenalty
-
-            if totalTimeViaPortal < bestTotalTime and (currentDist - destDistToTarget) > 150 then
-                bestTotalTime = totalTimeViaPortal
-                bestEntrance = e
-            end
-        end
-
-        if bestEntrance then
-            local lastTime = lastEntranceTicks[bestEntrance.Arg] or 0
+            local lastTime = lastEntranceTicks[e.Arg] or 0
             if os.clock() - lastTime > 4 then
-                lastEntranceTicks[bestEntrance.Arg] = os.clock()
-                
-                if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
-                
-                pcall(function()
-                    local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-                    commF:InvokeServer("requestEntrance", bestEntrance.Arg)
-                end)
+                local flyToPortalTime = (e.Arg - startPos).Magnitude / speed
+                local destDistToTarget = (e.Dest - targetPos).Magnitude
+                local totalTimeViaPortal = flyToPortalTime + teleportPenalty + (destDistToTarget / speed)
 
-                local startTime = os.clock()
-                while (os.clock() - startTime) < 1.2 do
-                    if _G.TP_CurrentToken ~= myToken then return end
-                    task.wait(0.05)
+                if totalTimeViaPortal < bestTotalTime and (currentDist - destDistToTarget) > 150 then
+                    bestTotalTime = totalTimeViaPortal
+                    bestEntrance = e
                 end
             end
         end
 
+        if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
+
         myHum.PlatformStand = true
         myHum:ChangeState(Enum.HumanoidStateType.Physics)
         SetupTPFlightComponents(myHRP)
+
+        -- 飛行階段：先飛往傳送門，抵達後啟用傳送，再飛往目標島嶼
+        local phase = bestEntrance and "ToPortal" or "ToTarget"
+        local flyToPos = bestEntrance and bestEntrance.Arg or targetPos
+        local arriveDist = bestEntrance and 6 or 4
+        local pauseUntil = 0
+
+        local function StopTPVelocity()
+            if TP_LinearVelocity then
+                TP_LinearVelocity.VectorVelocity = Vector3.zero
+            end
+            local c = LocalPlayer.Character
+            local h = c and c:FindFirstChild("HumanoidRootPart")
+            if h then
+                h.AssemblyLinearVelocity = Vector3.zero
+            end
+        end
 
         TP_FlightConn = RunService.RenderStepped:Connect(function()
             if _G.TP_CurrentToken ~= myToken or not _G.TP_IsTeleporting then
@@ -3697,6 +3703,16 @@ local function SmartTeleportTo(targetCFrame)
             local curHRP = curChar and curChar:FindFirstChild("HumanoidRootPart")
             if not curHRP then return end
 
+            -- 傳送後角色若被重建，重新掛載飛行元件
+            if not TP_LinearVelocity or TP_LinearVelocity.Parent ~= curHRP then
+                local curHum = curChar:FindFirstChildOfClass("Humanoid")
+                if curHum then
+                    curHum.PlatformStand = true
+                    curHum:ChangeState(Enum.HumanoidStateType.Physics)
+                end
+                SetupTPFlightComponents(curHRP)
+            end
+
             if type(_G.SetNoclipState) == "function" then _G.SetNoclipState(true) end
             for _, part in ipairs(curChar:GetDescendants()) do
                 if part:IsA("BasePart") and part.CanCollide then
@@ -3704,10 +3720,31 @@ local function SmartTeleportTo(targetCFrame)
                 end
             end
 
-            local dir = targetPos - curHRP.Position
+            -- 啟用傳送門後暫停飛行，等待角色落在目的地
+            if os.clock() < pauseUntil then
+                StopTPVelocity()
+                return
+            end
+
+            local dir = flyToPos - curHRP.Position
             local dist = dir.Magnitude
 
-            if dist <= 4 then
+            if dist <= arriveDist then
+                if phase == "ToPortal" then
+                    -- 已飛抵傳送門，啟用捷徑傳送並等待落點
+                    lastEntranceTicks[bestEntrance.Arg] = os.clock()
+                    pcall(function()
+                        commF:InvokeServer("requestEntrance", bestEntrance.Arg)
+                    end)
+
+                    phase = "ToTarget"
+                    flyToPos = targetPos
+                    arriveDist = 4
+                    pauseUntil = os.clock() + 1.2
+                    StopTPVelocity()
+                    return
+                end
+
                 ForceStopAllMovement()
                 if WindUI then
                     WindUI:Notify({ Title = "傳送", Content = "已成功到達該島嶼", Duration = 3 })
@@ -3715,13 +3752,17 @@ local function SmartTeleportTo(targetCFrame)
                 return
             end
 
+            -- 接近目標時減速，確保精準抵達
             local currentFlySpeed = speed
+            if dist < 30 then
+                currentFlySpeed = math.max(20, speed * (dist / 30))
+            end
 
             if TP_LinearVelocity then
                 TP_LinearVelocity.VectorVelocity = dir.Unit * currentFlySpeed
             end
 
-            local lookAt = Vector3.new(targetPos.X, curHRP.Position.Y, targetPos.Z)
+            local lookAt = Vector3.new(flyToPos.X, curHRP.Position.Y, flyToPos.Z)
             if (lookAt - curHRP.Position).Magnitude > 0.1 then
                 curHRP.CFrame = CFrame.new(curHRP.Position, lookAt)
             end
