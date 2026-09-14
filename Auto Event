@@ -259,6 +259,9 @@ _G.SetNoclipState = nil
 --自動抽果
 _G.AutoGachaEnabled = false
 
+--Auto store
+_G.AutoStoreFruit = true
+
 -- 選擇陣營
 _G.SelectTeam = "Marines"
 
@@ -285,7 +288,7 @@ end
 
 local ScriptLoadstring = [[if isfile("AutoEvent.file") then
     if readfile("AutoEvent.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/autoevent"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Event"))()
     end
 end]]
 
@@ -309,6 +312,7 @@ local ConfigDirty = false
 local ConfigKeys = {
 		"BringMob",
 		"AutoGachaEnabled",
+		"AutoStoreFruit",
     "SelectTeam",
     "FastAttack",
 		"AutoBusoEnabled",
@@ -1047,6 +1051,39 @@ task.spawn(function()
     end
 end)
 
+--store fruit
+task.spawn(function()
+    while true do
+        if _G.AutoStoreFruit then
+            pcall(function()
+                local character = LocalPlayer.Character
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                
+                -- 檢查背包中的水果
+                if backpack then
+                    for _, v in pairs(backpack:GetChildren()) do
+                        if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                            local originalName = v:GetAttribute("OriginalName") or v.Name
+                            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StoreFruit", originalName, v)
+                        end
+                    end
+                end
+                
+                -- 檢查角色手上（裝備中）的水果
+                if character then
+                    for _, v in pairs(character:GetChildren()) do
+                        if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                            local originalName = v:GetAttribute("OriginalName") or v.Name
+                            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StoreFruit", originalName, v)
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait(0.5) -- 每 0.5 秒檢查一次，避免過度佔用效能或觸發遊戲防外掛限制
+    end
+end)
+
 -- 選擇陣營
 local function SelectTeam()
     if not LocalPlayer.Team or LocalPlayer.Team.Name ~= _G.SelectTeam then
@@ -1359,6 +1396,14 @@ Tabs.Auto:Toggle({
     Value = _G.AutoGachaEnabled,
     Callback = function(v)
         _G.AutoGachaEnabled = v
+    end
+})
+
+Tabs.Auto:Toggle({
+    Title = "自動存果",
+    Value = _G.AutoStoreFruit,
+    Callback = function(state)
+        _G.AutoStoreFruit = state
     end
 })
 
