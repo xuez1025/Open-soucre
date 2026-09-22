@@ -274,12 +274,12 @@ _G.MaterialQuestEnabled = false
 
 local MaterialFarm = {
     [1] = {
-        { Name = "天使翅膀", En = "Angel Wings", Positions = { Vector3.new(-7898, 5639, -1459) }, Enemies = { "Royal Soldier", "Royal Squad" }, Quest = { "StartQuest", "SkyExp2Quest", 2 } },
-        { Name = "皮革",     En = "Leather",     Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
-        { Name = "岩漿石",   En = "Magma Ore",   Positions = { Vector3.new(-5564, 47, 8517) },     Enemies = { "Military Soldier", "Military Spy" }, Quest = { "StartQuest", "MagmaQuest", 2 } },
-        { Name = "廢金屬",   En = "Scrap Metal", Positions = { Vector3.new(-1142, 57, 4135) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
-        { Name = "雪怪毛皮", En = "Yeti Fur",    Positions = { Vector3.new(1203, 145, -1550) },    Enemies = { "Yeti" },                           Quest = { "StartQuest", "SnowQuest", 3 } },
-        { Name = "魚尾",     En = "Fish Tail",   Positions = { Vector3.new(60999, 96, 1404), Vector3.new(61711, 96, 1406) }, Enemies = { "Fishman Warrior", "Fishman Commando" }, Quest = { "StartQuest", "FishmanQuest", 2 } },
+        { Name = "天使翅膀", En = "Angel Wings", Positions = { Vector3.new(-6932, 5590, 1088) }, Enemies = { "Royal Soldier", "Royal Squad" }, Quest = { "StartQuest", "SkyExp2Quest", 2 } },
+        { Name = "皮革",     En = "Leather",     Positions = { Vector3.new(-1134, 83, 4174) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
+        { Name = "岩漿石",   En = "Magma Ore",   Positions = { Vector3.new(-5490, 58, 8490) },     Enemies = { "Military Soldier", "Military Spy" }, Quest = { "StartQuest", "MagmaQuest", 2 } },
+        { Name = "廢金屬",   En = "Scrap Metal", Positions = { Vector3.new(-1134, 83, 4174) },     Enemies = { "Brute", "Pirate" },               Quest = { "StartQuest", "BuggyQuest1", 2 } },
+        { Name = "雪怪毛皮", En = "Yeti Fur",    Positions = { Vector3.new(1173, 97, -1710) },    Enemies = { "Yeti" },                           Quest = { "StartQuest", "SnowQuest", 3 } },
+        { Name = "魚尾",     En = "Fish Tail",   Positions = { Vector3.new(60928, 25, 1440), Vector3.new(61820, 25, 1412) }, Enemies = { "Fishman Warrior", "Fishman Commando" }, Quest = { "StartQuest", "FishmanQuest", 2 } },
     },
     [2] = {
         { Name = "皮革",     En = "Leather",     Positions = { Vector3.new(-857, 135, 1407) },       Enemies = { "Mercenary" },                    Quest = { "StartQuest", "Area1Quest", 2 } },
@@ -318,9 +318,9 @@ end
 
 -- 接任務（有任務時暫停 每5秒自動接取）
 local function HasActiveQuest()
-    local main = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
-    local questFrame = main and main:FindFirstChild("Quest")
-    return questFrame ~= nil and questFrame.Visible == true
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local trackedQuestFrame = playerGui and playerGui:FindFirstChild("TrackedQuestFrame")
+    return trackedQuestFrame ~= nil and trackedQuestFrame:FindFirstChild("Frame") ~= nil
 end
 
 local function AcceptMaterialQuest(force)
