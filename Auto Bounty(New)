@@ -223,8 +223,10 @@ local ghostShipLavaRemoved = false
 _G.FTP2_Enabled = false
 _G.FTP2_FlightConn = nil
 _G.FTP2_PlayerLeaveConn = nil
-_G.FTP2_Blacklist = {}
-_G.FTP2_SkipUntil = {}       -- 暫時跳過名單：原因消失後可再次評估（非永久黑名單）
+_G.FTP2_Blacklist = {}             -- 條件不符的原因記錄（僅供提示／除錯，不作為排除依據；符合條件時自動清除）
+_G.FTP2_SkipList = {}              -- 永久跳過名單（僅「手動跳過」會加入，不會自動解除）
+_G.FTP2_TempSkip = {}              -- 暫時跳過名單（鎖定逾時等），到期後自動恢復為可選目標
+_G.FTP2_TempSkipCooldown = 120     -- 暫時跳過的恢復秒數（到期即重新可被選為目標）
 _G.FTP2_HasTriggeredHop = false
 _G.FTP2_TimeoutLimit = 120
 
@@ -236,6 +238,7 @@ _G.FTP2_OrbitRadius = 50
 _G.FTP2_OrbitInterval = 0.016
 _G.FTP2_LowHpLockPercent = 30
 _G.FTP2_CurrentTarget = nil
+_G.FTP2_TargetLostSince = nil     -- 鎖定目標消失的起始時間（寬限期內不移除目標）
 _G.FTP2_TargetLockTime = 0        -- 已累積的鎖定時間（僅在實際交戰時累加）
 _G.FTP2_TargetLockTick = 0        -- 上一幀時間，用於計算鎖定時間的累加量
 _G.FTP2_LastSkillCastTime = 0     -- 最近一次實際施放技能的時間
@@ -264,7 +267,12 @@ _G.FTP2_SafeZonePositions = {
 }
 
 local StartServerHop
+local StopServerHop
+local StartBountyServerHop
+local StartBrowserHopFallback
 local IsSafeToHopCheck
+local GetCombatStatus
+local IsValidTarget
 
 --自瞄
 _G.SilentAimEnabled = true
@@ -627,126 +635,362 @@ if not _G.JumpHistory then
     _G.JumpHistory = {}
 end
 
-local HopThread = nil
-local HOP_TIMEOUT = 3       -- 換服等待上限（秒）：3 秒內未完成視為本次失敗
-local HOP_RETRY_DELAY = 1   -- 本次失敗後等待（秒）再恢復跳服
+local ServerHopConn = nil
 
--- 取得公開伺服器列表
-local function GetServers(cursor)
-    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId
-        .. "/servers/Public?sortOrder=Desc&excludeFullGames=true&limit=100"
-    if cursor then
-        url = url .. "&cursor=" .. cursor
+-- [跳服前檢查] 目前伺服器內是否仍有符合條件的玩家（判定與自動列賞的目標一致）
+local function HasQualifyingPlayer()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if IsValidTarget(plr) then
+            return true
+        end
     end
-
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(game:HttpGet(url))
-    end)
-
-    if success and result and result.data then
-        return result
-    end
-    return nil
+    return false
 end
 
--- 篩選目標伺服器：排除目前伺服器、歷史嘗試過的伺服器、已滿伺服器
-local function FindTargetServer()
-    local currentJobId = tostring(game.JobId)
+-- 跳服前等待：持續等待並重新檢查，直到伺服器內沒有任何符合條件的玩家
+local function WaitNoQualifyingPlayers()
+    local notified = false
+    while getgenv().IsServerHopping do
+        if not HasQualifyingPlayer() then
+            return true
+        end
+        if not notified then
+            notified = true
+            if WindUI then
+                WindUI:Notify({ Title = "自動跳服", Content = "目前伺服器仍有符合條件的玩家，暫緩跳服", Duration = 3 })
+            end
+        end
+        task.wait(1)
+    end
+    return false
+end
 
-    local function FilterPage(data)
+-- 跳服前額外等待 5 秒：期間持續確認無賞金風險，若再次出現符合條件的玩家則視為取消
+-- 回傳："ok" 可跳服 / "danger" 賞金風險 / "player" 出現符合條件的玩家 / "stopped" 已停止跳服
+local HOP_CONFIRM_DELAY = 5
+local function ConfirmHopSafe()
+    local deadline = os.clock() + HOP_CONFIRM_DELAY
+    while os.clock() < deadline do
+        if not getgenv().IsServerHopping then
+            return "stopped"
+        end
+        if GetCombatStatus() == "BountyAtRisk" then
+            return "danger"
+        end
+        if HasQualifyingPlayer() then
+            return "player"
+        end
+        task.wait(0.2)
+    end
+    return "ok"
+end
+
+-- 跳服前完整確認：先確認伺服器內無符合條件的玩家，再等待 5 秒確認無賞金風險
+local function WaitHopAllowed()
+    if not WaitNoQualifyingPlayers() then
+        return "stopped"
+    end
+    return ConfirmHopSafe()
+end
+
+function StopServerHop()
+    getgenv().IsServerHopping = false
+    getgenv().ShuttingDown = false
+
+    if ServerHopConn then
+        task.cancel(ServerHopConn)
+        ServerHopConn = nil
+    end
+end
+
+-- ========= 自動換服（Roblox 公開伺服器列表 + 歷史去重 + 換服安全檢查） =========
+function StartServerHop()
+    if getgenv().IsServerHopping == true then
+        return
+    end
+
+    getgenv().IsServerHopping = true
+    getgenv().ShuttingDown = true
+
+    if ServerHopConn then
+        task.cancel(ServerHopConn)
+        ServerHopConn = nil
+    end
+
+    local PlaceId = game.PlaceId
+    local JobId = game.JobId
+
+    -- 取得伺服器列表（排除已滿伺服器）
+    local function GetServers(cursor)
+        local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&excludeFullGames=true&limit=100"
+        if cursor then
+            url = url .. "&cursor=" .. cursor
+        end
+
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(url))
+        end)
+
+        if success and result and result.data then
+            return result
+        end
+        return nil
+    end
+
+    local function FindInPage(data, strict)
         if not data then return nil end
         for _, server in ipairs(data) do
             if type(server) == "table" and server.id and server.playing and server.maxPlayers then
                 local id = tostring(server.id)
-                if id ~= currentJobId
-                    and not table.find(_G.JumpHistory, id)
-                    and server.playing < server.maxPlayers then
-                    return id
+                local playing = tonumber(server.playing) or 0
+                local maxPlayers = tonumber(server.maxPlayers) or 12
+                -- 不是當前服 + 沒有跳過記錄 + 人數未滿
+                if id ~= tostring(JobId) and not table.find(_G.JumpHistory, id) and playing < maxPlayers then
+                    if strict then
+                        -- 只挑人數 7~10 人的伺服器
+                        if playing >= 7 and playing <= 10 then
+                            return id
+                        end
+                    else
+                        -- 備援條件：找不到 7~10 人時，進入有人且未滿的伺服器
+                        if playing >= 2 then
+                            return id
+                        end
+                    end
                 end
             end
         end
         return nil
     end
 
-    local serverData = GetServers()
-    if not serverData then return nil end
+    local startJobId = game.JobId
 
-    local targetId = FilterPage(serverData.data)
-    if targetId then return targetId end
+    -- [跳服逾時] 傳送後 3 秒內未完成跳服：停止本次跳服，等待 1 秒後恢復跳服流程
+    local HOP_TIMEOUT = 3
+    local HOP_FAIL_WAIT = 1
 
-    -- 第一頁沒找到，嘗試第二頁
-    if serverData.nextPageCursor then
-        local nextPageData = GetServers(serverData.nextPageCursor)
-        if nextPageData then
-            return FilterPage(nextPageData.data)
-        end
-    end
-    return nil
-end
-
--- 發送傳送請求
-local function RequestTeleport(targetServerId)
-    local ServerBrowser = ReplicatedStorage:FindFirstChild("__ServerBrowser")
-    if ServerBrowser then
-        pcall(function()
-            ServerBrowser:InvokeServer("teleport", targetServerId)
-        end)
-    else
-        pcall(function()
-            game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, targetServerId, LocalPlayer)
-        end)
-    end
-end
-
--- 停止跳服
-local function StopServerHop()
-    getgenv().IsServerHopping = false
-    getgenv().ShuttingDown = false
-
-    if HopThread then
-        task.cancel(HopThread)
-        HopThread = nil
-    end
-end
-
--- 啟動跳服：換服 3 秒 → 未完成則等待 1 秒 → 恢復跳服
-local function StartServerHop()
-    StopServerHop()
-
-    getgenv().IsServerHopping = true
-    getgenv().ShuttingDown = true
-
-    HopThread = task.spawn(function()
+    ServerHopConn = task.spawn(function()
         while getgenv().IsServerHopping do
-            local targetServerId = FindTargetServer()
-
-            if targetServerId then
-                -- 記入歷史（最多保留 100 筆）
-                table.insert(_G.JumpHistory, targetServerId)
-                if #_G.JumpHistory > 100 then
-                    table.remove(_G.JumpHistory, 1)
-                end
-
-                -- 發起換服
-                RequestTeleport(targetServerId)
-
-                -- 換服等待窗口（3 秒內未完成即判定本次失敗）
-                task.wait(HOP_TIMEOUT)
-
-                -- 3 秒後仍未切服：停止本次跳服，等待 1 秒後恢復跳服
-                if getgenv().IsServerHopping then
-                    task.wait(HOP_RETRY_DELAY)
-                end
-            else
-                -- 無可用伺服器：重置歷史後重試
-                _G.JumpHistory = {}
-                task.wait(HOP_RETRY_DELAY)
+            -- 已經進到其他伺服器：結束跳服
+            if game.JobId ~= startJobId then
+                getgenv().IsServerHopping = false
+                break
             end
+
+            local success, err = pcall(function()
+                local serverData = GetServers()
+                local targetServerId = nil
+
+                if serverData then
+                    -- 1. 優先尋找人數 7~10 人的伺服器
+                    targetServerId = FindInPage(serverData.data, true)
+
+                    -- 第一頁沒找到時嘗試翻頁
+                    if not targetServerId and serverData.nextPageCursor then
+                        local nextPageData = GetServers(serverData.nextPageCursor)
+                        if nextPageData then
+                            targetServerId = FindInPage(nextPageData.data, true)
+                        end
+                    end
+
+                    -- 2. 若仍沒有 7~10 人的伺服器，降級為一般未滿伺服器（避免完全跳不了服）
+                    if not targetServerId then
+                        targetServerId = FindInPage(serverData.data, false)
+                    end
+                end
+
+                if targetServerId then
+                    -- 1. 跳服前：先確認目前伺服器內已無符合條件的玩家（有則持續等待並重新檢查）
+                    if not WaitNoQualifyingPlayers() then
+                        return
+                    end
+
+                    -- 2. 跳服前額外等待 5 秒，期間持續確認無賞金風險
+                    local confirmResult = ConfirmHopSafe()
+                    if confirmResult ~= "ok" then
+                        -- 期間再次偵測到賞金風險：交由換服安全監督，危險解除後自動重新跳服
+                        if confirmResult == "danger" then
+                            getgenv().IsServerHopping = false
+                            getgenv().HopInterruptedByDanger = true
+                        end
+                        return
+                    end
+
+                    -- 3. 確認可跳服
+
+                    -- 記錄最近 100 筆，避免重複跳同一個服
+                    table.insert(_G.JumpHistory, targetServerId)
+                    if #_G.JumpHistory > 100 then
+                        table.remove(_G.JumpHistory, 1)
+                    end
+
+                    -- 執行跳服時不再偵測符合條件的玩家（避免因此產生賞金風險），直接傳送
+                    pcall(function()
+                        local ServerBrowser = ReplicatedStorage:FindFirstChild("__ServerBrowser")
+                        if ServerBrowser then
+                            ServerBrowser:InvokeServer("teleport", targetServerId)
+                        else
+                            game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceId, targetServerId, LocalPlayer)
+                        end
+                    end)
+
+                    -- [跳服逾時] 等待切服；時間內未完成跳服即停止本次跳服
+                    local hopDeadline = os.clock() + HOP_TIMEOUT
+                    while getgenv().IsServerHopping and game.JobId == startJobId and os.clock() < hopDeadline do
+                        task.wait(0.1)
+                    end
+
+                    if game.JobId ~= startJobId then
+                        getgenv().IsServerHopping = false
+                        return
+                    end
+                else
+                    _G.JumpHistory = {}
+                end
+            end)
+
+            if not success then
+                warn("跳服搜尋出錯: " .. tostring(err))
+            end
+
+            if not getgenv().IsServerHopping then
+                break
+            end
+
+            -- 等待後恢復跳服流程
+            task.wait(HOP_FAIL_WAIT)
         end
     end)
 end
 
---自動列賞換服：改由 StartServerHop 統一處理（見上方跳服邏輯）
+--自動列賞換服
+function StartBountyServerHop()
+    StartServerHop()
+end
+
+-- ========= 跳服備援：ServerBrowser 篩選跳服（地區／人數／賞金） =========
+function StartBrowserHopFallback()
+    if getgenv().IsServerHopping == true then
+        return
+    end
+
+    local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local serverBrowser = PlayerGui and PlayerGui:FindFirstChild("ServerBrowser")
+    local frame = serverBrowser and serverBrowser:FindFirstChild("Frame")
+    local Filters = frame and frame:FindFirstChild("Filters")
+    local SearchRegion = Filters and Filters:FindFirstChild("SearchRegion")
+    local TextBox = SearchRegion and SearchRegion:FindFirstChild("TextBox")
+    local ScrollingFrame = frame and frame:FindFirstChild("ScrollingFrame")
+    local FakeScroll = frame and frame:FindFirstChild("FakeScroll")
+    local Inside = FakeScroll and FakeScroll:FindFirstChild("Inside")
+
+    if not (serverBrowser and frame and TextBox and ScrollingFrame and Inside) then
+        if WindUI then
+            WindUI:Notify({ Title = "自動跳服", Content = "找不到 ServerBrowser 介面，無法執行篩選跳服", Duration = 5 })
+        end
+        return
+    end
+
+    local ServerBrowserRemote = ReplicatedStorage:FindFirstChild("__ServerBrowser") or ReplicatedStorage:WaitForChild("__ServerBrowser", 10)
+    if not ServerBrowserRemote then
+        if WindUI then
+            WindUI:Notify({ Title = "自動跳服", Content = "找不到跳服用的 Remote，無法執行篩選跳服", Duration = 5 })
+        end
+        return
+    end
+
+    getgenv().IsServerHopping = true
+    getgenv().ShuttingDown = true
+
+    serverBrowser.Enabled = true
+    task.wait(0.1)
+
+    TextBox.Text = _G.ServerRegion
+
+    -- 展開完整列表
+    local Full = Filters:FindFirstChild("Full")
+    local FullCheck = Full and Full:FindFirstChild("Check")
+    if FullCheck then
+        FullCheck.Text = "\226\156\148\239\184\143"
+        task.wait(0.1)
+    end
+
+    task.spawn(function()
+        while getgenv().IsServerHopping do
+            ScrollingFrame.CanvasPosition = Vector2.new(0, math.random(100, 7000))
+            task.wait(0.3)
+        end
+    end)
+
+    task.wait()
+
+    local currentJobId = game.JobId
+
+    while getgenv().IsServerHopping do
+        for _, template in ipairs(Inside:GetChildren()) do
+            if template.Name == "Template" then
+                local joinButton = template:FindFirstChild("Join")
+                local textLabel = template:FindFirstChild("TextLabel")
+                local info = textLabel and ParseServerInfo(textLabel.Text)
+
+                if joinButton and info and IsServerAllowed(info) then
+                    local job = joinButton:GetAttribute("Job")
+                    if job and tostring(job):find("-", 1, true) then
+                        job = tostring(job)
+
+                        if job ~= currentJobId then
+                            -- 跳服前確認：無符合條件的玩家，且 5 秒內無賞金風險
+                            local confirmResult = WaitHopAllowed()
+                            if confirmResult == "stopped" then
+                                break
+                            elseif confirmResult == "danger" then
+                                -- 交由換服安全監督：危險解除後自動重新跳服
+                                getgenv().IsServerHopping = false
+                                getgenv().HopInterruptedByDanger = true
+                                break
+                            elseif confirmResult == "ok" then
+                                WindUI:Notify({
+                                    Title = "匹配到伺服器",
+                                    Content = "嘗試跳服\n"
+                                        .. "地區: " .. tostring(info.Region) .. "\n"
+                                        .. "人數: " .. info.Players .. "/" .. info.MaxPlayers .. "\n"
+                                        .. "賞金: " .. FormatNumber(info.Bounty),
+                                    Icon = "wind",
+                                    Duration = 5
+                                })
+
+                                local success = pcall(function()
+                                    ServerBrowserRemote:InvokeServer("teleport", job)
+                                end)
+                                if not success then
+                                    local success2 = pcall(function()
+                                        ServerBrowserRemote:InvokeServer("teleport", job)
+                                    end)
+                                    if not success2 then
+                                        WindUI:Notify({
+                                            Title = "自動跳服",
+                                            Content = "跳服失敗\n\n請重新加入遊戲",
+                                            Icon = "wind",
+                                            Duration = 10
+                                        })
+                                    end
+                                end
+                                task.wait(0.3)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(3)
+    end
+
+    -- 結束跳服：關閉 ServerBrowser 介面
+    pcall(function()
+        serverBrowser.Enabled = false
+        frame.Visible = true
+    end)
+end
 
 --Fast Attack
 local function IsAlive(char)
@@ -1186,8 +1430,10 @@ local function GetCommF()
 end
 
 task.spawn(function()
-    while true do
-        if _G.AutoEnablePVP and not getgenv().IsServerHopping then
+    while task.wait(1) do
+        -- 持續觸發：只要開關開啟就一直重新啟用 PVP
+        -- （不再受跳服狀態影響，避免跳服旗標卡住後永遠不再觸發）
+        if _G.AutoEnablePVP then
             local remote = GetCommF()
             if remote then 
                 pcall(function()
@@ -1195,7 +1441,6 @@ task.spawn(function()
                 end)
             end
         end
-        task.wait(1)
     end
 end)
 
@@ -1541,6 +1786,64 @@ local function GetMoveSpeed()
     return MOVE_SPEED + (MAX_MOVE_SPEED - MOVE_SPEED) * t
 end
 
+-- ========= 飛行下降加速狀態 =========
+-- 當角色 Y 座標持續下降時，依下降狀態動態提高下降速度（加速曲線），
+-- 而非維持固定速度，以提升下降效率與流暢度。
+local FTP2_DESCENT_ACCEL_TIME = 1.2   -- 持續下降多久後達到最大倍率（秒）
+local FTP2_DESCENT_MAX_MULT   = 2.0   -- 下降速度最大倍率（相對於基礎移動速度）
+local FTP2_DESCENT_MIN_RATE   = 5     -- 判定為「持續下降」的最小下降速度（studs/秒）
+
+local FTP2_DescendState = { time = 0, lastY = nil, lastClock = nil, hrp = nil }
+
+local function ResetDescentState()
+    FTP2_DescendState.time = 0
+    FTP2_DescendState.lastY = nil
+    FTP2_DescendState.lastClock = nil
+end
+
+-- 依實際 Y 座標變化更新下降狀態，回傳目前下降速度倍率（1 為不加速）
+local function UpdateDescentState(hrp, descending)
+    local state = FTP2_DescendState
+    local now = os.clock()
+
+    if not hrp then
+        ResetDescentState()
+        return 1
+    end
+
+    -- 角色／物件變更時重置，避免以舊座標誤判
+    if state.hrp ~= hrp then
+        state.hrp = hrp
+        state.time = 0
+        state.lastY = nil
+        state.lastClock = nil
+        return 1
+    end
+
+    local lastY = state.lastY
+    local lastClock = state.lastClock
+    state.lastY = hrp.Position.Y
+    state.lastClock = now
+
+    if not lastY or not lastClock then return 1 end
+
+    local dt = now - lastClock
+    if dt <= 0 then return 1 end
+
+    local dropRate = (lastY - hrp.Position.Y) / dt
+
+    -- 持續下降（朝下且 Y 實際下降速率達標）才累加，否則重置
+    if descending and dropRate >= FTP2_DESCENT_MIN_RATE then
+        state.time = math.min(state.time + dt, FTP2_DESCENT_ACCEL_TIME)
+    else
+        state.time = 0
+    end
+
+    -- 加速曲線：隨持續下降時間以曲線逼近最大倍率（起步平緩、越降越快）
+    local progress = state.time / FTP2_DESCENT_ACCEL_TIME
+    return 1 + (FTP2_DESCENT_MAX_MULT - 1) * (progress * progress)
+end
+
 -- 統一移動函式：所有移動（追人、逃跑）皆透過此函式，朝指定位置飛行
 local function MoveTo(Pos)
     local char = LocalPlayer.Character
@@ -1554,12 +1857,18 @@ local function MoveTo(Pos)
 
     local dir = Pos - HRP.Position
     if dir.Magnitude > 0.1 then
-        _G.FTP_LinearVelocity.VectorVelocity = dir.Unit * GetMoveSpeed()
+        -- 朝下飛行（dir.Y < 0）時依下降狀態動態加速
+        local mult = UpdateDescentState(HRP, dir.Y < 0)
+        _G.FTP_LinearVelocity.VectorVelocity = dir.Unit * GetMoveSpeed() * mult
+    else
+        _G.FTP_LinearVelocity.VectorVelocity = Vector3.zero
+        ResetDescentState()
     end
 end
 
 -- 停止統一移動
 local function StopMove()
+    ResetDescentState()
     if _G.FTP_LinearVelocity then
         _G.FTP_LinearVelocity.VectorVelocity = Vector3.zero
     end
@@ -1787,7 +2096,7 @@ task.spawn(function()
 end)
 
 --自動列賞
-local function GetCombatStatus()
+GetCombatStatus = function()
     local mainUI = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("Main")
     local bottomHUD = mainUI and mainUI:FindFirstChild("BottomHUDList")
     local inCombatUI = bottomHUD and bottomHUD:FindFirstChild("InCombat")
@@ -1846,6 +2155,38 @@ IsSafeToHopCheck = function()
     return true
 end
 
+-- ========= 換服安全監督 =========
+-- 跳服中進入賞金危險狀態 → 立即中斷跳服；危險解除後自動重新跳服
+getgenv().HopInterruptedByDanger = false
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+
+        if getgenv().HopInterruptedByDanger then
+            -- 賞金危險狀態已取消：重新開始跳服
+            if GetCombatStatus() ~= "BountyAtRisk" then
+                getgenv().HopInterruptedByDanger = false
+                task.spawn(function()
+                    pcall(StartServerHop)
+                end)
+            end
+        elseif getgenv().IsServerHopping and GetCombatStatus() == "BountyAtRisk" then
+            -- 立即中斷跳服
+            getgenv().IsServerHopping = false
+            getgenv().HopInterruptedByDanger = true
+            StopServerHop()
+            if WindUI then
+                WindUI:Notify({
+                    Title = "自動跳服",
+                    Content = "偵測到賞金危險狀態，已立即中斷跳服，危險解除後將自動重新跳服",
+                    Duration = 5
+                })
+            end
+        end
+    end
+end)
+
 local function CheckAndNotifyCombatStatus()
     if _G.FTP2_HasTriggeredHop then return end
 
@@ -1854,12 +2195,12 @@ local function CheckAndNotifyCombatStatus()
     if status == "NotInCombat" then
         _G.FTP2_HasTriggeredHop = true
         task.spawn(function()
-            StartServerHop()
+            if StartBountyServerHop then StartBountyServerHop() end
         end)
     elseif status == "InCombatNoRisk" then
         _G.FTP2_HasTriggeredHop = true
         task.spawn(function()
-            StartServerHop()
+            if StartBountyServerHop then StartBountyServerHop() end
         end)
     elseif status == "BountyAtRisk" then
     end
@@ -1915,102 +2256,126 @@ local function IsPlayerAlly(player)
     return frame:FindFirstChild(player.Name) ~= nil
 end
 
--- 暫時跳過的持續時間（秒）：原因消失後會自動重新評估，不列入永久黑名單
-local SKIP_FORCEFIELD_TIME   = 3    -- 出生保護力場
-local SKIP_SAFEZONE_TIME     = 5    -- 身處安全區
-local SKIP_LEVEL_UNKNOWN_TIME = 3   -- 等級資料尚未載入
-local SKIP_ISLAND_RAID_TIME  = 30   -- 島嶼爭奪中
-
--- 判斷玩家是否符合追擊條件
--- 永久黑名單：確定不合格（關閉PVP、隊友/同盟、等級差過大）
--- 暫時跳過：狀態會消失（出生保護、安全區、等級未載入、島嶼爭奪、距離過遠）
-local function IsValidTarget(plr)
-    -- 1. 必須是其他玩家
-    if not plr or plr == LocalPlayer then return false end
-
-    -- 2. 永久黑名單：不再重試
-    if _G.FTP2_Blacklist[plr] then return false end
-
-    -- 3. 暫時跳過：到期後可再次評估
-    local skipUntil = _G.FTP2_SkipUntil[plr]
-    if skipUntil then
-        if os.clock() < skipUntil then
-            return false
-        end
-        _G.FTP2_SkipUntil[plr] = nil
+-- ========= 玩家判斷條件（唯一判定來源，逐條明確列出） =========
+-- 回傳：isValid（是否可作為目標）, reason（不符條件的原因，符合時為 nil）
+-- 判定原則：
+--   1. 每次呼叫都依「即時狀態」重新判定，不被先前黑名單影響。
+--   2. 只要目前完全符合條件就一定回傳 true，確保有條件的玩家一定會被飛行。
+--   3. 永久排除只有「手動跳過」(SkipList)；鎖定逾時為暫時排除 (TempSkip)，到期自動恢復。
+local function EvaluateTarget(plr)
+    if not plr or plr == LocalPlayer then
+        return false, "self"                    -- 自己／無效物件
     end
 
-    -- 4. 角色必須存在且存活
+    if _G.FTP2_SkipList[plr] then
+        return false, "manual_skip"             -- 永久跳過：僅手動跳過會加入
+    end
+
+    local tempUntil = _G.FTP2_TempSkip[plr]
+    if tempUntil then
+        if os.clock() < tempUntil then
+            return false, "temp_skip"           -- 暫時跳過中（鎖定逾時），尚未到期
+        end
+        _G.FTP2_TempSkip[plr] = nil             -- 已到期：恢復為可選目標
+    end
+
     local char = plr.Character
-    if not char then return false end
+    if not char then
+        return false, "no_character"            -- 角色尚未載入
+    end
 
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum or hum.Health <= 0 then
-        return false
+    if not hrp or not hum then
+        return false, "no_hrp_humanoid"         -- 缺少 HumanoidRootPart／Humanoid
     end
 
-    -- 5. 出生保護力場：暫時跳過
-    if char:FindFirstChildOfClass("ForceField") then
-        _G.FTP2_SkipUntil[plr] = os.clock() + SKIP_FORCEFIELD_TIME
-        return false
+    if hum.Health <= 0 then
+        return false, "dead"                    -- 已死亡
     end
 
-    -- 6. 島嶼爭奪中：暫時跳過
+    if hrp.Position.Y < -500 then
+        return false, "underwater"              -- 掉入深海（浮出後即可再次成為目標）
+    end
+
     if plr:GetAttribute("IslandRaiding") == true then
-        _G.FTP2_SkipUntil[plr] = os.clock() + SKIP_ISLAND_RAID_TIME
-        return false
+        return false, "island_raiding"          -- 正在打島
     end
 
-    -- 7. 安全區：交戰鎖定的目標除外，其餘暫時跳過
+    if char:FindFirstChildOfClass("ForceField") then
+        return false, "forcefield"              -- 無敵保護罩
+    end
+
+    -- 已鎖定且交戰中的目標，即使進入安全區仍維持鎖定，避免戰鬥中頻繁換目標
     local combatLockTarget = (plr == _G.FTP2_CurrentTarget) and IsInCombatState()
     if not combatLockTarget then
-        if plr:GetAttribute("SafeZone") == true
-            or plr:GetAttribute("InSafeZone") == true
-            or IsInSafeZone(plr) then
-            _G.FTP2_SkipUntil[plr] = os.clock() + SKIP_SAFEZONE_TIME
-            return false
+        if plr:GetAttribute("SafeZone") == true or plr:GetAttribute("InSafeZone") == true then
+            return false, "safe_zone_attr"      -- 屬性標記為安全區
+        end
+        if IsInSafeZone(plr) then
+            return false, "safe_zone_pos"       -- 位置落在安全區範圍
         end
     end
 
-    -- 8. 永久不合格：關閉PVP（無法攻擊）
     if plr:GetAttribute("PvpDisabled") == true then
-        _G.FTP2_Blacklist[plr] = true
-        return false
+        return false, "pvp_disabled"            -- PVP 已關閉
     end
 
-    -- 9. 永久不合格：同隊伍(海軍)或同盟
     local myTeam = LocalPlayer.Team
     local tgTeam = plr.Team
     if myTeam and tgTeam and myTeam.Name == "Marines" and tgTeam.Name == "Marines" then
-        _G.FTP2_Blacklist[plr] = true
-        return false
+        return false, "same_team"               -- 同隊（同為海軍）
     end
 
     if IsPlayerAlly(plr) then
-        _G.FTP2_Blacklist[plr] = true
-        return false
+        return false, "ally"                    -- 盟友
     end
 
-    -- 10. 等級：資料未載入時暫時跳過；差距過大才永久黑名單
     local myLv = GetLevel(LocalPlayer)
     local tgLv = GetLevel(plr)
     if not myLv or not tgLv then
-        _G.FTP2_SkipUntil[plr] = os.clock() + SKIP_LEVEL_UNKNOWN_TIME
-        return false
+        return false, "level_unknown"           -- 等級無法取得
     end
     if math.abs(myLv - tgLv) > 550 then
-        _G.FTP2_Blacklist[plr] = true
-        return false
+        return false, "level_gap"               -- 等級差超過 550
     end
 
-    -- 11. 距離過遠：暫時略過（不進黑名單）
     local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if myHRP and (myHRP.Position - hrp.Position).Magnitude > 30000 then
-        return false
+        return false, "too_far"                 -- 距離過遠（僅本幀不列入，不算條件不符）
     end
 
-    return true
+    return true, nil
+end
+
+-- 會寫入黑名單「原因」的條件（黑名單僅供提示／除錯，不影響是否被選為目標）
+local BLACKLIST_REASONS = {
+    underwater     = true,
+    island_raiding = true,
+    forcefield     = true,
+    safe_zone_attr = true,
+    safe_zone_pos  = true,
+    pvp_disabled   = true,
+    same_team      = true,
+    ally           = true,
+    level_unknown  = true,
+    level_gap      = true,
+}
+
+IsValidTarget = function(plr)
+    local isValid, reason = EvaluateTarget(plr)
+
+    if isValid then
+        -- 目前完全符合條件：必定為有效目標，同時清除先前的黑名單原因
+        _G.FTP2_Blacklist[plr] = nil
+        return true
+    end
+
+    -- 記錄不符原因（僅供提示／除錯；條件符合時會自動清除）
+    if reason and BLACKLIST_REASONS[reason] then
+        _G.FTP2_Blacklist[plr] = reason
+    end
+    return false
 end
 
 local ValidTargetCache = {}
@@ -2039,6 +2404,7 @@ end
 -- 鎖定時間計時條件：角色實際接近目標玩家，且正在施放技能（交戰中）
 local FTP2_ATTACK_RANGE = 80        -- 「實際接近目標」判定距離
 local FTP2_CAST_ACTIVE_WINDOW = 1.5 -- 視為「正在施放技能」的時間窗
+local FTP2_TARGET_LOST_GRACE = 10   -- 鎖定目標消失的寬限時間（超過才加入黑名單，期間執行 Auto Flee）
 
 local function IsWithinAttackRange(plr)
     local myChar = LocalPlayer.Character
@@ -2436,9 +2802,11 @@ local function StartFTPFlight2()
 
     _G.FTP2_Enabled = true
     table.clear(_G.FTP2_Blacklist)
-    table.clear(_G.FTP2_SkipUntil)
+    table.clear(_G.FTP2_SkipList)
+    table.clear(_G.FTP2_TempSkip)
     _G.FTP2_HasTriggeredHop = false
     _G.FTP2_CurrentTarget = nil
+    _G.FTP2_TargetLostSince = nil
     _G.FTP2_TargetLockTime = 0
     _G.FTP2_TargetLockTick = os.clock()
     _G.FTP2_LastSkillCastTime = 0
@@ -2457,7 +2825,7 @@ local function StartFTPFlight2()
     _G.FTP2_PlayerLeaveConn = Players.PlayerRemoving:Connect(function(plr)
         _G.TargetHistory[plr] = nil
         _G.FTP2_Blacklist[plr] = nil
-        _G.FTP2_SkipUntil[plr] = nil
+        _G.FTP2_TempSkip[plr] = nil
         if _G.FTP2_CurrentTarget == plr then
             _G.FTP2_CurrentTarget = nil
         end
@@ -2547,16 +2915,54 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         end)
 
         if _G.FTP2_CurrentTarget then
-            if not IsValidTargetFast(_G.FTP2_CurrentTarget) then
-                -- 永久不合格已由 IsValidTarget 寫入黑名單；暫時狀態只跳過本目標
+            local lockedTarget = _G.FTP2_CurrentTarget
+            -- 目標 Y < -500 時立即切換（不等待快取，直接判定）
+            local tgChar = lockedTarget.Character
+            local tgHRP2 = tgChar and tgChar:FindFirstChild("HumanoidRootPart")
+            local tgHum2 = tgChar and tgChar:FindFirstChildOfClass("Humanoid")
+            local targetTooLow = tgHRP2 and tgHRP2.Position.Y < -500
+            local targetGone = (not tgHRP2) or (not tgHum2) or tgHum2.Health <= 0
+
+            if targetTooLow then
+                -- 掉入深海：僅解除鎖定並記錄原因，浮出後條件符合即可再次被鎖定（非永久跳過）
+                _G.FTP2_Blacklist[lockedTarget] = "underwater"
                 _G.FTP2_CurrentTarget = nil
+                _G.FTP2_TargetLostSince = nil
+            elseif targetGone then
+                -- 目標消失：寬限期內先不移除目標，期間執行 Auto Flee 邏輯
+                if not _G.FTP2_TargetLostSince then
+                    _G.FTP2_TargetLostSince = now
+                    _G.FTP2_Transit = nil
+                    _G.FTP2_TransitTarget = nil
+                    _G.FTP2_TargetLockTime = 0
+                    _G.FTP2_TargetLockTick = now
+                end
+
+                if now - _G.FTP2_TargetLostSince >= FTP2_TARGET_LOST_GRACE then
+                    -- 僅記錄原因（黑名單不作為排除依據）；角色重生後條件符合即會再次被選中
+                    _G.FTP2_Blacklist[lockedTarget] = "target_lost"
+                    if WindUI then
+                        WindUI:Notify({ Title = "自動列賞", Content = "目標已消失超過 " .. tostring(FTP2_TARGET_LOST_GRACE) .. "秒，已解除鎖定: " .. lockedTarget.Name, duration = 3 })
+                    end
+                    _G.FTP2_CurrentTarget = nil
+                    _G.FTP2_TargetLostSince = nil
+                end
+            else
+                -- 目標存在但條件不符（如進入安全區）：解除鎖定即可，原因已由 IsValidTarget 記錄
+                _G.FTP2_TargetLostSince = nil
+                if not IsValidTargetFast(lockedTarget) then
+                    _G.FTP2_CurrentTarget = nil
+                end
             end
+        else
+            _G.FTP2_TargetLostSince = nil
         end
 
         local oldTarget = _G.FTP2_CurrentTarget
         local lowHpLock = IsTargetLowHP(oldTarget)
+        local targetLost = oldTarget ~= nil and _G.FTP2_TargetLostSince ~= nil
 
-        if lowHpLock then
+        if lowHpLock or targetLost then
             _G.FTP2_CurrentTarget = oldTarget
         else
             local nearest = GetNearestPlayer()
@@ -2568,7 +2974,7 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         end
 
         -- 中轉規劃：目標變更時，依智慧距離重新選擇傳送點
-        if _G.FTP2_CurrentTarget then
+        if _G.FTP2_CurrentTarget and not _G.FTP2_TargetLostSince then
             if _G.FTP2_CurrentTarget ~= _G.FTP2_TransitTarget then
                 _G.FTP2_TransitTarget = _G.FTP2_CurrentTarget
                 _G.FTP2_Transit = nil
@@ -2602,9 +3008,11 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
             end
 
             if not lowHpLock and _G.FTP2_TargetLockTime >= _G.FTP2_TimeoutLimit then
-                _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
+                -- 鎖定逾時：暫時跳過（到期自動恢復為可選目標），非永久跳過
+                local cooldown = _G.FTP2_TempSkipCooldown or 120
+                _G.FTP2_TempSkip[_G.FTP2_CurrentTarget] = os.clock() + cooldown
                 if WindUI then
-                    WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，已跳過玩家: " .. _G.FTP2_CurrentTarget.Name, duration = 3 })
+                    WindUI:Notify({ Title = "自動列賞", Content = "鎖定時間超過 " .. tostring(_G.FTP2_TimeoutLimit) .. "秒，暫時跳過玩家 " .. tostring(cooldown) .. "秒: " .. _G.FTP2_CurrentTarget.Name, duration = 3 })
                 end
                 _G.FTP2_CurrentTarget = nil
                 _G.FTP2_TargetLockTime = 0
@@ -2616,7 +3024,10 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         end
 
         if _G.FTP2_CurrentTarget then
-            if _G.FTP2_Transit then
+            if _G.FTP2_TargetLostSince then
+                -- 目標消失的寬限期內：執行 Auto Flee 邏輯
+                FleeUpLogic()
+            elseif _G.FTP2_Transit then
                 -- 中轉中：先飛往傳送點並等待，完成後才飛往玩家
                 RunTransit()
             else
@@ -2635,6 +3046,7 @@ end
 local function StopFTPFlight2()
     _G.FTP2_Enabled = false
     _G.FTP2_CurrentTarget = nil
+    _G.FTP2_TargetLostSince = nil
     _G.FTP2_FleeReturnPos = nil
     _G.FTP2_Transit = nil
     _G.FTP2_TransitTarget = nil
@@ -3515,12 +3927,12 @@ Tabs.Auto:Button({
     Callback = function()
         if _G.FTP2_CurrentTarget then
             local skippedName = _G.FTP2_CurrentTarget.Name
-            _G.FTP2_Blacklist[_G.FTP2_CurrentTarget] = true
+            _G.FTP2_SkipList[_G.FTP2_CurrentTarget] = true
             _G.FTP2_CurrentTarget = nil
             _G.FTP2_TargetLockTime = 0
             _G.FTP2_TargetLockTick = os.clock()
             if WindUI then
-                WindUI:Notify({ Title = "手動跳過", Content = "已跳過該名目標玩家", duration = 3 })
+                WindUI:Notify({ Title = "手動跳過", Content = "已永久跳過玩家: " .. skippedName, duration = 3 })
             end
         else
             if WindUI then
