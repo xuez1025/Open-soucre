@@ -126,8 +126,8 @@ end)
 ----------------------------------------
 --自動換服
 _G.ServerRegion = "Singapore"
-_G.HopMinPlayers = 6
-_G.HopMaxPlayers = 7
+_G.HopMinPlayers = 1
+_G.HopMaxPlayers = 3
 _G.HopMinBounty = 3000000
 _G.HopMaxBounty = math.huge
 
@@ -246,25 +246,22 @@ _G.TargetHistory = {}
 _G.FTP2_StartTime = 0
 _G.FTP2_FleeReturnPos = nil
 
+-- 安全區僅保留兩段大範圍座標
 _G.FTP2_SafeZonePositions = {
-    World1 = {
-        { pos = Vector3.new(-3000, 250, 2057), radius = 700 },
-        { pos = Vector3.new(1101, 16, 1446), radius = 400 },
-    },
-    World2 = {
-        { pos = Vector3.new(-12, 29, 2840), radius = 200 },
-        { pos = Vector3.new(-376, 149, 307), radius = 150 },
-        { pos = Vector3.new(-6437, 306, -4730), radius = 150 },
-    },
-    World3 = {
-        { pos = Vector3.new(-338, 21, 5539), radius = 200 },
-        { pos = Vector3.new(-12550, 337, -7506), radius = 400 },
-        { pos = Vector3.new(-5046, 315, -2993), radius = 300 },
-        { pos = Vector3.new(-16228, 9, 443), radius = 300 },
-        { pos = Vector3.new(28695, 14959, -81), radius = 10000 },
-        { pos = Vector3.new(9637, -1989, 9618), radius = 10000 },
-    }
+    { pos = Vector3.new(28695, 14959, -81), radius = 10000 },
+    { pos = Vector3.new(9637, -1989, 9618), radius = 10000 },
 }
+
+-- 賞金上限（達到即啟動自動逃跑）
+_G.FTP2_BountyCap = 30000000
+-- 永久黑名單：互相擊殺達 3/3 的玩家
+_G.FTP2_PermanentSkip = {}
+-- 暫時黑名單：V4 狀態玩家
+_G.FTP2_TempBlacklist = {}
+_G.FTP2_TempBlacklistCooldown = 120
+_G.FTP2_V4BlacklistCooldown = 300
+-- 賞金達到上限的自動逃跑狀態
+_G.FTP2_BountyCapFlee = false
 
 local StartServerHop
 local StopServerHop
@@ -499,18 +496,6 @@ end)
 ----------------------------------------
 --功能核心邏輯
 ----------------------------------------
---自動換服
-local RegionValues = {
-    "Oregon",
-    "Florida",
-    "Texas",
-    "California",
-    "HongKong",
-    "Germany",
-    "Brazil",
-    "Singapore",
-}
-
 local function FormatNumber(n)
     local num = math.floor(tonumber(n) or 0)
     local str = tostring(num)
@@ -554,8 +539,8 @@ local function IsServerAllowed(info)
         return false
     end
 
-    local minP = tonumber(_G.HopMinPlayers) or 6
-    local maxP = tonumber(_G.HopMaxPlayers) or 7
+    local minP = tonumber(_G.HopMinPlayers) or 1
+    local maxP = tonumber(_G.HopMaxPlayers) or 3
     local minB = tonumber(_G.HopMinBounty) or 3000000
     local maxB = tonumber(_G.HopMaxBounty) or math.huge
 
@@ -598,8 +583,8 @@ local function BuildFilterText()
     return string.format(
         "🌐 地區｜%s\n👥 人數｜%d ~ %d 人\n💰 賞金｜%s",
         tostring(_G.ServerRegion),
-        tonumber(_G.HopMinPlayers) or 6,
-        tonumber(_G.HopMaxPlayers) or 7,
+        tonumber(_G.HopMinPlayers) or 1,
+        tonumber(_G.HopMaxPlayers) or 3,
         bountyStr
     )
 end
@@ -637,6 +622,12 @@ end
 
 local ServerHopConn = nil
 
+-- 取得當前陣營名稱（海軍 / 海賊），供鎖人與換服流程共用
+local function GetMyTeamName()
+    local team = LocalPlayer.Team
+    return team and team.Name or "Pirates"
+end
+
 -- [跳服前檢查] 目前伺服器內是否仍有符合條件的玩家（判定與自動列賞的目標一致）
 local function HasQualifyingPlayer()
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -648,6 +639,7 @@ local function HasQualifyingPlayer()
 end
 
 -- 跳服前等待：持續等待並重新檢查，直到伺服器內沒有任何符合條件的玩家
+-- 海軍與海賊共用同一套等待機制（目標判定已由 IsValidTarget 依陣營處理）
 local function WaitNoQualifyingPlayers()
     local notified = false
     while getgenv().IsServerHopping do
@@ -657,7 +649,8 @@ local function WaitNoQualifyingPlayers()
         if not notified then
             notified = true
             if WindUI then
-                WindUI:Notify({ Title = "自動跳服", Content = "目前伺服器仍有符合條件的玩家，暫緩跳服", Duration = 3 })
+                local teamLabel = GetMyTeamName() == "Marines" and "海軍" or "海賊"
+                WindUI:Notify({ Title = "自動跳服", Content = "目前伺服器仍有符合條件的玩家（" .. teamLabel .. "鎖人流程），暫緩跳服", Duration = 3 })
             end
         end
         task.wait(1)
@@ -666,6 +659,7 @@ local function WaitNoQualifyingPlayers()
 end
 
 -- 跳服前額外等待 5 秒：期間持續確認無賞金風險，若再次出現符合條件的玩家則視為取消
+-- 海軍與海賊皆必須先完成此風險校驗，才可執行換服
 -- 回傳："ok" 可跳服 / "danger" 賞金風險 / "player" 出現符合條件的玩家 / "stopped" 已停止跳服
 local HOP_CONFIRM_DELAY = 5
 local function ConfirmHopSafe()
@@ -685,7 +679,8 @@ local function ConfirmHopSafe()
     return "ok"
 end
 
--- 跳服前完整確認：先確認伺服器內無符合條件的玩家，再等待 5 秒確認無賞金風險
+-- 跳服前完整確認（海軍／海賊共用）：
+-- 順序固定為「先等待無符合條件的玩家」→「再等待 5 秒確認無賞金風險」→ 才允許換服
 local function WaitHopAllowed()
     if not WaitNoQualifyingPlayers() then
         return "stopped"
@@ -695,7 +690,6 @@ end
 
 function StopServerHop()
     getgenv().IsServerHopping = false
-    getgenv().ShuttingDown = false
 
     if ServerHopConn then
         task.cancel(ServerHopConn)
@@ -710,7 +704,6 @@ function StartServerHop()
     end
 
     getgenv().IsServerHopping = true
-    getgenv().ShuttingDown = true
 
     if ServerHopConn then
         task.cancel(ServerHopConn)
@@ -765,8 +758,8 @@ function StartServerHop()
 
     local startJobId = game.JobId
 
-    -- [跳服逾時] 傳送後 3 秒內未完成跳服：停止本次跳服，等待 1 秒後恢復跳服流程
-    local HOP_TIMEOUT = 3
+    -- [跳服逾時] 傳送後 5 秒內未完成跳服：停止本次跳服，等待 1 秒後恢復跳服流程
+    local HOP_TIMEOUT = 5
     local HOP_FAIL_WAIT = 1
 
     ServerHopConn = task.spawn(function()
@@ -800,13 +793,10 @@ function StartServerHop()
                 end
 
                 if targetServerId then
-                    -- 1. 跳服前：先確認目前伺服器內已無符合條件的玩家（有則持續等待並重新檢查）
-                    if not WaitNoQualifyingPlayers() then
-                        return
-                    end
-
-                    -- 2. 跳服前額外等待 5 秒，期間持續確認無賞金風險
-                    local confirmResult = ConfirmHopSafe()
+                    -- 跳服前完整風險校驗（海軍／海賊共用）：
+                    --   1. 先等待伺服器內已無符合條件的玩家
+                    --   2. 再等待 5 秒確認無賞金風險
+                    local confirmResult = WaitHopAllowed()
                     if confirmResult ~= "ok" then
                         -- 期間再次偵測到賞金風險：交由換服安全監督，危險解除後自動重新跳服
                         if confirmResult == "danger" then
@@ -816,7 +806,7 @@ function StartServerHop()
                         return
                     end
 
-                    -- 3. 確認可跳服
+                    -- 確認可跳服
 
                     -- 記錄最近 100 筆，避免重複跳同一個服
                     table.insert(_G.JumpHistory, targetServerId)
@@ -900,7 +890,6 @@ function StartBrowserHopFallback()
     end
 
     getgenv().IsServerHopping = true
-    getgenv().ShuttingDown = true
 
     serverBrowser.Enabled = true
     task.wait(0.1)
@@ -1034,6 +1023,8 @@ if Settings.AutoScanRemotes then
     end)
 end
 
+local IsPlayerV4
+
 local function GetTargets()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1074,8 +1065,14 @@ local function GetTargets()
 
     for _, p in ipairs(Players:GetPlayers()) do
         if #targets >= Settings.MaxTargets then break end
+        -- 黑名單／V4 狀態的玩家不攻擊
         if p ~= LocalPlayer and p.Character then
-            checkModel(p.Character)
+            local tempBlackUntil = _G.FTP2_TempBlacklist[p]
+            local isBlacklisted = _G.FTP2_SkipList[p] or _G.FTP2_PermanentSkip[p]
+                or (tempBlackUntil and os.clock() < tempBlackUntil) or IsPlayerV4(p)
+            if not isBlacklisted then
+                checkModel(p.Character)
+            end
         end
     end
 
@@ -2206,24 +2203,21 @@ local function CheckAndNotifyCombatStatus()
     end
 end
 
+-- 安全區判定來源：
+--   1. 目標玩家屬性 InSafeZone == true（等同 IslandRaiding 邏輯）
+--   2. 位置落在保留的兩段大範圍安全區座標內
 local function IsInSafeZone(plr)
-    if not plr or not plr.Character then return false end
+    if not plr then return false end
+    if plr:GetAttribute("InSafeZone") == true then
+        return true
+    end
+
+    if not plr.Character then return false end
     local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    local placeId = game.PlaceId
-    local zones = {}
-
-    if table.find({2753915549, 85211729168715}, placeId) then
-        zones = _G.FTP2_SafeZonePositions.World1
-    elseif table.find({4442272183, 79091703265657}, placeId) then
-        zones = _G.FTP2_SafeZonePositions.World2
-    elseif table.find({7449423635, 100117331123089}, placeId) then
-        zones = _G.FTP2_SafeZonePositions.World3
-    end
-
     local pos = hrp.Position
-    for _, zone in ipairs(zones) do
+    for _, zone in ipairs(_G.FTP2_SafeZonePositions) do
         if (pos - zone.pos).Magnitude <= zone.radius then
             return true
         end
@@ -2256,6 +2250,69 @@ local function IsPlayerAlly(player)
     return frame:FindFirstChild(player.Name) ~= nil
 end
 
+-- ========= 黑名單邏輯 =========
+-- 1. 種族 Skypiea 且 RaceEnergy > 0（V4 狀態）→ 暫時黑名單該玩家
+-- 2. 通知出現「已经互相击杀过3/3次了」→ 永久黑名單該玩家
+
+-- 檢查玩家是否處於 V4 狀態（種族為 Skypiea 且 RaceEnergy > 0）
+IsPlayerV4 = function(plr)
+    if not plr then return false end
+    local data = plr:FindFirstChild("Data")
+    local race = data and data:FindFirstChild("Race")
+    if not race or race.Value ~= "Skypiea" then return false end
+
+    local char = plr.Character
+    local raceEnergy = char and char:FindFirstChild("RaceEnergy")
+    return raceEnergy ~= nil and raceEnergy:IsA("ValueBase") and raceEnergy.Value > 0
+end
+
+-- 將玩家加入黑名單（tempOnly = true 為暫時黑名單，false 為永久黑名單）
+local function AddBlacklist(plr, tempOnly, duration)
+    if not plr then return end
+    if tempOnly then
+        _G.FTP2_TempBlacklist[plr] = os.clock() + (duration or _G.FTP2_TempBlacklistCooldown)
+    else
+        _G.FTP2_PermanentSkip[plr] = true
+        _G.FTP2_TempBlacklist[plr] = nil
+    end
+    if _G.FTP2_CurrentTarget == plr then
+        _G.FTP2_CurrentTarget = nil
+        _G.FTP2_TargetLockTime = 0
+        _G.FTP2_TargetLockTick = os.clock()
+    end
+end
+
+-- 監聽通知：出現「3/3」互相擊殺提示時，永久黑名單該玩家
+task.spawn(function()
+    local gui = LocalPlayer:WaitForChild("PlayerGui", 9e9)
+    local notifications = gui:WaitForChild("Notifications", 9e9)
+    local stack = notifications:WaitForChild("NotificationStack", 9e9)
+
+    stack.ChildAdded:Connect(function(child)
+        if child.Name ~= "NotificationTemplate" then return end
+        task.wait(0.1)
+        local contentText = child:FindFirstChild("ContentText", true)
+        local text = contentText and contentText.Text or ""
+        if not string.find(text, "3/3") then return end
+        if string.find(text, "已经互相击杀过") or string.find(text, "已經互相擊殺過") then
+            local targetName = string.match(text, "(%S+)%s*已经互相击杀过")
+                           or string.match(text, "(%S+)%s*已經互相擊殺過")
+            if targetName then
+                targetName = targetName:gsub("[%p%c]", "")
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr.Name == targetName or string.find(plr.DisplayName, targetName, 1, true) then
+                        AddBlacklist(plr, false)
+                        if WindUI then
+                            WindUI:Notify({ Title = "永久黑名單", Content = "玩家 " .. plr.Name .. " 已互相擊殺 3/3，已永久黑名單", Duration = 5 })
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end)
+end)
+
 -- ========= 玩家判斷條件（唯一判定來源，逐條明確列出） =========
 -- 回傳：isValid（是否可作為目標）, reason（不符條件的原因，符合時為 nil）
 -- 判定原則：
@@ -2269,6 +2326,18 @@ local function EvaluateTarget(plr)
 
     if _G.FTP2_SkipList[plr] then
         return false, "manual_skip"             -- 永久跳過：僅手動跳過會加入
+    end
+
+    if _G.FTP2_PermanentSkip[plr] then
+        return false, "permanent_blacklist"     -- 永久黑名單：互相擊殺達 3/3
+    end
+
+    local tempBlackUntil = _G.FTP2_TempBlacklist[plr]
+    if tempBlackUntil then
+        if os.clock() < tempBlackUntil then
+            return false, "temp_blacklist"      -- 暫時黑名單中（V4 狀態），尚未到期
+        end
+        _G.FTP2_TempBlacklist[plr] = nil        -- 已到期：恢復為可選目標
     end
 
     local tempUntil = _G.FTP2_TempSkip[plr]
@@ -2302,6 +2371,16 @@ local function EvaluateTarget(plr)
         return false, "island_raiding"          -- 正在打島
     end
 
+    if plr:GetAttribute("InSafeZone") == true then
+        return false, "safe_zone_attr"          -- 玩家屬性標記在安全區
+    end
+
+    if IsPlayerV4(plr) then
+        -- 種族 Skypiea 且 RaceEnergy > 0（V4 狀態）：暫時黑名單該玩家
+        AddBlacklist(plr, true, _G.FTP2_V4BlacklistCooldown)
+        return false, "v4_state"                -- V4 狀態中
+    end
+
     if char:FindFirstChildOfClass("ForceField") then
         return false, "forcefield"              -- 無敵保護罩
     end
@@ -2309,9 +2388,6 @@ local function EvaluateTarget(plr)
     -- 已鎖定且交戰中的目標，即使進入安全區仍維持鎖定，避免戰鬥中頻繁換目標
     local combatLockTarget = (plr == _G.FTP2_CurrentTarget) and IsInCombatState()
     if not combatLockTarget then
-        if plr:GetAttribute("SafeZone") == true or plr:GetAttribute("InSafeZone") == true then
-            return false, "safe_zone_attr"      -- 屬性標記為安全區
-        end
         if IsInSafeZone(plr) then
             return false, "safe_zone_pos"       -- 位置落在安全區範圍
         end
@@ -2360,6 +2436,9 @@ local BLACKLIST_REASONS = {
     ally           = true,
     level_unknown  = true,
     level_gap      = true,
+    v4_state       = true,
+    temp_blacklist = true,
+    permanent_blacklist = true,
 }
 
 IsValidTarget = function(plr)
@@ -2753,6 +2832,67 @@ local function FleeUpLogic()
     end)
 end
 
+-- ========= 賞金上限自動逃跑 =========
+-- 自己賞金達到 3000 萬時：不換服，改為直直往上飛，並每 10 秒提醒一次
+-- 依當前陣營讀取對應屬性：
+--   海賊 → InitBounty
+--   海軍 → InitHonor
+local FTP2_BountyNotifyInterval = 10
+local FTP2_LastBountyNotify = 0
+
+local function GetMyBounty()
+    local team = LocalPlayer.Team
+    if not team then return 0 end
+
+    -- 依當前選擇的陣營決定要讀取的賞金屬性
+    local attrName
+    if team.Name == "Marines" then
+        attrName = "InitHonor"      -- 海軍
+    else
+        attrName = "InitBounty"     -- 海賊（預設）
+    end
+
+    local value = LocalPlayer:GetAttribute(attrName)
+    return tonumber(value) or 0
+end
+
+local function BountyCapFleeLogic()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hum or not hrp or hum.Health <= 0 then return end
+
+        -- 穿牆：關閉碰撞，避免被建築卡住
+        SetCharNoclip(char, true)
+
+        -- 直直的往上飛
+        MoveTo(hrp.Position + Vector3.new(0, 100, 0))
+
+        -- 每 10 秒提醒一次賞金已達 3000 萬
+        if os.clock() - FTP2_LastBountyNotify >= FTP2_BountyNotifyInterval then
+            FTP2_LastBountyNotify = os.clock()
+            if WindUI then
+                WindUI:Notify({ Title = "賞金已達 3000 萬", Content = "賞金已達到 3000 萬，啟動自動逃跑（不換服）", Duration = 5 })
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        -- 即時判斷：陣營切換或賞金變動時立即更新（達到就逃跑，未達到就恢復列賞）
+        local capped = GetMyBounty() >= (_G.FTP2_BountyCap or 30000000)
+        if capped ~= _G.FTP2_BountyCapFlee then
+            _G.FTP2_BountyCapFlee = capped
+            if capped then
+                FTP2_LastBountyNotify = 0   -- 進入逃跑狀態：立即提醒一次
+            end
+        end
+    end
+end)
+
 local function ForceStandUp()
     local myChar = LocalPlayer.Character
     if not myChar then return end
@@ -2804,6 +2944,8 @@ local function StartFTPFlight2()
     table.clear(_G.FTP2_Blacklist)
     table.clear(_G.FTP2_SkipList)
     table.clear(_G.FTP2_TempSkip)
+    table.clear(_G.FTP2_TempBlacklist)
+    table.clear(_G.FTP2_PermanentSkip)
     _G.FTP2_HasTriggeredHop = false
     _G.FTP2_CurrentTarget = nil
     _G.FTP2_TargetLostSince = nil
@@ -2826,6 +2968,7 @@ local function StartFTPFlight2()
         _G.TargetHistory[plr] = nil
         _G.FTP2_Blacklist[plr] = nil
         _G.FTP2_TempSkip[plr] = nil
+        _G.FTP2_TempBlacklist[plr] = nil
         if _G.FTP2_CurrentTarget == plr then
             _G.FTP2_CurrentTarget = nil
         end
@@ -2843,6 +2986,12 @@ _G.FTP2_FlightConn = RunService.RenderStepped:Connect(function()
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
 
         ForceStandUp()
+
+        -- 賞金達到 3000 萬：不換服，持續往上飛並每 10 秒提醒
+        if _G.FTP2_BountyCapFlee then
+            BountyCapFleeLogic()
+            return
+        end
 
         if _G.AutoFlee and currentHum and currentHum.Health > 0 then
             local hpPercent = (currentHum.Health / currentHum.MaxHealth) * 100
@@ -3091,7 +3240,13 @@ end
 local function IsSilentAimEnemy(player)
     if not player or player == LocalPlayer then return false end
     if IsPlayerAlly(player) then return false end
-    
+
+    -- 黑名單／V4 狀態的玩家不瞄準
+    if _G.FTP2_SkipList[player] or _G.FTP2_PermanentSkip[player] then return false end
+    local tempBlackUntil = _G.FTP2_TempBlacklist[player]
+    if tempBlackUntil and os.clock() < tempBlackUntil then return false end
+    if IsPlayerV4(player) then return false end
+
     local myTeam = LocalPlayer.Team
     local targetTeam = player.Team
     if myTeam and targetTeam and myTeam.Name == "Marines" and targetTeam.Name == "Marines" then
