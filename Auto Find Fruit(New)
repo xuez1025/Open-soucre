@@ -110,6 +110,7 @@ _G.LastFruitTime = tick()
 _G.ForceHopTriggered = false
 _G.HopTargetJobId = nil
 _G.HopConfirmConn = nil
+_G.ServerHopConn = nil
 
 _G.Fruit_LinearVelocity = nil
 _G.Fruit_AntiGravity = nil
@@ -137,7 +138,7 @@ end
 
 local ScriptLoadstring = [[if isfile("Hub.file") then
     if readfile("Hub.file") == "true" then
-        loadstring(game:HttpGet("https://rjr-loader.top/script/autofindfruit"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Find%20Fruit(New)"))()
     end
 end]]
 
@@ -473,6 +474,35 @@ local function doJump()
     if hum then hum.Jump = true end
 end
 
+-- 防坐下
+local function ForceStandUp()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hum or hum.Health <= 0 then return end
+
+    if hum.Sit then
+        hum.Sit = false
+        pcall(function() hum.Jump = true end)
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end)
+    end
+
+    if hrp then
+        for _, child in ipairs(hrp:GetChildren()) do
+            if child:IsA("Weld") then
+                pcall(function() child:Destroy() end)
+            elseif child:IsA("Motor6D") then
+                local n = string.lower(child.Name)
+                if n:find("seat") or n:find("sit") or n:find("vehicle") then
+                    pcall(function() child:Destroy() end)
+                end
+            end
+        end
+    end
+end
+
 local function GetCurrentWorldEntrances()
     local pool = {}
     local pid = game.PlaceId
@@ -696,49 +726,126 @@ function ServerCore:TeleportToServer(jobId)
 end
 
 function ServerCore:FindAndHop(mode)
-    local cursor = ""
-    local validServers = {}
+    _G.ServerHopping = true
 
-    -- 最多獲取前 2 頁伺服器列表，提高搜尋效率
-    for page = 1, 2 do
-        local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100" .. (cursor ~= "" and ("&cursor=" .. cursor) or "")
-        local success, response = pcall(function()
+    local startJobId = JobId
+
+    -- [跳服逾時] 傳送後 3 秒內未完成跳服：停止本次跳服，等待 1 秒後恢復跳服流程
+    local HOP_TIMEOUT = 3
+    local HOP_FAIL_WAIT = 1
+
+    local function GetServers(cursor)
+        local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&excludeFullGames=true&limit=100"
+        if cursor then
+            url = url .. "&cursor=" .. cursor
+        end
+
+        local success, result = pcall(function()
             return HttpService:JSONDecode(game:HttpGet(url))
         end)
 
-        if success and response and response.data then
-            for _, server in ipairs(response.data) do
-                if server.id ~= JobId 
-                   and not VisitedServers[server.id]
-                   and server.playing 
-                   and server.maxPlayers 
-                   and server.playing < server.maxPlayers then
-                    table.insert(validServers, { id = server.id, count = server.playing })
+        if success and result and result.data then
+            return result
+        end
+        return nil
+    end
+
+    local function FindInPage(data, strict)
+        if not data then return nil end
+        for _, server in ipairs(data) do
+            if type(server) == "table" and server.id and server.playing and server.maxPlayers then
+                local id = tostring(server.id)
+                local playing = tonumber(server.playing) or 0
+                local maxPlayers = tonumber(server.maxPlayers) or 12
+                -- 不是當前服 + 沒有跳過記錄 + 人數未滿
+                if id ~= tostring(JobId) and not VisitedServers[id] and playing < maxPlayers then
+                    if strict then
+                        -- 人數 2~10 人的伺服器優先
+                        if playing >= 2 and playing <= 10 then
+                            return id
+                        end
+                    else
+                        -- 備援條件：找不到時，進入有人且未滿的伺服器
+                        if playing >= 1 then
+                            return id
+                        end
+                    end
                 end
             end
-            cursor = response.nextPageCursor or ""
-            if cursor == "" or #validServers >= 10 then break end
-        else
-            break
         end
+        return nil
     end
 
-    -- 若所有候選服務器皆訪問過，重置紀錄列表
-    if #validServers == 0 then
-        VisitedServers = { [JobId] = true }
-        _G.ServerHopping = false
-        return
-    end
+    _G.ServerHopConn = task.spawn(function()
+        while _G.ServerHopping do
+            -- 已經進到其他伺服器：結束跳服
+            if game.JobId ~= startJobId then
+                _G.ServerHopping = false
+                break
+            end
 
-    local targetJobId
-    if mode == "small" then
-        table.sort(validServers, function(a, b) return a.count < b.count end)
-        targetJobId = validServers[1].id
-    else
-        targetJobId = validServers[math.random(1, #validServers)].id
-    end
+            local success, err = pcall(function()
+                local serverData = GetServers()
+                local targetServerId = nil
 
-    self:TeleportToServer(targetJobId)
+                if serverData then
+                    -- 1. 優先尋找人數 2~10 人的伺服器
+                    targetServerId = FindInPage(serverData.data, true)
+
+                    -- 第一頁沒找到時嘗試翻頁
+                    if not targetServerId and serverData.nextPageCursor then
+                        local nextPageData = GetServers(serverData.nextPageCursor)
+                        if nextPageData then
+                            targetServerId = FindInPage(nextPageData.data, true)
+                        end
+                    end
+
+                    -- 2. 若仍沒有 2~10 人的伺服器，降級為一般未滿伺服器（避免完全跳不了服）
+                    if not targetServerId then
+                        targetServerId = FindInPage(serverData.data, false)
+                    end
+                end
+
+                if targetServerId then
+                    -- 記錄已訪問過的伺服器，避免重複進入
+                    VisitedServers[targetServerId] = true
+
+                    pcall(function()
+                        if ServerBrowserRemote then
+                            ServerBrowserRemote:InvokeServer("teleport", targetServerId)
+                        else
+                            TeleportService:TeleportToPlaceInstance(PlaceId, targetServerId, LocalPlayer)
+                        end
+                    end)
+
+                    -- [跳服逾時 3 秒] 等待切服；3 秒內未完成跳服即停止本次跳服
+                    local hopDeadline = os.clock() + HOP_TIMEOUT
+                    while _G.ServerHopping and game.JobId == startJobId and os.clock() < hopDeadline do
+                        task.wait(0.1)
+                    end
+
+                    if game.JobId ~= startJobId then
+                        _G.ServerHopping = false
+                        return
+                    end
+                else
+                    -- 找不到可用伺服器：重置紀錄，等待後重試
+                    VisitedServers = { [JobId] = true }
+                end
+            end)
+
+            if not success then
+                warn("跳服搜尋出錯: " .. tostring(err))
+            end
+
+            if not _G.ServerHopping then
+                break
+            end
+
+            -- 等待 1 秒後恢復跳服流程
+            task.wait(HOP_FAIL_WAIT)
+        end
+    end)
 end
 
 local function StartServerHopSequence()
@@ -814,6 +921,8 @@ task.spawn(function()
 
         local char = LocalPlayer.Character
         if not char then return end
+
+        ForceStandUp()
 
         local fruitHandle = getClosestFruit()
 
