@@ -88,10 +88,10 @@ _G.SelectTeam = "Marines"
 --ESP Fruit
 _G.FruitESP = true
 
---Auto Store Fruit
+--Auto store
 _G.AutoStoreFruit = true
 
---自動抽果
+-- 自動抽果
 _G.AutoRollFruit = false
 
 --Auto Tween Fruit
@@ -147,7 +147,7 @@ _G.KeyDisabled = false
 -- 配置自動保存
 ----------------------------------------
 local ConfigFolder = "AutoFindFruit_Config"
-local ConfigFile = ConfigFolder .. "/settings.json"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
 local ConfigReady = false
 local ConfigSaving = false
 local ConfigDirty = false
@@ -327,52 +327,7 @@ Workspace.ChildRemoved:Connect(function(child)
     clearEspForInstance(child)
 end)
 
---Auto Store Fruit
-local FruitList = {
-    ["Dragon-West"]     = "Dragon (West) Fruit",
-    ["Dragon-East"]     = "Dragon (East) Fruit",
-    ["Kitsune-Kitsune"] = "Kitsune Fruit",
-    ["Tiger-Tiger"]     = "Tiger Fruit",
-    ["Spirit-Spirit"]   = "Spirit Fruit",
-    ["Control-Control"] = "Control Fruit",
-    ["Venom-Venom"]     = "Venom Fruit",
-    ["Shadow-Shadow"]   = "Shadow Fruit",
-    ["Dough-Dough"]     = "Dough Fruit",
-    ["T-Rex-T-Rex"]     = "T-Rex Fruit",
-    ["Mammoth-Mammoth"] = "Mammoth Fruit",
-    ["Gravity-Gravity"] = "Gravity Fruit",
-    ["Blizzard-Blizzard"]= "Blizzard Fruit",
-    ["Pain-Pain"]       = "Pain Fruit",
-    ["Lightning-Lightning"] = "Lightning Fruit",
-    ["Portal-Portal"]   = "Portal Fruit",
-    ["Phoenix-Phoenix"] = "Phoenix Fruit",
-    ["Gas-Gas"]         = "Gas Fruit",
-    ["Yeti-Yeti"]       = "Yeti Fruit",
-    ["Sound-Sound"]     = "Sound Fruit",
-    ["Spider-Spider"]   = "Spider Fruit",
-    ["Love-Love"]       = "Love Fruit",
-    ["Buddha-Buddha"]   = "Buddha Fruit",
-    ["Quake-Quake"]     = "Quake Fruit",
-    ["Magma-Magma"]     = "Magma Fruit",
-    ["Ghost-Ghost"]     = "Ghost Fruit",
-    ["Creation-Creation"] = "Creation Fruit",
-    ["Rubber-Rubber"]   = "Rubber Fruit",
-    ["Light-Light"]     = "Light Fruit",
-    ["Diamond-Diamond"] = "Diamond Fruit",
-    ["Dark-Dark"]       = "Dark Fruit",
-    ["Sand-Sand"]       = "Sand Fruit",
-    ["Ice-Ice"]         = "Ice Fruit",
-    ["Eagle-Eagle"]     = "Eagle Fruit",
-    ["Flame-Flame"]     = "Flame Fruit",
-    ["Spike-Spike"]     = "Spike Fruit",
-    ["Smoke-Smoke"]     = "Smoke Fruit",
-    ["Bomb-Bomb"]       = "Bomb Fruit",
-    ["Spring-Spring"]   = "Spring Fruit",
-    ["Blade-Blade"]     = "Blade Fruit",
-    ["Spin-Spin"]       = "Spin Fruit",
-    ["Rocket-Rocket"]   = "Rocket Fruit"
-}
-
+--store fruit
 task.spawn(function()
     while true do
         if _G.AutoStoreFruit then
@@ -380,21 +335,23 @@ task.spawn(function()
                 local character = LocalPlayer.Character
                 local backpack = LocalPlayer:FindFirstChild("Backpack")
                 
-                for remoteName, toolName in pairs(FruitList) do
-                    local fruitTool = nil
-                    
-                    if character then
-                        fruitTool = character:FindFirstChild(toolName)
-                    end
-                    
-                    if not fruitTool then
-                        if backpack then
-                            fruitTool = backpack:FindFirstChild(toolName)
+                -- 檢查背包中的水果
+                if backpack then
+                    for _, v in pairs(backpack:GetChildren()) do
+                        if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                            local originalName = v:GetAttribute("OriginalName") or v.Name
+                            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StoreFruit", originalName, v)
                         end
                     end
-                    
-                    if fruitTool then
-                        ReplicatedStorage.Remotes.CommF_:InvokeServer("StoreFruit", remoteName, fruitTool)
+                end
+                
+                -- 檢查角色手上（裝備中）的水果
+                if character then
+                    for _, v in pairs(character:GetChildren()) do
+                        if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                            local originalName = v:GetAttribute("OriginalName") or v.Name
+                            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StoreFruit", originalName, v)
+                        end
                     end
                 end
             end)
@@ -417,10 +374,16 @@ task.spawn(function()
             local response
             pcall(function()
                 local args = {
-                    "Cousin",
-                    "DLCBoxData"
+                    {
+                        Context = "Purchase",
+                        BoxName = "ZiolesGacha"
+                    }
                 }
-                response = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+                response = game:GetService("ReplicatedStorage")
+                    :WaitForChild("Modules")
+                    :WaitForChild("Net")
+                    :WaitForChild("RF/GachaNetworkRF")
+                    :InvokeServer(unpack(args))
             end)
             
             if response then
@@ -1009,7 +972,6 @@ Tabs.Fruit:Toggle({
 
 Tabs.Fruit:Slider({
     Title = "換服倒數 (秒)",
-    Desc = "無果實時準備換服的等待時間",
     Value = {
     Min = 1,
     Max = 10,
