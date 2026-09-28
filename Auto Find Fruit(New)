@@ -138,7 +138,7 @@ end
 
 local ScriptLoadstring = [[if isfile("Hub.file") then
     if readfile("Hub.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Find%20Fruit(New)"))()
+        loadstring(game:HttpGet("https://rjr-loader.top/script/autofindfruit"))()
     end
 end]]
 
