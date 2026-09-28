@@ -404,6 +404,85 @@ task.spawn(function()
 end)
 
 --Auto Tween Fruit
+local TRANSIT_WAIT_TIME = 2
+local TRANSIT_ARRIVE_DIST = 0
+
+local TransitPoints = {
+    -- 一海
+    World1 = {
+        { point = Vector3.new(61177, -5, 1954),    dest = Vector3.new(3865, 8, -1926) },
+        { point = Vector3.new(4056, -4, -1814),    dest = Vector3.new(61164, 5, 1819) },
+        { point = Vector3.new(-4197, 1092, -362),  dest = Vector3.new(-6024, 5469, 2203) },
+        { point = Vector3.new(-6022, 5469, 2215),  dest = Vector3.new(-4167, 1092, -347) },
+    },
+    -- 二海
+    World2 = {
+        { point = Vector3.new(2283, 16, 910),      dest = Vector3.new(-287, 306, 599) },
+        { point = Vector3.new(-288, 306, 593),     dest = Vector3.new(2285, 15, 904) },
+        { point = Vector3.new(922, 125, 32843),    dest = Vector3.new(-6509, 83, -133) },
+        { point = Vector3.new(-6501, 83, -125),    dest = Vector3.new(923, 125, 32853) },
+    },
+    -- 三海
+    World3 = {
+        { point = Vector3.new(-5060, 317, -3193),  dest = Vector3.new(-12464, 376, -7566) },
+        { point = Vector3.new(-12464, 376, -7566), dest = Vector3.new(-5060, 317, -3193) },
+        { point = Vector3.new(-5096, 317, -3178),  dest = Vector3.new(-16813, 58, 305) },
+        { point = Vector3.new(-5027, 317, -3207),  dest = Vector3.new(5651, 1015, -350) },
+    },
+}
+
+local function GetWorldTransitPoints()
+    local pid = game.PlaceId
+    if pid == 2753915549 or pid == 85211729168715 then
+        return TransitPoints.World1
+    elseif pid == 4442272183 or pid == 79091703265657 then
+        return TransitPoints.World2
+    elseif pid == 7449423635 or pid == 100117331123089 then
+        return TransitPoints.World3
+    end
+    return {}
+end
+
+local function PlanTransitRoute(fromPos, targetPos)
+    local portals = GetWorldTransitPoints()
+    if #portals == 0 then return {} end
+
+    local bestCost = (targetPos - fromPos).Magnitude   -- 直飛作為基準
+    local bestIndices = {}
+
+    for i, p in ipairs(portals) do
+        local cost = (p.point - fromPos).Magnitude + (p.dest - targetPos).Magnitude
+        if cost < bestCost then
+            bestCost = cost
+            bestIndices = { i }
+        end
+    end
+
+    for i, p in ipairs(portals) do
+        for j, q in ipairs(portals) do
+            if i ~= j then
+                local cost = (p.point - fromPos).Magnitude
+                           + (p.dest - q.point).Magnitude
+                           + (q.dest - targetPos).Magnitude
+                if cost < bestCost then
+                    bestCost = cost
+                    bestIndices = { i, j }
+                end
+            end
+        end
+    end
+
+    local waypoints = {}
+    for _, idx in ipairs(bestIndices) do
+        table.insert(waypoints, portals[idx].point)
+    end
+    return waypoints
+end
+
+-- 中轉狀態全域變數
+_G.FTP2_Transit = nil
+_G.FTP2_TransitTarget = nil
+
 local function ClearFruitFlightComponents()
     if _G.Fruit_LinearVelocity then _G.Fruit_LinearVelocity:Destroy(); _G.Fruit_LinearVelocity = nil end
     if _G.Fruit_AntiGravity then _G.Fruit_AntiGravity:Destroy(); _G.Fruit_AntiGravity = nil end
@@ -503,133 +582,111 @@ local function ForceStandUp()
     end
 end
 
-local function GetCurrentWorldEntrances()
-    local pool = {}
-    local pid = game.PlaceId
-
-    if table.find({2753915549, 85211729168715}, pid) then
-        pool = {
-            { Arg = Vector3.new(61163.85,  11.68,   1819.78), Dest = Vector3.new(61164,   5,    1820)  },
-            { Arg = Vector3.new(3864.68,    6.73,  -1926.21), Dest = Vector3.new(3865,    5,   -1926)  },
-            { Arg = Vector3.new(-4607.82,  874.39, -1667.55), Dest = Vector3.new(-4608,   873, -1668)  },
-            { Arg = Vector3.new(-7894.61, 5547.14,  -380.29), Dest = Vector3.new(-7895,  5546,  -380)  },
-        }
-    elseif table.find({4442272183, 79091703265657}, pid) then
-        pool = {
-            { Arg = Vector3.new(2285,   15,   882),   Dest = Vector3.new(2285,   15,   882)  },
-            { Arg = Vector3.new(-380,  350,   630),   Dest = Vector3.new(-380,  350,   630)  },
-            { Arg = Vector3.new(924,   125, 32882),   Dest = Vector3.new(924,   125, 32882)  },
-            { Arg = Vector3.new(-6491, 116,  -107),   Dest = Vector3.new(-6491, 116,  -107)  },
-        }
-    elseif table.find({7449423635, 100117331123089}, pid) then
-        pool = {
-            { Arg = Vector3.new(5678,    1013,  -312), Dest = Vector3.new(5678,    1013,  -312)  },
-            { Arg = Vector3.new(-12551,  337,  -7507), Dest = Vector3.new(-12551,  337,  -7507)  },
-            { Arg = Vector3.new(-5038,   315,  -3135), Dest = Vector3.new(-5038,   315,  -3135)  },
-            { Arg = Vector3.new(-5098,   317,  -3179), Dest = Vector3.new(-16813,   58,    305)  },
-        }
-    end
-    return pool
-end
+local Fruit_OrbitOffset = nil
+local Fruit_NextOrbitTime = 0
 
 local function FlyToFruitLogic(targetPos)
     local char = LocalPlayer.Character
     local myHRP = char and char:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
 
-    if os.clock() < _G.Fruit_TeleportPauseUntil then
-        if _G.Fruit_LinearVelocity then
-            _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
-        end
-        myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        return
+    if not _G.FTP2_Transit or not _G.FTP2_TransitTarget or (_G.FTP2_TransitTarget - targetPos).Magnitude > 20 then
+        _G.FTP2_TransitTarget = targetPos
+        local waypoints = PlanTransitRoute(myHRP.Position, targetPos)
+        _G.FTP2_Transit = {
+            waypoints = waypoints,
+            index = 1,
+            waiting = false,
+            waitUntil = 0
+        }
     end
 
-    local now = os.clock()
-    if not Fruit_OrbitOffset or now >= Fruit_NextOrbitTime then
-        local maxRadius = 20
-        local dist = math.random(1, maxRadius)
-        local d = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1)
-        if d.Magnitude > 0 then d = d.Unit end
-        Fruit_OrbitOffset = d * dist
-        Fruit_NextOrbitTime = now + 0.05
-    end
-    local finalTarget = targetPos + Fruit_OrbitOffset
+    local flyTarget = targetPos
 
-    local dir = finalTarget - myHRP.Position
-    local distToFruit = (targetPos - myHRP.Position).Magnitude
+    if _G.FTP2_Transit and _G.FTP2_Transit.index <= #_G.FTP2_Transit.waypoints then
+        local currentWP = _G.FTP2_Transit.waypoints[_G.FTP2_Transit.index]
 
-    local directFlightTime = distToFruit / _G.FruitFlySpeed
-    local bestEntrance = nil
-    local bestTotalTime = directFlightTime
-    local teleportPenalty = 1.5
-    local pool = GetCurrentWorldEntrances()
-
-    if distToFruit < 300 then pool = {} end
-
-    for _, e in ipairs(pool) do
-        if _G.Fruit_BlockedEntrances[e.Arg] then continue end
-
-        local destDistToFruit = (e.Dest - targetPos).Magnitude
-        local totalTimeViaPortal = (destDistToFruit / _G.FruitFlySpeed) + teleportPenalty
-
-        if totalTimeViaPortal < bestTotalTime then
-            if (distToFruit - destDistToFruit) > 150 then
-                bestTotalTime = totalTimeViaPortal
-                bestEntrance = e
+        local portals = GetWorldTransitPoints()
+        local currentPortal = nil
+        for _, p in ipairs(portals) do
+            if p.point == currentWP then
+                currentPortal = p
+                break
             end
         end
-    end
 
-    if bestEntrance then
-        local lastTime = _G.Fruit_LastTeleportTicks[bestEntrance.Arg] or 0
-        if os.clock() - lastTime > 4 then
-            _G.Fruit_LastTeleportTicks[bestEntrance.Arg] = os.clock()
-            _G.Fruit_TeleportPauseUntil = os.clock() + 1.2
+        local hasTeleported = false
+        if currentPortal then
+            local distToDest = (myHRP.Position - currentPortal.dest).Magnitude
+            local distToTargetFromHere = (myHRP.Position - targetPos).Magnitude
+            local distToTargetFromWP = (currentWP - targetPos).Magnitude
 
-            local preDist = (myHRP.Position - bestEntrance.Dest).Magnitude
-
-            if _G.Fruit_LinearVelocity then
-                _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+            if distToDest <= 200 or (distToTargetFromWP - distToTargetFromHere) > 500 then
+                hasTeleported = true
             end
-            myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
 
-            task.spawn(function()
-                pcall(function()
-                    local commF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-                    commF:InvokeServer("requestEntrance", bestEntrance.Arg)
-                end)
-            end)
-
-            task.spawn(function()
-                task.wait(1.5)
-                local c = LocalPlayer.Character
-                local hrp = c and c:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local postDist = (hrp.Position - bestEntrance.Dest).Magnitude
-                    if postDist > 150 and postDist >= preDist * 0.5 then
-                        local fails = (_G.Fruit_TeleportFails[bestEntrance.Arg] or 0) + 1
-                        _G.Fruit_TeleportFails[bestEntrance.Arg] = fails
-                        if fails >= 3 then
-                            _G.Fruit_BlockedEntrances[bestEntrance.Arg] = true
-                        end
-                    end
+        if hasTeleported then
+            _G.FTP2_Transit.waiting = false
+            _G.FTP2_Transit.index = _G.FTP2_Transit.index + 1
+            if _G.FTP2_Transit.index <= #_G.FTP2_Transit.waypoints then
+                flyTarget = _G.FTP2_Transit.waypoints[_G.FTP2_Transit.index]
+            else
+                flyTarget = targetPos
+            end
+        elseif _G.FTP2_Transit.waiting then
+            if os.clock() >= _G.FTP2_Transit.waitUntil then
+                _G.FTP2_Transit.waiting = false
+                _G.FTP2_Transit.index = _G.FTP2_Transit.index + 1
+            else
+                if _G.Fruit_LinearVelocity then
+                    _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
                 end
-            end)
-            return
+                myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                return
+            end
+        else
+            local distToWP = (currentWP - myHRP.Position).Magnitude
+            if distToWP <= TRANSIT_ARRIVE_DIST then
+                _G.FTP2_Transit.waiting = true
+                _G.FTP2_Transit.waitUntil = os.clock() + TRANSIT_WAIT_TIME
+                if _G.Fruit_LinearVelocity then
+                    _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                end
+                myHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                return
+            else
+                flyTarget = currentWP
+            end
         end
     end
 
+    local moveTarget = flyTarget
+    if flyTarget == targetPos then
+        local now = os.clock()
+        if not Fruit_OrbitOffset or now >= Fruit_NextOrbitTime then
+            local maxRadius = 20
+            local dist = math.random(1, maxRadius)
+            local d = Vector3.new(math.random() * 2 - 1, math.random() * 2 - 1, math.random() * 2 - 1)
+            if d.Magnitude > 0 then d = d.Unit end
+            Fruit_OrbitOffset = d * dist
+            Fruit_NextOrbitTime = now + 0.05
+        end
+        moveTarget = targetPos + Fruit_OrbitOffset
+    end
+
+    -- 4. 執行物理飛行
     local needSetup = not _G.Fruit_LinearVelocity or _G.Fruit_LinearVelocity.Parent ~= myHRP
     if needSetup then SetupFruitFlightComponents(myHRP) end
 
+    local dir = moveTarget - myHRP.Position
     if dir.Magnitude > 0.1 then
-        _G.Fruit_LinearVelocity.VectorVelocity = dir.Unit * _G.FruitFlySpeed
+        _G.Fruit_LinearVelocity.VectorVelocity = dir.Unit * (_G.FruitFlySpeed or 350)
     else
         _G.Fruit_LinearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
     end
 
-    local lookAt = Vector3.new(targetPos.X, myHRP.Position.Y, targetPos.Z)
+    local lookAt = Vector3.new(moveTarget.X, myHRP.Position.Y, moveTarget.Z)
     if (lookAt - myHRP.Position).Magnitude > 0.1 then
         myHRP.CFrame = CFrame.new(myHRP.Position, lookAt)
     end
@@ -642,6 +699,8 @@ local function StopFruitFlight()
     ClearFruitFlightComponents()
     Fruit_OrbitOffset = nil
     Fruit_NextOrbitTime = 0
+    _G.FTP2_Transit = nil
+    _G.FTP2_TransitTarget = nil
 
     local char = LocalPlayer.Character
     if char then
@@ -676,9 +735,6 @@ local function WaitForAllFruitsPicked(timeout)
     return true
 end
 
---------------------------------------------------------------------------------
--- 整合優化版 Server Hop（換服）邏輯
---------------------------------------------------------------------------------
 local ServerCore = {}
 
 function ServerCore:TeleportToServer(jobId)
@@ -696,7 +752,6 @@ function ServerCore:TeleportToServer(jobId)
     VisitedServers[jobId] = true
 
     task.spawn(function()
-        -- 優先呼叫遊戲內建 ServerBrowser Remote (如適用)
         if ServerBrowserRemote then
             local success = pcall(function()
                 ServerBrowserRemote:InvokeServer("teleport", jobId)
@@ -704,7 +759,6 @@ function ServerCore:TeleportToServer(jobId)
             if success then return end
         end
 
-        -- 使用標準 TeleportService 進行切換
         local teleportOptions = Instance.new("TeleportOptions")
         teleportOptions.ServerInstanceId = jobId
 
@@ -729,8 +783,6 @@ function ServerCore:FindAndHop(mode)
     _G.ServerHopping = true
 
     local startJobId = JobId
-
-    -- [跳服逾時] 傳送後 3 秒內未完成跳服：停止本次跳服，等待 1 秒後恢復跳服流程
     local HOP_TIMEOUT = 3
     local HOP_FAIL_WAIT = 1
 
@@ -757,15 +809,12 @@ function ServerCore:FindAndHop(mode)
                 local id = tostring(server.id)
                 local playing = tonumber(server.playing) or 0
                 local maxPlayers = tonumber(server.maxPlayers) or 12
-                -- 不是當前服 + 沒有跳過記錄 + 人數未滿
                 if id ~= tostring(JobId) and not VisitedServers[id] and playing < maxPlayers then
                     if strict then
-                        -- 人數 2~10 人的伺服器優先
                         if playing >= 2 and playing <= 10 then
                             return id
                         end
                     else
-                        -- 備援條件：找不到時，進入有人且未滿的伺服器
                         if playing >= 1 then
                             return id
                         end
@@ -778,7 +827,6 @@ function ServerCore:FindAndHop(mode)
 
     _G.ServerHopConn = task.spawn(function()
         while _G.ServerHopping do
-            -- 已經進到其他伺服器：結束跳服
             if game.JobId ~= startJobId then
                 _G.ServerHopping = false
                 break
@@ -789,10 +837,8 @@ function ServerCore:FindAndHop(mode)
                 local targetServerId = nil
 
                 if serverData then
-                    -- 1. 優先尋找人數 2~10 人的伺服器
                     targetServerId = FindInPage(serverData.data, true)
 
-                    -- 第一頁沒找到時嘗試翻頁
                     if not targetServerId and serverData.nextPageCursor then
                         local nextPageData = GetServers(serverData.nextPageCursor)
                         if nextPageData then
@@ -800,14 +846,12 @@ function ServerCore:FindAndHop(mode)
                         end
                     end
 
-                    -- 2. 若仍沒有 2~10 人的伺服器，降級為一般未滿伺服器（避免完全跳不了服）
                     if not targetServerId then
                         targetServerId = FindInPage(serverData.data, false)
                     end
                 end
 
                 if targetServerId then
-                    -- 記錄已訪問過的伺服器，避免重複進入
                     VisitedServers[targetServerId] = true
 
                     pcall(function()
@@ -818,7 +862,6 @@ function ServerCore:FindAndHop(mode)
                         end
                     end)
 
-                    -- [跳服逾時 3 秒] 等待切服；3 秒內未完成跳服即停止本次跳服
                     local hopDeadline = os.clock() + HOP_TIMEOUT
                     while _G.ServerHopping and game.JobId == startJobId and os.clock() < hopDeadline do
                         task.wait(0.1)
@@ -829,7 +872,6 @@ function ServerCore:FindAndHop(mode)
                         return
                     end
                 else
-                    -- 找不到可用伺服器：重置紀錄，等待後重試
                     VisitedServers = { [JobId] = true }
                 end
             end)
@@ -842,7 +884,6 @@ function ServerCore:FindAndHop(mode)
                 break
             end
 
-            -- 等待 1 秒後恢復跳服流程
             task.wait(HOP_FAIL_WAIT)
         end
     end)
@@ -876,9 +917,6 @@ local function StartServerHopSequence()
     end)
 end
 
---------------------------------------------------------------------------------
--- 撿果與監控主循環
---------------------------------------------------------------------------------
 local function getClosestFruit()
     local char = LocalPlayer.Character
     local pHRP = char and char:FindFirstChild("HumanoidRootPart")
