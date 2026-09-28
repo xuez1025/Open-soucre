@@ -318,8 +318,7 @@ _G.AttackMobs = true
 _G.AutoBusoEnabled = true
 _G.AutoV3_Enabled = true
 _G.AutoV4_Enabled = true
-_G.AutoKenEnabled = false
-_G.RemoveKenEffectEnabled = false
+_G.AutoKenEnabled = true
 
 --低配模式
 _G.LowVisualMode = false
@@ -378,7 +377,6 @@ local ConfigKeys = {
     "AutoV3_Enabled",
     "AutoV4_Enabled",
     "AutoKenEnabled",
-    "RemoveKenEffectEnabled",
     "LowVisualMode",
     "AutoExecute",
     "AntiAFK_ENABLED",
@@ -2661,7 +2659,7 @@ Tabs.Config:Toggle({
     end
 })
 
-Tabs["自動"]:Toggle({
+Tabs.Config:Toggle({
     Title = "Auto Ken",
     Desc = "自動開啟見聞色",
     Value = _G.AutoKenEnabled,
