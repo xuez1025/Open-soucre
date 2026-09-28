@@ -6014,7 +6014,7 @@ Tabs["自動"]:Toggle({
 })
 
 Tabs["自動"]:Toggle({
-    Title = "自動開啟見聞色 (Auto Ken)",
+    Title = "Auto Ken",
     Desc = "自動開啟見聞色",
     Value = _G.AutoKenEnabled,
     Callback = function(v)
