@@ -46,7 +46,7 @@ local WindUI = loadstring(request({
 local Window = WindUI:CreateWindow({
     Title         = "Auto Find Fruit",
     Icon          = "apple",
-    Author        = "by xuez1025",
+    Author        = "by Xu",
     Size          = UDim2.fromOffset(600, 400),
     Transparent   = true,
     Theme         = "Dark",
@@ -142,6 +142,10 @@ local ScriptLoadstring = [[if isfile("Hub.file") then
     end
 end]]
 
+-- Anti AFK
+_G.AntiAFK_ENABLED = true
+_G.AntiAFK_Connection = nil
+
 --快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
@@ -163,6 +167,7 @@ local ConfigKeys = {
     "Tweenfruit",
     "HopDelayTime",
     "AutoExecute",
+		"AntiAFK_ENABLED",
     "CurrentKey",
     "KeyDisabled"
 }
@@ -1063,6 +1068,36 @@ task.spawn(function()
     end
 end)
 
+-- Anti AFK
+local function EnableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
+    if getconnections then
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            conn:Disable()
+        end
+    end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+
+local function DisableAntiAFK()
+    if _G.AntiAFK_Connection then 
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil 
+    end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
+end
+
 --------------------------
 -- 分頁
 --------------------------
@@ -1203,6 +1238,20 @@ Tabs.Settings:Toggle({
                 Duration = 3
             })
         end
+    end
+})
+
+Tabs.Settings:Toggle({ 
+    Title    = "Anti AFK", 
+    Desc     = "防止閒置被踢出", 
+    Value    = _G.AntiAFK_ENABLED,
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
+            EnableAntiAFK() 
+        else 
+            DisableAntiAFK() 
+        end 
     end
 })
 
