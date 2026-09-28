@@ -386,8 +386,8 @@ _G.FastAttack = false
 _G.AttackDistance = 500
 
 --Fruit M1
-_G.FruitM1 = true
-_G.VoidFruitM1 = true
+_G.FruitM1 = false
+_G.VoidFruitM1 = false
 _G.AttackPlayers = true
 _G.AttackMobs = true
 
@@ -1478,68 +1478,26 @@ end
 
 if _G.SilentAimLoop then _G.SilentAimLoop:Disconnect() end
 
--- 預先建立常數表，避免每幀重新配置（降低 GC 壓力）
-local GLOW_MULTIPLIERS = {14.0, 9.0, 5.5, 3.2, 2.0, 1.3, 0.8}
-local ALPHA_MULTIPLIERS = {0.03, 0.06, 0.12, 0.22, 0.38, 0.60, 0.85}
-local CORNER_OFFSETS = {
-    Vector2.new(-1, -1),
-    Vector2.new(1, -1),
-    Vector2.new(1, 1),
-    Vector2.new(-1, 1)
-}
-local WHITE_COLOR = Color3.fromRGB(255, 255, 255)
-local CORE_COLOR = Color3.fromRGB(245, 255, 255)
-
--- 目標掃描節流：不需要每幀都重新掃描所有玩家/怪物
-local TARGET_SCAN_INTERVAL = 0.05
-local lastTargetScan = 0
-
 _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
-    local clockTime = os.clock()
-    local silentAimActive = _G.SilentAimEnabled
-    local showLine = _G.SilentAimShowLine
-    local showFOV = _G.SilentAimShowFOV
-
-    -- 完全閒置時（自瞄、FOV 圈、雷射線皆關閉）直接跳過，不再每幀掃描
-    if not silentAimActive and not showLine and not showFOV then
-        if FovCircle.Visible then FovCircle.Visible = false end
-        HideAllLaserDrawings()
-        currentSilentAimTarget, currentSilentAimTargetPos = nil, nil
-        _G.SilentAimTargetPos = nil
-        return
-    end
-
     local origin = GetSilentAimOrigin()
+    local clockTime = os.clock()
 
-    if showFOV then
+    if _G.SilentAimShowFOV then
         FovCircle.Visible = true
         FovCircle.Radius = _G.SilentAimFOV
         FovCircle.Position = origin
         FovCircle.Thickness = _G.SilentAimFOVThickness
-        FovCircle.Color = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or WHITE_COLOR
+        FovCircle.Color = RainbowSnapLine and Color3.fromHSV((clockTime * 0.2) % 1, 0.5, 1) or Color3.fromRGB(255, 255, 255)
         FovCircle.Transparency = _G.SilentAimFOVTransparency
-    elseif FovCircle.Visible then
+    else
         FovCircle.Visible = false
     end
 
-    -- 只有自瞄啟用或需要顯示雷射線時才重新掃描目標，且限制掃描頻率
-    if silentAimActive or showLine then
-        if clockTime - lastTargetScan >= TARGET_SCAN_INTERVAL then
-            lastTargetScan = clockTime
-            currentSilentAimTarget, currentTargetDistance = GetClosestSilentAimTarget()
-            currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
-            _G.SilentAimTargetPos = currentSilentAimTargetPos
-        else
-            -- 掃描間隔中使用上次結果，但仍更新目標位置以維持平滑
-            currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
-            _G.SilentAimTargetPos = currentSilentAimTargetPos
-        end
-    else
-        currentSilentAimTarget, currentSilentAimTargetPos = nil, nil
-        _G.SilentAimTargetPos = nil
-    end
+    currentSilentAimTarget, currentTargetDistance = GetClosestSilentAimTarget()
+    currentSilentAimTargetPos = currentSilentAimTarget and currentSilentAimTarget.Position or nil
+    _G.SilentAimTargetPos = currentSilentAimTargetPos
 
-    if showLine and currentSilentAimTargetPos then
+    if _G.SilentAimShowLine and currentSilentAimTargetPos then
         local pos, onScreen = Camera:WorldToViewportPoint(currentSilentAimTargetPos)
         if onScreen then
             local targetScreenPos = Vector2.new(pos.X, pos.Y)
@@ -1559,16 +1517,16 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
 
             local coreColor, glowColorBase
             if RainbowSnapLine then
-                coreColor = WHITE_COLOR
+                coreColor = Color3.fromRGB(255, 255, 255)
                 glowColorBase = Color3.fromHSV(baseHue, 0.85, 1)
             else
                 local lerpFactor = (pulseWave + 1) / 2
                 glowColorBase = BaseLaserColor:Lerp(Color3.fromRGB(180, 240, 255), lerpFactor * 0.4)
-                coreColor = CORE_COLOR
+                coreColor = Color3.fromRGB(245, 255, 255)
             end
 
-            local glowMultipliers = GLOW_MULTIPLIERS
-            local alphaMultipliers = ALPHA_MULTIPLIERS
+            local glowMultipliers = {14.0, 9.0, 5.5, 3.2, 2.0, 1.3, 0.8}
+            local alphaMultipliers = {0.03, 0.06, 0.12, 0.22, 0.38, 0.60, 0.85}
 
             for i, glow in ipairs(LaserGlowLayers) do
                 glow.Visible = true
@@ -1644,12 +1602,18 @@ _G.SilentAimLoop = RunService.RenderStepped:Connect(function()
             local bracketLen = boxSize * 0.45
             local rotation = clockTime * (1.5 + (1 - distFactor))
 
-            local cosR, sinR = math.cos(rotation), math.sin(rotation)
+            local corners = {
+                Vector2.new(-boxSize, -boxSize),
+                Vector2.new(boxSize, -boxSize),
+                Vector2.new(boxSize, boxSize),
+                Vector2.new(-boxSize, boxSize)
+            }
 
             for i = 1, 4 do
-                local offset = CORNER_OFFSETS[i]
-                local rotX = (offset.X * boxSize) * cosR - (offset.Y * boxSize) * sinR
-                local rotY = (offset.X * boxSize) * sinR + (offset.Y * boxSize) * cosR
+                local offset = corners[i]
+                local cosR, sinR = math.cos(rotation), math.sin(rotation)
+                local rotX = offset.X * cosR - offset.Y * sinR
+                local rotY = offset.X * sinR + offset.Y * cosR
                 local cornerPos = targetScreenPos + Vector2.new(rotX, rotY)
 
                 local dirX = (i == 1 or i == 4) and 1 or -1
@@ -5082,8 +5046,8 @@ local AnnouncementTab = Window:Tab({
 AnnouncementTab:Section({ Title = "更新" })
 
 AnnouncementTab:Paragraph({
-    Title = "更新21(最後一次更新)",
-    Desc = "修復果實M1 & 鎖人v1無法穿牆問題 & 自動見聞色 開放自動逃跑 新增果實 m1 秒殺"
+    Title = "更新21",
+    Desc = "修復果實M1 鎖人v1無法穿牆問題 "
 })
 
 AnnouncementTab:Divider()
@@ -6050,7 +6014,7 @@ Tabs["自動"]:Toggle({
 })
 
 Tabs["自動"]:Toggle({
-    Title = "Auto Ken",
+    Title = "自動開啟見聞色 (Auto Ken)",
     Desc = "自動開啟見聞色",
     Value = _G.AutoKenEnabled,
     Callback = function(v)
