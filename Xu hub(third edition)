@@ -490,6 +490,9 @@ _G.SelectTeam = "海賊 (Pirates)"
 _G.Noclip_Enabled = false
 _G.Noclip_Connection = nil
 
+--拉怪
+_G.BringMob = false
+
 --Walk on water
 _G.WaterWalkEnabled = false
 
@@ -693,6 +696,8 @@ local ConfigKeys = {
 "SelectTeam",
 --穿牆
 "Noclip_Enabled",
+--拉怪
+"BringMob",
 --水上行走
 "WaterWalkEnabled",
 --移除岩漿傷害
@@ -3659,6 +3664,99 @@ _G.SetFTPNoclip = function(v)
     end
 end
 
+--拉怪
+if _G.BringMob then
+end
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local LastBring = 0
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.BringMob then
+            pcall(function()
+                if sethiddenproperty then
+                    sethiddenproperty(player, "SimulationRadius", math.huge)
+                end
+            end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if _G.BringMob then
+            pcall(function()
+                if os.clock() - LastBring < 0.01 then return end
+                LastBring = os.clock()
+
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                local enemiesFolder = workspace:FindFirstChild("Enemies")
+                if not enemiesFolder then return end
+
+                local Mon = nil
+                local closestDist = math.huge
+
+                for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                    local hum = enemy:FindFirstChildOfClass("Humanoid")
+                    local root = enemy:FindFirstChild("HumanoidRootPart")
+                    if hum and root and hum.Health > 0 and enemy.Name ~= "Tyrant of the Skies" and not string.find(enemy.Name, "Boss") then
+                        local dist = (root.Position - hrp.Position).Magnitude
+                        if dist < closestDist then
+                            closestDist = dist
+                            Mon = enemy
+                        end
+                    end
+                end
+
+                if not Mon then return end
+
+                local targetPos = hrp.Position - Vector3.new(0, 15, 0)
+
+                local function Network(part)
+                    if isnetworkowner then
+                        return isnetworkowner(part)
+                    end
+                    return part.ReceiveAge == 0 and not part.Anchored and part.Velocity.Magnitude > 0
+                end
+
+                for _, v in ipairs(enemiesFolder:GetChildren()) do
+                    local hum = v:FindFirstChildOfClass("Humanoid")
+                    local root = v:FindFirstChild("HumanoidRootPart")
+
+                    if hum and root and hum.Health > 0 and v.Name == Mon.Name then
+                        local distance = (root.Position - targetPos).Magnitude
+
+                        local bv = root:FindFirstChild("BodyVelocity")
+                        if not bv then
+                            bv = Instance.new("BodyVelocity")
+                            bv.Name = "BodyVelocity"
+                            bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+                            bv.Velocity = Vector3.zero
+                            bv.Parent = root
+                        end
+
+                        if distance > 10 and Network(root) then
+                            root.CFrame = CFrame.new(targetPos)
+                        end
+
+                        root.CanCollide = false
+                        hum.WalkSpeed = 0
+                        hum.JumpPower = 0
+                        if hum:GetState() ~= Enum.HumanoidStateType.Seated then
+                            hum:ChangeState(Enum.HumanoidStateType.Physics)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
 -- Walk on water
 task.spawn(function()
     local lastState = nil
@@ -5881,6 +5979,14 @@ Tabs["遊戲內設定"]:Toggle({
     Value = _G.Noclip_Enabled,
     Callback = function(v)
         _G.SetNoclipState(v)
+    end
+})
+
+Tabs["遊戲內設定"]:Toggle({
+    Title = "拉怪",
+    Value = _G.BringMob,
+    Callback = function(v)
+        _G.BringMob = v
     end
 })
 
