@@ -394,6 +394,8 @@ _G.AntiAFK_Connection = nil
 -- 快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
+_G.WebhookUrl = ""
+_G.WebhookUpgradeEnabled = false
 
 ----------------------------------------
 -- 配置自動保存
@@ -424,11 +426,15 @@ local ConfigKeys = {
     "AutoV4_Enabled",
     "AutoKenEnabled",
     "RemoveKenEffectEnabled",
+    "AutoUpgradeSword",
+    "AutoUpgradeGun",
     "LowVisualMode",
     "AutoExecute",
     "AntiAFK_ENABLED",
     "CurrentKey",
-    "KeyDisabled"
+    "KeyDisabled",
+    "WebhookUrl",
+    "WebhookUpgradeEnabled"
 }
 
 local function CopyConfigValue(value)	
@@ -514,6 +520,61 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+-- Webhook 相關變數
+--------------------------
+-- 使用 _G 以便隨配置儲存 (_G.WebhookUrl / _G.WebhookUpgradeEnabled)
+
+-- 發送 Discord Webhook 訊息
+local function SendWebhookMessage(url, content)
+    if not url or url == "" then return false end
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then return false end
+
+    local payload = HttpService:JSONEncode({
+        ["username"] = "Xu-hub",
+        ["content"] = content
+    })
+
+    local ok = pcall(function()
+        requestFunc({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = payload
+        })
+    end)
+    return ok
+end
+
+-- 使用 Discord Embed 讓訊息更美觀
+local function SendWebhookEmbed(url, weaponName)
+    if not url or url == "" then return false end
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then return false end
+
+    local payload = HttpService:JSONEncode({
+        ["username"] = "Xu-hub",
+        ["embeds"] = {{
+            ["title"] = "✅ 武器已升級",
+            ["description"] = "```\n" .. weaponName .. "\n```",
+            ["color"] = 0x7F00FF,
+            ["footer"] = {
+                ["text"] = "Xu-hub | " .. os.date("%Y-%m-%d %H:%M:%S")
+            }
+        }}
+    })
+
+    local ok = pcall(function()
+        requestFunc({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = payload
+        })
+    end)
+    return ok
+end
+
 -- Bug 與建議回報
 local function sendReport(reportText)
     if not reportText or reportText == "" then
@@ -1292,7 +1353,7 @@ local function TryUpgradeTool(tool, targetType)
         end)
 
         if upgSuccess then
-            return true -- 升級成功
+            return true, tool.Name -- 升級成功
         end
     end
     return false
@@ -1302,18 +1363,30 @@ local function runUpgradeProcess(onUpgraded)
     pcall(function()
         local tools = GetPlayerTools()
         local didUpgrade = false
+        local upgradedNames = {}
 
         for _, tool in ipairs(tools) do
             if _G.AutoUpgradeSword then
-                if TryUpgradeTool(tool, "Sword") then
+                local ok, name = TryUpgradeTool(tool, "Sword")
+                if ok then
                     didUpgrade = true
+                    table.insert(upgradedNames, name or tool.Name)
                 end
             end
             
             if _G.AutoUpgradeGun then
-                if TryUpgradeTool(tool, "Gun") then
+                local ok, name = TryUpgradeTool(tool, "Gun")
+                if ok then
                     didUpgrade = true
+                    table.insert(upgradedNames, name or tool.Name)
                 end
+            end
+        end
+
+        -- 武器已升級通知
+        if didUpgrade and _G.WebhookUpgradeEnabled and _G.WebhookUrl ~= "" then
+            for _, name in ipairs(upgradedNames) do
+                SendWebhookEmbed(_G.WebhookUrl, name)
             end
         end
 
@@ -1915,6 +1988,7 @@ end
 local Tabs = {
     Auto     = Window:Tab({ Title = "自動",   Icon = "crosshair" }),
     Weapon   = Window:Tab({ Title = "武器升級", Icon = "sword" }),
+    Webhook  = Window:Tab({ Title = "Webhook", Icon = "mail" }),
     Config   = Window:Tab({ Title = "配置",   Icon = "wrench"}),
     Settings = Window:Tab({ Title = "設定",   Icon = "settings" })
 }
@@ -2112,6 +2186,29 @@ task.spawn(function()
         task.wait(1)
     end
 end)
+
+----------------------------------------------------------------
+-- [ UI 介面 ] Webhook 分頁
+----------------------------------------------------------------
+Tabs.Webhook:Section({ Title = "Webhook" })
+
+Tabs.Webhook:Input({
+    Title = "Webhook 網址",
+    Desc = "貼上 Webhook URL",
+    Value = _G.WebhookUrl,
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Callback = function(text)
+        _G.WebhookUrl = text
+    end
+})
+
+Tabs.Webhook:Toggle({
+    Title = "武器已升級通知",
+    Value = _G.WebhookUpgradeEnabled,
+    Callback = function(state)
+        _G.WebhookUpgradeEnabled = state
+    end
+})
 
 Tabs.Config:Section({ Title = "Select Team" })
 
@@ -2365,7 +2462,6 @@ task.spawn(function()
         end
     end
 
-    -- 低配模式已開啟時 載入後重新套用
     if _G.LowVisualMode then
         _G.SetLowVisualState(true)
     end
