@@ -181,14 +181,14 @@ local mineCorner = Instance.new("UICorner")
 mineCorner.CornerRadius = UDim.new(0, 8)
 mineCorner.Parent = mine
 
--- 速度顯示
+-- 速度顯示（預設為 5）
 local speed = Instance.new("TextLabel")
 speed.Parent = SpeedPanel
 speed.BackgroundTransparency = 1
 speed.Position = UDim2.new(0, 45, 0, 0)
 speed.Size = UDim2.new(1, -90, 1, 0)
 speed.Font = Enum.Font.GothamBold
-speed.Text = "速度: 1"
+speed.Text = "速度: 5"
 speed.TextColor3 = Color3.fromRGB(240, 240, 255)
 speed.TextSize = 14
 
@@ -207,7 +207,7 @@ local plusCorner = Instance.new("UICorner")
 plusCorner.CornerRadius = UDim.new(0, 8)
 plusCorner.Parent = plus
 
--- ===== 垂直升降 UI 按鈕（已對調位置：左側下降 / 右側上升） =====
+-- ===== 垂直升降 UI 按鈕 =====
 
 -- 下降按鈕 (左側)
 local downButton = Instance.new("TextButton")
@@ -253,8 +253,8 @@ upStroke.Thickness = 1.2
 upStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 upStroke.Parent = upButton
 
--- ===== 狀態變量與邏輯 =====
-local speeds = 1
+-- ===== 狀態變量與邏輯 (預設速度改成 5) =====
+local speeds = 5
 local noclipOn = false
 local noclipConnection = nil
 local flying = false
