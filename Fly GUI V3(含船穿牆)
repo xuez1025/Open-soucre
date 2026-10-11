@@ -261,6 +261,72 @@ local flying = false
 local flyConnection = nil
 local isMinimized = false
 
+-- 船隻穿牆相關變數
+local boatNoclipOn = false
+local boatNoclipConn = nil
+local boatNoclipRestore = {}
+local boatNoclipBoat = nil
+
+local function BoatNoclipGetBoat()
+    local char = speaker.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local seat = hum and hum.SeatPart
+    if not seat then return nil end
+    local model = seat:FindFirstAncestorOfClass("Model")
+    if model and model ~= workspace then return model end
+    return seat.Parent
+end
+
+local function BoatNoclipApply(boat)
+    for _, d in ipairs(boat:GetDescendants()) do
+        if d:IsA("BasePart") then
+            if boatNoclipRestore[d] == nil then
+                boatNoclipRestore[d] = d.CanCollide
+            end
+            if d.CanCollide then
+                d.CanCollide = false
+            end
+        end
+    end
+end
+
+local function BoatNoclipRestoreAll()
+    for part, orig in pairs(boatNoclipRestore) do
+        pcall(function()
+            if part.Parent and part.CanCollide ~= orig then
+                part.CanCollide = orig
+            end
+        end)
+    end
+    boatNoclipRestore = {}
+end
+
+local function BoatNoclipStart()
+    if boatNoclipConn then return end
+    boatNoclipOn = true
+    boatNoclipConn = RunService.Stepped:Connect(function()
+        if not boatNoclipOn then return end
+        local boat = BoatNoclipGetBoat()
+        if boat ~= boatNoclipBoat then
+            BoatNoclipRestoreAll()
+            boatNoclipBoat = boat
+        end
+        if boat then
+            pcall(BoatNoclipApply, boat)
+        end
+    end)
+end
+
+local function BoatNoclipStop()
+    boatNoclipOn = false
+    if boatNoclipConn then
+        boatNoclipConn:Disconnect()
+        boatNoclipConn = nil
+    end
+    BoatNoclipRestoreAll()
+    boatNoclipBoat = nil
+end
+
 -- 方向控制表
 local ctrl = {f = 0, b = 0, l = 0, r = 0, u = 0, d = 0}
 
@@ -363,7 +429,7 @@ pcall(function()
     })
 end)
 
--- ===== 穿牆邏輯 =====
+-- ===== 穿牆邏輯 (整合角色與船隻) =====
 noclip.MouseButton1Click:Connect(function()
     noclipOn = not noclipOn
     if noclipOn then
@@ -371,6 +437,7 @@ noclip.MouseButton1Click:Connect(function()
         noclip.TextColor3 = Color3.fromRGB(255, 255, 255)
         tween(noclip, {BackgroundColor3 = Color3.fromRGB(0, 170, 120)})
         
+        -- 啟動角色穿牆
         noclipConnection = RunService.Stepped:Connect(function()
             local char = speaker.Character
             if char then
@@ -381,12 +448,16 @@ noclip.MouseButton1Click:Connect(function()
                 end
             end
         end)
+        
+        -- 啟動船隻穿牆
+        BoatNoclipStart()
     else
         noclip.Text = "穿牆\n[ OFF ]"
         noclip.TextColor3 = Color3.fromRGB(160, 165, 185)
         tween(noclip, {BackgroundColor3 = Color3.fromRGB(28, 31, 43)})
         noclipStroke.Color = Color3.fromRGB(45, 50, 68)
         
+        -- 關閉角色穿牆
         if noclipConnection then
             noclipConnection:Disconnect()
             noclipConnection = nil
@@ -399,6 +470,9 @@ noclip.MouseButton1Click:Connect(function()
                 end
             end
         end
+        
+        -- 關閉船隻穿牆並還原
+        BoatNoclipStop()
     end
 end)
 
@@ -498,9 +572,21 @@ onof.MouseButton1Click:Connect(function()
     end
 end)
 
--- 角色重生時自動清理飛行
+-- 角色重生時自動清理飛行與穿牆
 speaker.CharacterAdded:Connect(function()
     stopFlying()
+    if noclipOn then
+        noclipOn = false
+        noclip.Text = "穿牆\n[ OFF ]"
+        noclip.TextColor3 = Color3.fromRGB(160, 165, 185)
+        tween(noclip, {BackgroundColor3 = Color3.fromRGB(28, 31, 43)})
+        noclipStroke.Color = Color3.fromRGB(45, 50, 68)
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        BoatNoclipStop()
+    end
 end)
 
 -- 加速按鈕
@@ -528,6 +614,7 @@ end)
 closebutton.MouseButton1Click:Connect(function()
     stopFlying()
     if noclipConnection then noclipConnection:Disconnect() end
+    BoatNoclipStop()
     tween(Frame, {Size = UDim2.new(0, 250, 0, 0), BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Back)
     task.wait(0.2)
     main:Destroy()
