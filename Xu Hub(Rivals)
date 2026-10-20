@@ -199,8 +199,8 @@ ArrLL.Padding=UDim.new(0,2)
 local ArrLabels = {}
 local function GetArrFeats()
     return {
-        {"自動瞄準",NS.AimEnabled},   {"硬鎖定",NS.Hardlock},
-        {"管理員偵測",NS.StaffDetectorActive}, {"魅力外框",NS.CharmsOutline},
+        {"自動瞄準",NS.AimEnabled},   {"強制鎖定",NS.Hardlock},
+        {"管理員偵測",NS.StaffDetectorActive}, {"ESP外框",NS.CharmsOutline},
         {"武器透視",NS.WeaponESP},    {"隱藏手臂",NS.NoArms},
         {"飛行",NS.Fly},              {"HvH",NS.HvHMovement},
         {"穿牆",NS.Noclip},           {"自動射擊",NS.TriggerBot},
@@ -672,7 +672,7 @@ end
 do local p=Pages["aim"]
     MkSection(p,"── 基礎設定")
     MkToggle(p,"啟用自動瞄準","AimEnabled")
-    MkToggle(p,"硬鎖定","Hardlock")
+    MkToggle(p,"強制鎖定","Hardlock")
     MkKeybind(p,"瞄準按鍵","AimBind")
     MkCycle(p,"目標部位","AimPart",{"Head","HumanoidRootPart","Closest"})
 
@@ -686,15 +686,15 @@ do local p=Pages["aim"]
     MkToggle(p,"隊友檢測","TeamCheck")
     MkToggle(p,"武士刀檢測","KatanaCheck")
 
-    MkSection(p,"── 視野")
-    MkToggle(p,"顯示視野圓","FOVVisible")
-    MkAdjust(p,"視野大小","FOVSize",10)
+    MkSection(p,"── FOV")
+    MkToggle(p,"顯示FOV","FOVVisible")
+    MkAdjust(p,"FOV大小","FOVSize",10)
 end
 
 -- ── 視覺效果 ──────────────────────────────────────────────
 do local p=Pages["vis"]
-    MkSection(p,"── 魅力效果")
-    MkToggle(p,"魅力外框","CharmsOutline")
+    MkSection(p,"── ESP")
+    MkToggle(p,"ESP外框","CharmsOutline")
     MkSection(p,"── 其他")
     MkToggle(p,"武器透視","WeaponESP")
 end
