@@ -1,0 +1,1054 @@
+-- ┌─────────────────────────────────────────┐
+-- │  SERVICES                               │
+-- └─────────────────────────────────────────┘
+local UIS       = game:GetService("UserInputService")
+local CoreGui   = game:GetService("CoreGui")
+local TS        = game:GetService("TweenService")
+local Lighting  = game:GetService("Lighting")
+local Camera    = workspace.CurrentCamera
+local Players   = game:GetService("Players")
+local RS        = game:GetService("RunService")
+local Http      = game:GetService("HttpService")
+local RepSt     = game:GetService("ReplicatedStorage")
+local LP        = Players.LocalPlayer
+
+-- ┌─────────────────────────────────────────┐
+-- │  RAGE GUN HOOK  (核心，不動)            │
+-- └─────────────────────────────────────────┘
+_G.RageSettings = { Enabled=false, Recoil=0, Spread=0, ProjSpeed=0, Cooldown=0 }
+local OriginalStats = {}
+local clientItemModule = require(LP.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem)
+local inputFunc = clientItemModule.Input
+local oldRage
+if hookfunction then
+    oldRage = hookfunction(inputFunc, function(...)
+        local args = {...}
+        if type(args[1])=="table" and args[1].Info then
+            local gn = args[1].Name or "Default"
+            if not OriginalStats[gn] then
+                OriginalStats[gn] = {
+                    Recoil=args[1].Info.ShootRecoil, Spread=args[1].Info.ShootSpread,
+                    Speed=args[1].Info.ProjectileSpeed, CD=args[1].Info.ShootCooldown,
+                    QCD=args[1].Info.QuickShotCooldown
+                }
+            end
+            if _G.RageSettings.Enabled then
+                args[1].Info.ShootRecoil        = _G.RageSettings.Recoil
+                args[1].Info.ShootSpread        = _G.RageSettings.Spread
+                args[1].Info.ProjectileSpeed    = _G.RageSettings.ProjSpeed
+                args[1].Info.ShootCooldown      = _G.RageSettings.Cooldown
+                args[1].Info.QuickShotCooldown  = _G.RageSettings.Cooldown
+            else
+                local o = OriginalStats[gn]
+                args[1].Info.ShootRecoil=o.Recoil; args[1].Info.ShootSpread=o.Spread
+                args[1].Info.ProjectileSpeed=o.Speed; args[1].Info.ShootCooldown=o.CD
+                args[1].Info.QuickShotCooldown=o.QCD
+            end
+        end
+        return oldRage(...)
+    end)
+end
+
+-- ┌─────────────────────────────────────────┐
+-- │  SETTINGS & SAVE                        │
+-- └─────────────────────────────────────────┘
+_G.NvSettings = {
+    AimEnabled=false, AimBind="MouseButton2", AimPart="Head", Hardlock=false,
+    SmoothEnabled=false, SmoothValue=0,
+    WallCheck=true, TeamCheck=true, KatanaCheck=true,
+    FOVVisible=true, FOVSize=150,
+    WeaponESP=false, CharmsOutline=false,
+    Fly=false, FlySpeed=50, FlyBind="F",
+    HvHMovement=false, Noclip=false, NoArms=false,
+    TriggerBot=false,
+    StickEnabled=false, StickBind="J", StickTarget=nil,
+    StickSpin=false, SpinBotSpeed=10, StickHeight=0, StickDistance=5,
+    RageGunsEnabled=false,
+    MenuBind="RightShift", ShowArrayList=true, ShowMobileButton=true,
+    StaffDetectorActive=false,
+    DeviceSpoofer=false, SpoofedDevice="MouseKeyboard",
+    ThemeIndex=1
+}
+local NS  = _G.NvSettings
+local CFG = "xuhubcfg.json"
+
+local function Save()
+    local ok,enc = pcall(function() return Http:JSONEncode(NS) end)
+    if ok then writefile(CFG,enc) end
+end
+local function Load()
+    if isfile(CFG) then
+        local ok,dec = pcall(function() return Http:JSONDecode(readfile(CFG)) end)
+        if ok then for k,v in pairs(dec) do NS[k]=v end end
+    end
+end
+Load()
+
+-- ┌─────────────────────────────────────────┐
+-- │  THEME SYSTEM                           │
+-- └─────────────────────────────────────────┘
+local Themes = {
+    { name="黃色", c=Color3.fromRGB(255,215,0)   },
+    { name="青色", c=Color3.fromRGB(0,200,255)    },
+    { name="紫色", c=Color3.fromRGB(180,55,255)   },
+    { name="紅色", c=Color3.fromRGB(255,55,55)    },
+    { name="綠色", c=Color3.fromRGB(0,235,110)    },
+    { name="粉色", c=Color3.fromRGB(255,85,185)   },
+}
+NS.ThemeIndex = math.clamp(NS.ThemeIndex or 1, 1, #Themes)
+local Accent   = Themes[NS.ThemeIndex].c
+local ThemeCBs = {}
+
+local function OnTheme(fn) table.insert(ThemeCBs, fn); fn() end
+
+local function SetTheme(idx)
+    NS.ThemeIndex = idx
+    Accent = Themes[idx].c
+    for _,fn in ipairs(ThemeCBs) do pcall(fn) end
+    Save()
+end
+
+-- ┌─────────────────────────────────────────┐
+-- │  PALETTE                                │
+-- └─────────────────────────────────────────┘
+local C0  = Color3.fromRGB(10, 10, 10)
+local C1  = Color3.fromRGB(16, 16, 16)
+local C2  = Color3.fromRGB(24, 24, 24)
+local C3  = Color3.fromRGB(36, 36, 36)
+local TXT = Color3.fromRGB(210,210,210)
+local DIM = Color3.fromRGB(105,105,105)
+local FNT = Enum.Font.Arcade
+
+-- ┌─────────────────────────────────────────┐
+-- │  GUI REFRESH REGISTRY  ← 新增           │
+-- │  快捷鍵觸發後呼叫對應 key 的刷新函式     │
+-- └─────────────────────────────────────────┘
+local VisRefreshers = {}   -- [settingKey] = fn()  （由 MkToggle/MkExpand 自動註冊）
+
+local function RefreshKey(key)
+    if VisRefreshers[key] then VisRefreshers[key]() end
+end
+
+-- ┌─────────────────────────────────────────┐
+-- │  CORE HELPERS  (核心，不動)             │
+-- └─────────────────────────────────────────┘
+local function disableIfArm(obj)
+    if NS.NoArms and obj:IsA("BasePart") then
+        if obj.Name=="RightArm" or obj.Name=="LeftArm" then
+            obj.Transparency=1; obj.CanCollide=false; obj.Anchored=true
+        end
+    end
+end
+for _,obj in pairs(workspace:GetDescendants()) do disableIfArm(obj) end
+workspace.DescendantAdded:Connect(disableIfArm)
+
+local function ApplyDeviceSpoof(devName)
+    NS.SpoofedDevice = devName; Save()
+    pcall(function()
+        RepSt:WaitForChild("Remotes"):WaitForChild("Replication")
+            :WaitForChild("Fighter"):WaitForChild("SetControls"):FireServer(devName)
+    end)
+end
+
+local function STAFF_TOGGLE()
+    NS.StaffDetectorActive = not NS.StaffDetectorActive
+    if NS.StaffDetectorActive then
+        loadstring(game:HttpGet("https://pastefy.app/IgRHJvgY/raw"))()
+    end
+    Save()
+end
+if NS.StaffDetectorActive then
+    task.spawn(function()
+        loadstring(game:HttpGet(
+            "https://raw.githubusercontent.com/Itsnvfr/NvHub/refs/heads/main/ng %20staff %20detector"
+        ))()
+    end)
+end
+
+-- ┌─────────────────────────────────────────┐
+-- │  DRAWING OBJECTS                        │
+-- └─────────────────────────────────────────┘
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness=1; FOVCircle.NumSides=64; FOVCircle.Filled=false
+
+local CursorBox = Drawing.new("Square")
+CursorBox.Size=Vector2.new(6,6); CursorBox.Filled=true; CursorBox.Thickness=1; CursorBox.Visible=false
+
+local CursorBorder = Drawing.new("Square")
+CursorBorder.Size=Vector2.new(8,8); CursorBorder.Color=Color3.new(0,0,0)
+CursorBorder.Filled=false; CursorBorder.Thickness=1; CursorBorder.Visible=false
+
+local CursorLabel = Drawing.new("Text")
+CursorLabel.Text="Xu Hub"; CursorLabel.Color=Color3.new(1,1,1)
+CursorLabel.Size=14; CursorLabel.Font=2; CursorLabel.Outline=true; CursorLabel.Visible=false
+local trailPos = UIS:GetMouseLocation()
+
+-- ┌─────────────────────────────────────────┐
+-- │  ARRAY LIST                             │
+-- └─────────────────────────────────────────┘
+if CoreGui:FindFirstChild("XuArr") then CoreGui.XuArr:Destroy() end
+local ArrGui    = Instance.new("ScreenGui", CoreGui); ArrGui.Name="XuArr"
+local ArrHolder = Instance.new("Frame", ArrGui)
+ArrHolder.Size=UDim2.new(0,185,1,0); ArrHolder.Position=UDim2.new(1,-197,0,10)
+ArrHolder.BackgroundTransparency=1
+local ArrLL = Instance.new("UIListLayout", ArrHolder)
+ArrLL.HorizontalAlignment=Enum.HorizontalAlignment.Right
+ArrLL.VerticalAlignment=Enum.VerticalAlignment.Top
+ArrLL.Padding=UDim.new(0,2)
+
+local ArrLabels = {}
+local function GetArrFeats()
+    return {
+        {"自動瞄準",NS.AimEnabled},   {"硬鎖定",NS.Hardlock},
+        {"管理員偵測",NS.StaffDetectorActive}, {"魅力外框",NS.CharmsOutline},
+        {"武器透視",NS.WeaponESP},    {"隱藏手臂",NS.NoArms},
+        {"飛行",NS.Fly},              {"HvH",NS.HvHMovement},
+        {"穿牆",NS.Noclip},           {"自動射擊",NS.TriggerBot},
+        {"跟隨玩家",NS.StickEnabled}, {"裝置偽裝",NS.DeviceSpoofer},
+        {"狂暴槍械",NS.RageGunsEnabled}
+    }
+end
+
+local function UpdateArr()
+    if not NS.ShowArrayList then
+        for _,v in pairs(ArrLabels) do v.obj:Destroy() end; ArrLabels={}; return
+    end
+    for _,feat in pairs(GetArrFeats()) do
+        local name, enabled = feat[1], feat[2]
+        if enabled and not ArrLabels[name] then
+            local lbl = Instance.new("TextLabel", ArrHolder)
+            lbl.Name=name; lbl.Size=UDim2.new(0,0,0,22); lbl.BorderSizePixel=0
+            lbl.BackgroundColor3=C1; lbl.BackgroundTransparency=0.05
+            lbl.TextColor3=Accent; lbl.Text=" "..name.." "
+            lbl.Font=FNT; lbl.TextSize=14
+            lbl.TextXAlignment=Enum.TextXAlignment.Right; lbl.ClipsDescendants=true
+            local bar = Instance.new("Frame", lbl)
+            bar.Size=UDim2.new(0,2,1,0); bar.Position=UDim2.new(1,-2,0,0)
+            bar.BackgroundColor3=Accent; bar.BorderSizePixel=0
+            ArrLabels[name] = {obj=lbl, bar=bar}
+            local w = game:GetService("TextService"):GetTextSize(
+                lbl.Text,lbl.TextSize,lbl.Font,Vector2.new(600,600)).X+10
+            TS:Create(lbl,TweenInfo.new(0.3,Enum.EasingStyle.Quart),{Size=UDim2.new(0,w,0,22)}):Play()
+        elseif not enabled and ArrLabels[name] then
+            local obj=ArrLabels[name].obj; ArrLabels[name]=nil
+            local t=TS:Create(obj,TweenInfo.new(0.2,Enum.EasingStyle.Quart),{Size=UDim2.new(0,0,0,22)})
+            t:Play(); t.Completed:Connect(function() obj:Destroy() end)
+        end
+    end
+    for _,v in pairs(ArrLabels) do
+        v.obj.TextColor3=Accent; v.bar.BackgroundColor3=Accent
+    end
+end
+OnTheme(function() UpdateArr() end)
+
+-- ┌─────────────────────────────────────────┐
+-- │  MENU BLUR                              │
+-- └─────────────────────────────────────────┘
+local MenuBlur = Instance.new("BlurEffect", Lighting)
+MenuBlur.Size=0; MenuBlur.Enabled=true
+
+-- ╔═══════════════════════════════════════════════════════════╗
+-- ║                    MAIN WINDOW                            ║
+-- ╚═══════════════════════════════════════════════════════════╝
+if CoreGui:FindFirstChild("Xu_Hub") then CoreGui.Xu_Hub:Destroy() end
+local MGui = Instance.new("ScreenGui", CoreGui)
+MGui.Name="Xu_Hub"; MGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+
+-- ── Mobile Toggle Button ──────────────────────────────────
+local MobBtn = Instance.new("TextButton", MGui)
+MobBtn.Size=UDim2.new(0,46,0,46); MobBtn.Position=UDim2.new(0.06,0,0.08,0)
+MobBtn.BackgroundColor3=C1; MobBtn.BorderSizePixel=0
+MobBtn.Font=FNT; MobBtn.TextSize=17; MobBtn.Text="XU"
+MobBtn.Visible=NS.ShowMobileButton
+Instance.new("UICorner",MobBtn).CornerRadius=UDim.new(0,8)
+local mbS=Instance.new("UIStroke",MobBtn)
+mbS.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; mbS.Thickness=1.5
+OnTheme(function() MobBtn.TextColor3=Accent; mbS.Color=Accent end)
+
+-- ── Window Frame ──────────────────────────────────────────
+local Win = Instance.new("Frame", MGui)
+Win.Name="Win"; Win.Size=UDim2.new(0,595,0,415)
+Win.Position=UDim2.new(0.5,-297,0.5,-207)
+Win.BackgroundColor3=C0; Win.BorderSizePixel=0; Win.ClipsDescendants=true
+Instance.new("UICorner",Win).CornerRadius=UDim.new(0,10)
+local winStroke=Instance.new("UIStroke",Win)
+winStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; winStroke.Thickness=1.2
+OnTheme(function() winStroke.Color=Color3.new(Accent.R*0.25,Accent.G*0.25,Accent.B*0.25) end)
+
+-- ── Title Bar ─────────────────────────────────────────────
+local TBar = Instance.new("Frame", Win)
+TBar.Size=UDim2.new(1,0,0,40); TBar.BackgroundColor3=C1; TBar.BorderSizePixel=0
+Instance.new("UICorner",TBar).CornerRadius=UDim.new(0,10)
+local TBarFix = Instance.new("Frame", TBar)
+TBarFix.Size=UDim2.new(1,0,0,12); TBarFix.Position=UDim2.new(0,0,1,-12)
+TBarFix.BackgroundColor3=C1; TBarFix.BorderSizePixel=0
+
+local TStripe = Instance.new("Frame", TBar)
+TStripe.Size=UDim2.new(0,3,0,22); TStripe.Position=UDim2.new(0,14,0.5,-11); TStripe.BorderSizePixel=0
+Instance.new("UICorner",TStripe).CornerRadius=UDim.new(1,0)
+OnTheme(function() TStripe.BackgroundColor3=Accent end)
+
+local TTitle = Instance.new("TextLabel", TBar)
+TTitle.Size=UDim2.new(0,80,1,0); TTitle.Position=UDim2.new(0,24,0,0)
+TTitle.Text="Xu Hub"; TTitle.TextColor3=TXT
+TTitle.Font=FNT; TTitle.TextSize=18; TTitle.BackgroundTransparency=1
+TTitle.TextXAlignment=Enum.TextXAlignment.Left
+
+local TSub = Instance.new("TextLabel", TBar)
+TSub.Size=UDim2.new(0,110,1,0); TSub.Position=UDim2.new(0,94,0,0)
+TSub.Text="by Xu"
+TSub.BackgroundTransparency=1; TSub.TextXAlignment=Enum.TextXAlignment.Left
+OnTheme(function() TSub.TextColor3=Accent end)
+
+local XBtn = Instance.new("TextButton", TBar)
+XBtn.Size=UDim2.new(0,24,0,24); XBtn.Position=UDim2.new(1,-32,0.5,-12)
+XBtn.BackgroundColor3=Color3.fromRGB(55,18,18); XBtn.BorderSizePixel=0
+XBtn.Font=FNT; XBtn.Text="×"; XBtn.TextSize=20; XBtn.TextColor3=Color3.fromRGB(255,70,70)
+Instance.new("UICorner",XBtn).CornerRadius=UDim.new(0,5)
+
+-- ── Drag ──────────────────────────────────────────────────
+local drag = {on=false, s=nil, p=nil}
+TBar.InputBegan:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then
+        drag.on=true; drag.s=i.Position; drag.p=Win.Position
+    end
+end)
+UIS.InputChanged:Connect(function(i)
+    if drag.on and i.UserInputType==Enum.UserInputType.MouseMovement then
+        local d=i.Position-drag.s
+        Win.Position=UDim2.new(drag.p.X.Scale,drag.p.X.Offset+d.X,drag.p.Y.Scale,drag.p.Y.Offset+d.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then drag.on=false end
+end)
+
+-- ── Sidebar ───────────────────────────────────────────────
+local Sidebar = Instance.new("Frame", Win)
+Sidebar.Size=UDim2.new(0,115,1,-42); Sidebar.Position=UDim2.new(0,0,0,42)
+Sidebar.BackgroundColor3=C1; Sidebar.BorderSizePixel=0
+local sbLL=Instance.new("UIListLayout",Sidebar)
+sbLL.Padding=UDim.new(0,3); sbLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
+local sbPad=Instance.new("UIPadding",Sidebar); sbPad.PaddingTop=UDim.new(0,8)
+
+local Div = Instance.new("Frame", Win)
+Div.Size=UDim2.new(0,1,1,-42); Div.Position=UDim2.new(0,115,0,42)
+Div.BackgroundColor3=C3; Div.BorderSizePixel=0
+
+-- ── Content Area ─────────────────────────────────────────
+local ContentArea = Instance.new("Frame", Win)
+ContentArea.Size=UDim2.new(1,-117,1,-44); ContentArea.Position=UDim2.new(0,117,0,44)
+ContentArea.BackgroundTransparency=1; ContentArea.ClipsDescendants=true
+
+-- ╔═══════════════════════════════════════════════════════════╗
+-- ║                     TAB SYSTEM                            ║
+-- ╚═══════════════════════════════════════════════════════════╝
+local TabDefs = {
+    {id="aim",  icon="◎", label="自動瞄準"},
+    {id="vis",  icon="◈", label="視覺效果"},
+    {id="move", icon="◆", label="移動功能"},
+    {id="bot",  icon="◉", label="機器人"},
+    {id="cfg",  icon="◇", label="設定"},
+}
+local Pages   = {}
+local TabBtns = {}
+local CurTab  = nil
+
+for _, def in ipairs(TabDefs) do
+    local page = Instance.new("ScrollingFrame", ContentArea)
+    page.Name=def.id; page.Size=UDim2.new(1,0,1,0)
+    page.BackgroundTransparency=1; page.ScrollBarThickness=3
+    page.CanvasSize=UDim2.new(0,0,0,0); page.AutomaticCanvasSize=Enum.AutomaticSize.Y
+    page.BorderSizePixel=0; page.Visible=false
+    local pgLL=Instance.new("UIListLayout",page)
+    pgLL.Padding=UDim.new(0,5); pgLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
+    local pgPad=Instance.new("UIPadding",page)
+    pgPad.PaddingTop=UDim.new(0,10); pgPad.PaddingLeft=UDim.new(0,10); pgPad.PaddingRight=UDim.new(0,10)
+    OnTheme(function() page.ScrollBarImageColor3=Accent end)
+    Pages[def.id] = page
+
+    local btn = Instance.new("TextButton", Sidebar)
+    btn.Size=UDim2.new(0,100,0,40); btn.BorderSizePixel=0
+    btn.Font=FNT; btn.TextSize=12; btn.TextXAlignment=Enum.TextXAlignment.Left
+    btn.Text=def.icon.."  "..def.label
+    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,6)
+    local bPad=Instance.new("UIPadding",btn); bPad.PaddingLeft=UDim.new(0,10)
+
+    local ind=Instance.new("Frame",btn)
+    ind.Size=UDim2.new(0,3,0.6,0); ind.Position=UDim2.new(0,0,0.2,0)
+    ind.BackgroundTransparency=1; ind.BorderSizePixel=0
+    Instance.new("UICorner",ind).CornerRadius=UDim.new(1,0)
+
+    TabBtns[def.id] = {btn=btn, ind=ind}
+
+    local function RefreshBtn()
+        local active = (CurTab==def.id)
+        btn.BackgroundColor3 = active and C2 or C1
+        btn.TextColor3       = active and Accent or DIM
+        ind.BackgroundColor3 = active and Accent or Color3.new(0,0,0)
+        ind.BackgroundTransparency = active and 0 or 1
+    end
+    OnTheme(RefreshBtn)
+
+    btn.MouseButton1Click:Connect(function()
+        if CurTab==def.id then return end
+        CurTab=def.id
+        for tid,p in pairs(Pages) do p.Visible=(tid==def.id) end
+        for _,tb in pairs(TabBtns) do
+            local act=(tb==TabBtns[def.id])
+            tb.btn.BackgroundColor3=act and C2 or C1
+            tb.btn.TextColor3      =act and Accent or DIM
+            tb.ind.BackgroundColor3=act and Accent or Color3.new(0,0,0)
+            tb.ind.BackgroundTransparency=act and 0 or 1
+        end
+    end)
+    btn.MouseEnter:Connect(function()
+        if CurTab~=def.id then TS:Create(btn,TweenInfo.new(0.12),{BackgroundColor3=C2}):Play() end
+    end)
+    btn.MouseLeave:Connect(function()
+        if CurTab~=def.id then TS:Create(btn,TweenInfo.new(0.12),{BackgroundColor3=C1}):Play() end
+    end)
+end
+
+local function GoTab(id)
+    if CurTab==id then return end; CurTab=id
+    for tid,p in pairs(Pages) do p.Visible=(tid==id) end
+    for tid,tb in pairs(TabBtns) do
+        local act=(tid==id)
+        tb.btn.BackgroundColor3=act and C2 or C1
+        tb.btn.TextColor3      =act and Accent or DIM
+        tb.ind.BackgroundColor3=act and Accent or Color3.new(0,0,0)
+        tb.ind.BackgroundTransparency=act and 0 or 1
+    end
+end
+
+-- ╔═══════════════════════════════════════════════════════════╗
+-- ║                   WIDGET FACTORY                          ║
+-- ╚═══════════════════════════════════════════════════════════╝
+
+local function MkSection(parent, text)
+    local f=Instance.new("Frame",parent); f.Size=UDim2.new(1,0,0,24); f.BackgroundTransparency=1
+    local lbl=Instance.new("TextLabel",f)
+    lbl.Size=UDim2.new(1,-4,1,0); lbl.Position=UDim2.new(0,2,0,0)
+    lbl.Text=text; lbl.Font=FNT; lbl.TextSize=11; lbl.BackgroundTransparency=1
+    lbl.TextXAlignment=Enum.TextXAlignment.Left
+    OnTheme(function() lbl.TextColor3=Accent end)
+    local sep=Instance.new("Frame",f)
+    sep.Size=UDim2.new(1,-2,0,1); sep.Position=UDim2.new(0,1,1,-1)
+    sep.BackgroundColor3=C3; sep.BorderSizePixel=0
+end
+
+-- ── Toggle with pill ──────────────────────────────────────
+-- 修正：將 Vis 註冊至 VisRefreshers[key]，快捷鍵觸發後可呼叫
+local function MkToggle(parent, label, key, onChange)
+    local row=Instance.new("Frame",parent)
+    row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
+
+    local lbl=Instance.new("TextLabel",row)
+    lbl.Size=UDim2.new(1,-54,1,0); lbl.Position=UDim2.new(0,10,0,0)
+    lbl.Text=label; lbl.TextColor3=TXT; lbl.Font=FNT; lbl.TextSize=13
+    lbl.BackgroundTransparency=1; lbl.TextXAlignment=Enum.TextXAlignment.Left
+
+    local pill=Instance.new("Frame",row)
+    pill.Size=UDim2.new(0,38,0,20); pill.Position=UDim2.new(1,-47,0.5,-10); pill.BorderSizePixel=0
+    Instance.new("UICorner",pill).CornerRadius=UDim.new(1,0)
+
+    local knob=Instance.new("Frame",pill)
+    knob.Size=UDim2.new(0,16,0,16); knob.BorderSizePixel=0
+    Instance.new("UICorner",knob).CornerRadius=UDim.new(1,0)
+
+    local function Vis(instant)
+        local on=NS[key]
+        local pp=on and Accent or C3
+        local kc=on and Color3.fromRGB(8,8,8) or DIM
+        local kp=on and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+        if instant then
+            pill.BackgroundColor3=pp; knob.BackgroundColor3=kc; knob.Position=kp
+        else
+            TS:Create(pill,TweenInfo.new(0.17),{BackgroundColor3=pp}):Play()
+            TS:Create(knob,TweenInfo.new(0.17),{BackgroundColor3=kc,Position=kp}):Play()
+        end
+    end
+    OnTheme(function() Vis(true) end)
+
+    -- ← 註冊外部刷新入口
+    VisRefreshers[key] = function() Vis(false) end
+
+    row.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then
+            NS[key]=not NS[key]; Vis(false); Save(); UpdateArr()
+            if key=="ShowMobileButton" then MobBtn.Visible=NS[key] end
+            if key=="RageGunsEnabled"  then _G.RageSettings.Enabled=NS[key] end
+            if onChange then onChange(NS[key]) end
+        end
+    end)
+    Vis(true)
+    return row
+end
+
+-- ── Adjuster ──────────────────────────────────────────────
+local function MkAdjust(parent, label, key, step, isRage)
+    local row=Instance.new("Frame",parent)
+    row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
+
+    local lbl=Instance.new("TextLabel",row)
+    lbl.Size=UDim2.new(0.52,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
+    lbl.Text=label; lbl.TextColor3=TXT; lbl.Font=FNT; lbl.TextSize=12
+    lbl.BackgroundTransparency=1; lbl.TextXAlignment=Enum.TextXAlignment.Left
+
+    local vLbl=Instance.new("TextLabel",row)
+    vLbl.Size=UDim2.new(0,38,1,0); vLbl.Position=UDim2.new(0.52,0,0,0)
+    vLbl.Font=FNT; vLbl.TextSize=12; vLbl.BackgroundTransparency=1
+    vLbl.TextXAlignment=Enum.TextXAlignment.Center
+    OnTheme(function() vLbl.TextColor3=Accent end)
+
+    local function MkBtn(txt, xOff)
+        local b=Instance.new("TextButton",row)
+        b.Size=UDim2.new(0,26,0,22); b.Position=UDim2.new(1,xOff,0.5,-11)
+        b.BackgroundColor3=C3; b.BorderSizePixel=0
+        b.Font=FNT; b.Text=txt; b.TextSize=16
+        Instance.new("UICorner",b).CornerRadius=UDim.new(0,5)
+        OnTheme(function() b.TextColor3=Accent end)
+        return b
+    end
+    local btnM=MkBtn("-",-58); local btnP=MkBtn("+",-28)
+
+    local function Refresh()
+        local v=isRage and _G.RageSettings[key] or NS[key]
+        vLbl.Text=tostring(v)
+    end
+    btnM.MouseButton1Click:Connect(function()
+        if isRage then _G.RageSettings[key]=math.max(0,_G.RageSettings[key]-step)
+        else NS[key]=NS[key]-step; Save() end; Refresh()
+    end)
+    btnP.MouseButton1Click:Connect(function()
+        if isRage then _G.RageSettings[key]=_G.RageSettings[key]+step
+        else NS[key]=NS[key]+step; Save() end; Refresh()
+    end)
+    Refresh()
+end
+
+-- ── Action button ─────────────────────────────────────────
+local function MkButton(parent, label, fn)
+    local btn=Instance.new("TextButton",parent)
+    btn.Size=UDim2.new(1,0,0,32); btn.BackgroundColor3=C2; btn.BorderSizePixel=0
+    btn.Text=label; btn.Font=FNT; btn.TextSize=13; btn.TextColor3=TXT
+    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,6)
+    local st=Instance.new("UIStroke",btn)
+    st.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; st.Thickness=1
+    OnTheme(function() st.Color=Color3.new(Accent.R*0.28,Accent.G*0.28,Accent.B*0.28) end)
+    btn.MouseEnter:Connect(function() TS:Create(btn,TweenInfo.new(0.1),{BackgroundColor3=C3}):Play() end)
+    btn.MouseLeave:Connect(function() TS:Create(btn,TweenInfo.new(0.1),{BackgroundColor3=C2}):Play() end)
+    btn.MouseButton1Click:Connect(function() fn(btn) end)
+    return btn
+end
+
+-- ── Keybind picker ────────────────────────────────────────
+local function MkKeybind(parent, label, key)
+    local row=Instance.new("Frame",parent)
+    row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
+
+    local lbl=Instance.new("TextLabel",row)
+    lbl.Size=UDim2.new(0.5,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
+    lbl.Text=label; lbl.TextColor3=TXT; lbl.Font=FNT; lbl.TextSize=13
+    lbl.BackgroundTransparency=1; lbl.TextXAlignment=Enum.TextXAlignment.Left
+
+    local kbtn=Instance.new("TextButton",row)
+    kbtn.Size=UDim2.new(0,96,0,22); kbtn.Position=UDim2.new(1,-104,0.5,-11)
+    kbtn.BackgroundColor3=C3; kbtn.BorderSizePixel=0; kbtn.Font=FNT; kbtn.TextSize=11
+    kbtn.Text=NS[key]
+    Instance.new("UICorner",kbtn).CornerRadius=UDim.new(0,5)
+    OnTheme(function() kbtn.TextColor3=Accent end)
+
+    local waiting=false
+    kbtn.MouseButton1Click:Connect(function()
+        if waiting then return end; waiting=true; kbtn.Text="..."
+        local i=UIS.InputBegan:Wait()
+        if i.UserInputType==Enum.UserInputType.Keyboard then
+            NS[key]=i.KeyCode.Name
+        elseif i.UserInputType.Name:find("MouseButton") then
+            NS[key]=i.UserInputType.Name
+        end
+        kbtn.Text=NS[key]; Save(); waiting=false
+    end)
+end
+
+-- ── Cycle ─────────────────────────────────────────────────
+local function MkCycle(parent, label, key, options)
+    local row=Instance.new("Frame",parent)
+    row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
+
+    local lbl=Instance.new("TextLabel",row)
+    lbl.Size=UDim2.new(0.48,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
+    lbl.Text=label; lbl.TextColor3=TXT; lbl.Font=FNT; lbl.TextSize=13
+    lbl.BackgroundTransparency=1; lbl.TextXAlignment=Enum.TextXAlignment.Left
+
+    local vbtn=Instance.new("TextButton",row)
+    vbtn.Size=UDim2.new(0,115,0,22); vbtn.Position=UDim2.new(1,-122,0.5,-11)
+    vbtn.BackgroundColor3=C3; vbtn.BorderSizePixel=0; vbtn.Font=FNT; vbtn.TextSize=11
+    vbtn.Text=NS[key]
+    Instance.new("UICorner",vbtn).CornerRadius=UDim.new(0,5)
+    OnTheme(function() vbtn.TextColor3=Accent end)
+
+    vbtn.MouseButton1Click:Connect(function()
+        local idx=table.find(options,NS[key]) or 0
+        NS[key]=options[(idx%#options)+1]
+        vbtn.Text=NS[key]; Save()
+    end)
+end
+
+-- ── Expandable toggle section ─────────────────────────────
+-- 修正：將 Vis 同樣註冊至 VisRefreshers[key]
+local function MkExpand(parent, label, key, height, buildFn, onChange)
+    local wrapper=Instance.new("Frame",parent)
+    wrapper.Size=UDim2.new(1,0,0,32); wrapper.BackgroundTransparency=1; wrapper.ClipsDescendants=true
+
+    local header=Instance.new("Frame",wrapper)
+    header.Size=UDim2.new(1,0,0,32); header.BackgroundColor3=C2; header.BorderSizePixel=0
+    Instance.new("UICorner",header).CornerRadius=UDim.new(0,6)
+
+    local hlbl=Instance.new("TextLabel",header)
+    hlbl.Size=UDim2.new(1,-54,1,0); hlbl.Position=UDim2.new(0,10,0,0)
+    hlbl.Text=label; hlbl.TextColor3=TXT; hlbl.Font=FNT; hlbl.TextSize=13
+    hlbl.BackgroundTransparency=1; hlbl.TextXAlignment=Enum.TextXAlignment.Left
+
+    local pill=Instance.new("Frame",header)
+    pill.Size=UDim2.new(0,38,0,20); pill.Position=UDim2.new(1,-47,0.5,-10); pill.BorderSizePixel=0
+    Instance.new("UICorner",pill).CornerRadius=UDim.new(1,0)
+
+    local knob=Instance.new("Frame",pill)
+    knob.Size=UDim2.new(0,16,0,16); knob.BorderSizePixel=0
+    Instance.new("UICorner",knob).CornerRadius=UDim.new(1,0)
+
+    local sub=Instance.new("Frame",wrapper)
+    sub.BackgroundTransparency=1; sub.Size=UDim2.new(1,0,0,0); sub.Position=UDim2.new(0,0,0,34)
+    local subLL=Instance.new("UIListLayout",sub)
+    subLL.Padding=UDim.new(0,4); subLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
+    local subPad=Instance.new("UIPadding",sub); subPad.PaddingLeft=UDim.new(0,6)
+
+    if buildFn then buildFn(sub) end
+
+    local function Vis(instant)
+        local on=NS[key]
+        local pp=on and Accent or C3
+        local kc=on and Color3.fromRGB(8,8,8) or DIM
+        local kp=on and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+        local wH=on and (35+height) or 32
+        if instant then
+            pill.BackgroundColor3=pp; knob.BackgroundColor3=kc; knob.Position=kp
+            wrapper.Size=UDim2.new(1,0,0,wH); sub.Size=UDim2.new(1,0,0,on and height or 0)
+        else
+            TS:Create(pill,TweenInfo.new(0.17),{BackgroundColor3=pp}):Play()
+            TS:Create(knob,TweenInfo.new(0.17),{BackgroundColor3=kc,Position=kp}):Play()
+            TS:Create(wrapper,TweenInfo.new(0.28,Enum.EasingStyle.Quart),{Size=UDim2.new(1,0,0,wH)}):Play()
+            TS:Create(sub,TweenInfo.new(0.28,Enum.EasingStyle.Quart),{Size=UDim2.new(1,0,0,on and height or 0)}):Play()
+        end
+    end
+    OnTheme(function() Vis(true) end)
+
+    -- ← 註冊外部刷新入口
+    VisRefreshers[key] = function() Vis(false) end
+
+    header.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then
+            NS[key]=not NS[key]; Vis(false); Save(); UpdateArr()
+            if key=="RageGunsEnabled" then _G.RageSettings.Enabled=NS[key] end
+            if onChange then onChange(NS[key]) end
+        end
+    end)
+    Vis(true)
+    return sub
+end
+
+-- ╔═══════════════════════════════════════════════════════════╗
+-- ║               TAB CONTENT POPULATION                      ║
+-- ╚═══════════════════════════════════════════════════════════╝
+
+-- ── 自動瞄準 ──────────────────────────────────────────────
+do local p=Pages["aim"]
+    MkSection(p,"── 基礎設定")
+    MkToggle(p,"啟用自動瞄準","AimEnabled")
+    MkToggle(p,"硬鎖定","Hardlock")
+    MkKeybind(p,"瞄準按鍵","AimBind")
+    MkCycle(p,"目標部位","AimPart",{"Head","HumanoidRootPart","Closest"})
+
+    MkSection(p,"── 平滑")
+    MkExpand(p,"平滑模式","SmoothEnabled",36,function(s)
+        MkAdjust(s,"平滑數值","SmoothValue",1)
+    end)
+
+    MkSection(p,"── 過濾")
+    MkToggle(p,"穿牆檢測","WallCheck")
+    MkToggle(p,"隊友檢測","TeamCheck")
+    MkToggle(p,"武士刀檢測","KatanaCheck")
+
+    MkSection(p,"── 視野")
+    MkToggle(p,"顯示視野圓","FOVVisible")
+    MkAdjust(p,"視野大小","FOVSize",10)
+end
+
+-- ── 視覺效果 ──────────────────────────────────────────────
+do local p=Pages["vis"]
+    MkSection(p,"── 魅力效果")
+    MkToggle(p,"魅力外框","CharmsOutline")
+    MkSection(p,"── 其他")
+    MkToggle(p,"武器透視","WeaponESP")
+end
+
+-- ── 移動功能 ──────────────────────────────────────────────
+do local p=Pages["move"]
+    MkSection(p,"── 飛行")
+    MkExpand(p,"啟用飛行","Fly",36,function(s)
+        MkAdjust(s,"飛行速度","FlySpeed",5)
+    end)
+    MkKeybind(p,"飛行按鍵","FlyBind")
+
+    MkSection(p,"── 移動輔助")
+    MkToggle(p,"穿越牆壁","Noclip")
+    MkToggle(p,"HVH 移動","HvHMovement")
+end
+
+-- ── 機器人 ────────────────────────────────────────────────
+do local p=Pages["bot"]
+    MkSection(p,"── 自動射擊")
+    MkToggle(p,"自動射擊","TriggerBot")
+
+    MkSection(p,"── 跟隨玩家")
+    MkExpand(p,"啟用跟隨","StickEnabled",182,function(s)
+        MkKeybind(s,"跟隨按鍵","StickBind")
+        MkToggle(s,"環繞旋轉","StickSpin")
+        MkAdjust(s,"旋轉速度","SpinBotSpeed",2)
+        MkAdjust(s,"跟隨距離","StickDistance",1)
+        MkAdjust(s,"跟隨高度","StickHeight",1)
+    end)
+
+    MkSection(p,"── 狂暴槍械")
+    MkExpand(p,"啟用狂暴槍械","RageGunsEnabled",144,function(s)
+        MkAdjust(s,"後座力","Recoil",0.1,true)
+        MkAdjust(s,"散佈度","Spread",0.1,true)
+        MkAdjust(s,"彈速","ProjSpeed",1000,true)
+        MkAdjust(s,"冷卻時間","Cooldown",0.05,true)
+    end)
+end
+
+-- ── 設定 ──────────────────────────────────────────────────
+do local p=Pages["cfg"]
+    MkSection(p,"── 工具")
+    MkToggle(p,"隱藏手臂","NoArms")
+
+    local staffBtn
+    staffBtn = MkButton(p, NS.StaffDetectorActive and "管理員偵測  ✓" or "管理員偵測",
+        function(btn)
+            STAFF_TOGGLE()
+            btn.Text = NS.StaffDetectorActive and "管理員偵測  ✓" or "管理員偵測"
+            UpdateArr()
+        end)
+
+    MkSection(p,"── 裝置偽裝")
+    MkExpand(p,"裝置偽裝","DeviceSpoofer",144,function(s)
+        local devBtns = {}
+        for _,dev in ipairs({"MouseKeyboard","Gamepad","Touch","VR"}) do
+            local d = dev
+            local dbtn = MkButton(s, d, function()
+                ApplyDeviceSpoof(d)
+                for d2,b in pairs(devBtns) do
+                    b.TextColor3 = (NS.SpoofedDevice==d2) and Accent or TXT
+                end
+            end)
+            dbtn.Text = d
+            devBtns[d] = dbtn
+            OnTheme(function() dbtn.TextColor3=(NS.SpoofedDevice==d) and Accent or TXT end)
+        end
+    end)
+
+    MkSection(p,"── 介面")
+    MkToggle(p,"功能列表","ShowArrayList")
+    MkToggle(p,"行動裝置按鈕","ShowMobileButton")
+    MkKeybind(p,"選單按鍵","MenuBind")
+
+    MkSection(p,"── 主題色")
+    local tRow=Instance.new("Frame",p)
+    tRow.Size=UDim2.new(1,0,0,52); tRow.BackgroundColor3=C2; tRow.BorderSizePixel=0
+    Instance.new("UICorner",tRow).CornerRadius=UDim.new(0,6)
+    local tLL=Instance.new("UIListLayout",tRow)
+    tLL.FillDirection=Enum.FillDirection.Horizontal
+    tLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
+    tLL.VerticalAlignment=Enum.VerticalAlignment.Center
+    tLL.Padding=UDim.new(0,8)
+
+    for i,th in ipairs(Themes) do
+        local sw=Instance.new("TextButton",tRow)
+        sw.Size=UDim2.new(0,30,0,30); sw.BackgroundColor3=th.c; sw.BorderSizePixel=0
+        sw.Text=""
+        Instance.new("UICorner",sw).CornerRadius=UDim.new(1,0)
+        local swS=Instance.new("UIStroke",sw)
+        swS.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+        local idx=i
+        local function UpdSw()
+            swS.Color   = (NS.ThemeIndex==idx) and Color3.new(1,1,1) or Color3.fromRGB(40,40,40)
+            swS.Thickness = (NS.ThemeIndex==idx) and 2.5 or 1
+        end
+        OnTheme(UpdSw)
+        sw.MouseButton1Click:Connect(function() SetTheme(idx); UpdateArr() end)
+    end
+
+    local tNameLbl=Instance.new("TextLabel",p)
+    tNameLbl.Size=UDim2.new(1,0,0,22); tNameLbl.BackgroundTransparency=1
+    tNameLbl.Font=FNT; tNameLbl.TextSize=12
+    tNameLbl.TextXAlignment=Enum.TextXAlignment.Center
+    OnTheme(function()
+        tNameLbl.Text="目前主題：  "..Themes[NS.ThemeIndex].name
+        tNameLbl.TextColor3=Accent
+    end)
+end
+
+-- ╔═══════════════════════════════════════════════════════════╗
+-- ║               CORE GAME LOGIC  (核心，不動)               ║
+-- ╚═══════════════════════════════════════════════════════════╝
+
+local function IsVisible(part, character)
+    if not NS.WallCheck then return true end
+    local rp=RaycastParams.new()
+    rp.FilterType=Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances={LP.Character,Camera}
+    local result=workspace:Raycast(Camera.CFrame.Position,(part.Position-Camera.CFrame.Position).Unit*1000,rp)
+    return not result or result.Instance:IsDescendantOf(character)
+end
+
+local function GetStickTarget()
+    local target,closest=nil,9999
+    local mp=UIS:GetMouseLocation()
+    for _,v in pairs(Players:GetPlayers()) do
+        if v~=LP and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character.Humanoid.Health>0 then
+            if NS.KatanaCheck and v.Character:FindFirstChild("Katana") then continue end
+            local sp=Camera:WorldToViewportPoint(v.Character.HumanoidRootPart.Position)
+            local mag=(Vector2.new(sp.X,sp.Y)-mp).Magnitude
+            if mag<closest then closest=mag; target=v.Character.HumanoidRootPart end
+        end
+    end
+    return target
+end
+
+local function GetClosestTarget()
+    local target,closest=nil,NS.FOVSize
+    local mp=UIS:GetMouseLocation()
+    for _,v in pairs(Players:GetPlayers()) do
+        if v~=LP and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health>0 then
+            if NS.TeamCheck and v.Team==LP.Team then continue end
+            if NS.KatanaCheck and v.Character:FindFirstChild("Katana") then continue end
+            local part
+            if NS.AimPart=="Closest" then
+                local minD=9999
+                for _,child in pairs(v.Character:GetChildren()) do
+                    if child:IsA("BasePart") then
+                        local sp,on2=Camera:WorldToViewportPoint(child.Position)
+                        if on2 then
+                            local mag=(Vector2.new(sp.X,sp.Y)-mp).Magnitude
+                            if mag<minD then minD=mag; part=child end
+                        end
+                    end
+                end
+            else
+                part=v.Character:FindFirstChild(NS.AimPart)
+            end
+            if part then
+                local sp,on2=Camera:WorldToViewportPoint(part.Position)
+                if on2 then
+                    local mag=(Vector2.new(sp.X,sp.Y)-mp).Magnitude
+                    if mag<closest and IsVisible(part,v.Character) then
+                        closest=mag; target=part
+                    end
+                end
+            end
+        end
+    end
+    return target
+end
+
+-- TriggerBot loop
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if NS.TriggerBot then
+            local tgt=LP:GetMouse().Target
+            if tgt and tgt.Parent:FindFirstChild("Humanoid") then
+                local plr=Players:GetPlayerFromCharacter(tgt.Parent)
+                if plr and plr~=LP then
+                    if not (NS.TeamCheck and plr.Team==LP.Team) then mouse1click() end
+                end
+            end
+        end
+    end
+end)
+
+-- RenderStepped
+RS.RenderStepped:Connect(function()
+    local mouse=UIS:GetMouseLocation()
+    local menuOpen=Win.Visible
+
+    CursorBox.Visible=menuOpen; CursorBorder.Visible=menuOpen; CursorLabel.Visible=menuOpen
+    CursorBox.Color=Accent
+
+    if menuOpen then
+        UIS.MouseIconEnabled=false
+        CursorBox.Position=mouse-Vector2.new(3,3); CursorBorder.Position=mouse-Vector2.new(4,4)
+        trailPos=trailPos:Lerp(mouse,0.15); CursorLabel.Position=trailPos+Vector2.new(12,12)
+    else
+        UIS.MouseIconEnabled=true
+    end
+
+    FOVCircle.Visible=NS.FOVVisible; FOVCircle.Position=mouse
+    FOVCircle.Radius=NS.FOVSize;     FOVCircle.Color=Accent
+
+    if NS.AimEnabled then
+        local target=GetClosestTarget()
+        if target then
+            local pressed=false
+            pcall(function()
+                pressed = NS.AimBind:find("MouseButton") and
+                    UIS:IsMouseButtonPressed(Enum.UserInputType[NS.AimBind]) or
+                    UIS:IsKeyDown(Enum.KeyCode[NS.AimBind])
+            end)
+            if pressed then
+                local tPos=Camera:WorldToViewportPoint(target.Position)
+                if NS.Hardlock then
+                    mousemoverel(tPos.X-mouse.X, tPos.Y-mouse.Y)
+                else
+                    local smooth=NS.SmoothEnabled and NS.SmoothValue or 0
+                    if smooth<=1 then
+                        mousemoverel(tPos.X-mouse.X, tPos.Y-mouse.Y)
+                    else
+                        local w=1/(math.pow(smooth,1.8)*0.02)
+                        mousemoverel((tPos.X-mouse.X)*w,(tPos.Y-mouse.Y)*w)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Heartbeat
+RS.Heartbeat:Connect(function()
+    if not LP.Character then return end
+    local Root=LP.Character:FindFirstChild("HumanoidRootPart")
+
+    if NS.HvHMovement and Root then
+        local av=Root.Velocity
+        Root.Velocity=av+Vector3.new(math.random(-250,250),math.random(-5,5),math.random(-250,250))
+        RS.RenderStepped:Wait()
+        Root.Velocity=av
+        Root.CFrame=Root.CFrame*CFrame.Angles(0,math.rad(math.random(-5,5)),0)
+    end
+
+    if NS.Fly and Root then
+        local vel=Vector3.new(0,0,0)
+        if UIS:IsKeyDown(Enum.KeyCode.W) then vel=vel+(Camera.CFrame.LookVector*NS.FlySpeed) end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then vel=vel-(Camera.CFrame.LookVector*NS.FlySpeed) end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then vel=vel-(Camera.CFrame.RightVector*NS.FlySpeed) end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then vel=vel+(Camera.CFrame.RightVector*NS.FlySpeed) end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then vel=vel+(Vector3.new(0,1,0)*NS.FlySpeed) end
+        Root.Velocity=Vector3.new(0,0,0)
+        Root.CFrame=Root.CFrame+(vel*RS.Heartbeat:Wait())
+    end
+
+    if NS.StickEnabled and Root then
+        if not NS.StickTarget or not NS.StickTarget.Parent or NS.StickTarget.Parent.Humanoid.Health<=0 then
+            NS.StickTarget=GetStickTarget()
+        end
+        if NS.StickTarget then
+            local angle=NS.StickSpin and tick()*NS.SpinBotSpeed or 0
+            local offset=Vector3.new(math.cos(angle)*NS.StickDistance,NS.StickHeight,math.sin(angle)*NS.StickDistance)
+            Root.CFrame=CFrame.new(NS.StickTarget.Position+offset,NS.StickTarget.Position)
+            Root.Velocity=Vector3.new(0,0,0)
+        end
+    else
+        NS.StickTarget=nil
+    end
+
+    if NS.Noclip then
+        for _,v in pairs(LP.Character:GetChildren()) do
+            if v:IsA("BasePart") then v.CanCollide=false end
+        end
+    end
+end)
+
+-- ── Menu Toggle ───────────────────────────────────────────
+local function ToggleMenu()
+    if Win.Visible then
+        local op=Win.Position
+        TS:Create(Win,TweenInfo.new(0.3,Enum.EasingStyle.Quart,Enum.EasingDirection.In),
+            {Position=UDim2.new(op.X.Scale,op.X.Offset,op.Y.Scale,op.Y.Offset-25)}):Play()
+        task.delay(0.28,function() Win.Visible=false end)
+        TS:Create(MenuBlur,TweenInfo.new(0.3),{Size=0}):Play()
+    else
+        local op=Win.Position
+        Win.Position=UDim2.new(op.X.Scale,op.X.Offset,op.Y.Scale,op.Y.Offset+25)
+        Win.Visible=true
+        TS:Create(Win,TweenInfo.new(0.45,Enum.EasingStyle.Quart,Enum.EasingDirection.Out),
+            {Position=UDim2.new(op.X.Scale,op.X.Offset,op.Y.Scale,op.Y.Offset-25)}):Play()
+        TS:Create(MenuBlur,TweenInfo.new(0.35),{Size=16}):Play()
+    end
+end
+
+XBtn.MouseButton1Click:Connect(ToggleMenu)
+MobBtn.MouseButton1Click:Connect(ToggleMenu)
+
+-- ── 快捷鍵  ← 修正：觸發後呼叫 RefreshKey 同步 GUI pill ──
+UIS.InputBegan:Connect(function(i,g)
+    if not g then
+        -- 飛行快捷鍵
+        if i.KeyCode.Name == NS.FlyBind then
+            NS.Fly = not NS.Fly
+            RefreshKey("Fly")      -- ← 同步 GUI pill
+            Save(); UpdateArr()
+        end
+
+        -- 跟隨玩家快捷鍵
+        if i.KeyCode.Name == NS.StickBind then
+            NS.StickEnabled = not NS.StickEnabled
+            if NS.StickEnabled then NS.StickTarget = GetStickTarget() end
+            RefreshKey("StickEnabled")  -- ← 同步 GUI pill（含展開/收合）
+            Save(); UpdateArr()
+        end
+
+        -- 選單快捷鍵
+        if i.KeyCode.Name == NS.MenuBind then
+            ToggleMenu()
+        end
+    end
+end)
+
+-- ── ESP  (核心，不動) ─────────────────────────────────────
+local function CreateESP(plr)
+    local hl=Instance.new("Highlight")
+    hl.Parent=CoreGui; hl.Name="XuCharms_"..plr.Name
+    RS.RenderStepped:Connect(function()
+        local Char=plr.Character
+        if Char and Char:FindFirstChild("HumanoidRootPart") and plr~=LP
+            and Char:FindFirstChild("Humanoid") and Char.Humanoid.Health>0 then
+            hl.Enabled          = NS.CharmsOutline
+            hl.Adornee          = Char
+            hl.FillColor        = Accent
+            hl.FillTransparency = 1
+            hl.OutlineColor     = Accent
+            hl.OutlineTransparency = NS.CharmsOutline and 0 or 1
+            return
+        end
+        hl.Enabled=false
+    end)
+end
+for _,p in pairs(Players:GetPlayers()) do CreateESP(p) end
+Players.PlayerAdded:Connect(CreateESP)
+
+-- ── INIT ─────────────────────────────────────────────────
+GoTab("aim")
+task.wait(0.4)
+UpdateArr()
+TS:Create(MenuBlur,TweenInfo.new(0.4),{Size=16}):Play()
+
+task.spawn(function()
+end)
