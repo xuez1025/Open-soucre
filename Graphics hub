@@ -73,6 +73,9 @@ _G.NightToggleState = false
 --2022材質
 _G.Use2022Materials = false
 
+--暗色材質
+_G.DarkTextureEnabled = false
+
 --快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
@@ -227,6 +230,63 @@ Lighting:GetPropertyChangedSignal("ClockTime"):Connect(function()
     end
 end)
 
+--暗色材質
+local darkTextureConn = nil
+local darkSaved = {}   -- [part] = {Color=..., Material=...}
+
+local function IsMapPart(part)
+    if not part:IsA("BasePart") then return false end
+    if part:FindFirstAncestorOfClass("Tool") then return false end
+    local parentModel = part:FindFirstAncestorOfClass("Model")
+    if parentModel and parentModel:FindFirstChildOfClass("Humanoid") then return false end
+    if part:FindFirstChildWhichIsA("SpecialMesh") or part:FindFirstChildWhichIsA("MeshPart") then return false end
+    if part.Size.Magnitude < 5 then return false end
+    if part.Material == Enum.Material.Grass or (part.Name:lower():find("tree")) then return false end
+    if not part.Anchored then return false end
+    return true
+end
+
+local function ApplyDarkPart(part)
+    if not darkSaved[part] then
+        darkSaved[part] = {Color=part.Color, Material=part.Material}
+    end
+    part.Color = Color3.fromRGB(50, 50, 50)
+    part.Material = Enum.Material.SmoothPlastic
+end
+
+local function RestoreDarkParts()
+    for part, saved in pairs(darkSaved) do
+        if part.Parent then
+            part.Color = saved.Color
+            part.Material = saved.Material
+        end
+    end
+    darkSaved = {}
+end
+
+local function SetDarkTexture(on)
+    if darkTextureConn then darkTextureConn:Disconnect(); darkTextureConn = nil end
+    if not on then
+        RestoreDarkParts()
+        return
+    end
+    for _, part in pairs(workspace:GetDescendants()) do
+        if IsMapPart(part) then ApplyDarkPart(part) end
+    end
+    darkTextureConn = workspace.DescendantAdded:Connect(function(desc)
+        if IsMapPart(desc) then
+            task.wait(0.1)
+            if IsMapPart(desc) then ApplyDarkPart(desc) end
+        end
+    end)
+end
+
+if _G.DarkTextureEnabled then
+    task.spawn(function()
+        SetDarkTexture(true)
+    end)
+end
+
 ----------------------------------------
 --分頁
 ----------------------------------------
@@ -265,7 +325,6 @@ Tabs.Graphics:Toggle({
 
 Tabs.Graphics:Toggle({
     Title = "低配模式",
-    Desc = "大幅優化效能",
     Value = _G.LowVisualMode,
     Callback = function(v)
         _G.SetLowVisualState(v)
@@ -317,7 +376,6 @@ Tabs.Graphics:Toggle({
 
 Tabs.Graphics:Toggle({
     Title = "2022材質", 
-    Desc = "啟用2022材質", 
     Value = _G.Use2022Materials,
     Callback = function(v)
         _G.Use2022Materials = v
@@ -327,6 +385,15 @@ Tabs.Graphics:Toggle({
         else 
             notify("2022材質", "不支援", 3) 
         end
+    end
+})
+
+Tabs.Graphics:Toggle({
+    Title = "暗色材質",
+    Value = _G.DarkTextureEnabled,
+    Callback = function(v)
+        _G.DarkTextureEnabled = v
+        SetDarkTexture(v)
     end
 })
 
