@@ -1869,7 +1869,6 @@ end
 ----------------------------------------
 Halloween.Scheduler = {
     BossPending = false,     -- 已通知南瓜刷取讓出執行權，BOSS 取得執行權
-    BossConflictAt = 0,      -- 南瓜刷取未在時限內停下時，強制取得執行權的時間點
 }
 
 -- 整點活動是否正在占用執行權 (XX:00~XX:10 且已開啟自動整點活動)
@@ -1916,7 +1915,6 @@ function Halloween.Scheduler.Watch()
     if _G.AutoPumpkinBoss == true and Halloween.PumpkinBoss.GateReady
         and not Halloween.EventOwns() then return end
     Halloween.Scheduler.BossPending = false
-    Halloween.Scheduler.BossConflictAt = 0
 end
 
 task.spawn(function()
@@ -2733,13 +2731,15 @@ function Halloween.PumpkinBoss.Run()
     if not Halloween.BossGate() then return end
     local sched = Halloween.Scheduler
     if tick() < state.NextCheck then return end
-    -- 召喚材料足夠：通知南瓜刷取讓出執行權
-    sched.BossPending = true
-    if Halloween.PumpkinBusy then
-        -- 等南瓜刷取停下再召喚，超時才強制中斷，避免流程互相干擾
-        if sched.BossConflictAt == 0 then sched.BossConflictAt = tick() + 3 end
-        if tick() < sched.BossConflictAt then return end
+    -- 召喚材料足夠：通知南瓜刷取讓出執行權，等它停下後再召喚 (優先 BOSS)
+    if not sched.BossPending then
+        sched.BossPending = true
+        -- 中止南瓜刷取正在進行的移動，讓 BOSS 流程能立即接手
+        StopTween()
+        ReleaseHover()
+        Halloween.PumpkinTarget = nil
     end
+    if Halloween.PumpkinBusy then return end
     state.Busy, state.NextCheck = true, tick() + 10
     local function active() return _G.AutoPumpkinBoss == true end
     local ok, err = pcall(function()
@@ -2754,7 +2754,7 @@ function Halloween.PumpkinBoss.Run()
     state.Busy = false
     state.StatusCache, state.StatusAt = nil, 0
     -- BOSS 完成後恢復：解除搶占，南瓜刷取重新判斷時間 / 伺服器狀態 / 自動換服元件
-    sched.BossPending, sched.BossConflictAt = false, 0
+    sched.BossPending = false
     Halloween.RareHoldUntil, Halloween.RareMissingAt = 0, nil
     if not ok then warn("[Pumpkin Boss] " .. tostring(err)) end
 end
