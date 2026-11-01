@@ -1893,7 +1893,17 @@ function Halloween.BossGate()
         and not HopPending
         and tick() >= (Halloween.BossWarpUntil or 0)
     if not canRun then state.GateReady = false; return false end
-    if state.Ready(state.Status()) then
+    local info = state.Status()
+    local ready = state.Ready(info)
+    -- 同一個伺服器重複召喚：上一輪已清空且人還留在競技場內時，視為可再次召喚
+    if not ready then
+        local arena = state.Arena()
+        if arena and arena:GetAttribute("ArenaState") == "Cleared" and state.Inside(arena)
+            and info and info.Open and not info.Busy then
+            ready = true
+        end
+    end
+    if ready then
         state.GateReady = true
         return not Halloween.EventOwns()
     end
@@ -2515,6 +2525,15 @@ function Halloween.PumpkinBoss.Inside(arena)
     return Vector3.new(delta.X, 0, delta.Z).Magnitude <= 360 and math.abs(delta.Y) <= 420
 end
 
+-- 是否已離開競技場 (用於判斷上一輪 BOSS 是否結束)
+function Halloween.PumpkinBoss.Outside(arena)
+    arena = arena or Halloween.PumpkinBoss.Arena()
+    local center, root = arena and arena:GetAttribute("ArenaCenter"), GetHRP()
+    if not arena or typeof(center) ~= "Vector3" or not root then return false end
+    local delta = root.Position - center
+    return Vector3.new(delta.X, 0, delta.Z).Magnitude > 360 or math.abs(delta.Y) > 420
+end
+
 function Halloween.PumpkinBoss.Tagged(tag, name)
     for _, object in ipairs(CollectionService:GetTagged(tag)) do
         if object:IsDescendantOf(Workspace) then return object end
@@ -2577,9 +2596,51 @@ function Halloween.PumpkinBoss.Collect(arena, active)
     return count
 end
 
+function Halloween.PumpkinBoss.Leave(active)
+    local state = Halloween.PumpkinBoss
+    local arena = state.Arena()
+    if not arena or not state.Inside(arena) then return true end
+    -- 上一輪已結束且仍留在競技場：走出場地後才能重新召喚
+    local opened = arena:GetAttribute("PortalOpen") == true
+    local core
+    if opened then
+        local portal = arena:FindFirstChild("ExitPortal")
+        core = portal and portal:FindFirstChild("Core")
+    end
+    if not (core and core:IsA("BasePart")) then
+        -- 沒有可用出口時直接傳送到鍋台，讓伺服器把玩家移出競技場
+        local cauldron = state.Tagged("DapperJackCauldron")
+        if cauldron then
+            _tp(cauldron:GetPivot() + Vector3.new(0, 3, 5), function() return not active() or state.Outside(arena) end)
+            ReleaseHover()
+        end
+    else
+        _tp(core.CFrame, function() return not active() or state.Outside(arena) end)
+        ReleaseHover()
+        local root = GetHRP()
+        if active() and root and state.Inside(arena) and (root.Position - core.Position).Magnitude < 10 and firetouchinterest then
+            pcall(function() firetouchinterest(root, core, 0); firetouchinterest(root, core, 1) end)
+        end
+    end
+    local deadline = tick() + 8
+    while active() and tick() < deadline do
+        if state.Outside(arena) then return true end
+        task.wait(0.2)
+    end
+    return state.Outside(arena)
+end
+
 function Halloween.PumpkinBoss.Enter(active)
     local state = Halloween.PumpkinBoss
-    if state.Inside() then return true end
+    local arena = state.Arena()
+    if state.Inside(arena) then
+        -- 上一輪已打完 (場地已清空) 時先離開，讓同一個伺服器可以再次召喚
+        if arena and arena:GetAttribute("ArenaState") == "Cleared" then
+            if not state.Leave(active) then return false end
+        else
+            return true
+        end
+    end
     local cauldron = state.Tagged("DapperJackCauldron")
     if not cauldron then return false end
     if not ForceUnseat(3, active) then return false end
@@ -2588,8 +2649,10 @@ function Halloween.PumpkinBoss.Enter(active)
     local remote = RS.Remotes:FindFirstChild("DapperJackRitual")
     if not remote then return false end
     local info = remote:InvokeServer("Status")
+    state.StatusCache, state.StatusAt = nil, 0
     if type(info) ~= "table" or not info.Open then return false end
-    if not info.Active and not info.Busy then
+    if not info.Active then
+        if info.Busy then return false end
         if not state.Ready(info) then return false end
         local result = remote:InvokeServer("Summon")
         if result ~= "Started" and result ~= "Active" and result ~= "Busy" then
@@ -2680,9 +2743,6 @@ function Halloween.PumpkinBoss.Run()
     state.Busy, state.NextCheck = true, tick() + 10
     local function active() return _G.AutoPumpkinBoss == true end
     local ok, err = pcall(function()
-        if not state.Inside() then
-            if not state.Ready(state.Status()) or not active() then return end
-        end
         if not active() or Halloween.Knocking or Halloween.EventOwns() then return end
         HopCancelPending()
         StopTween(); ClearBringJobs(); ReleaseHover()
