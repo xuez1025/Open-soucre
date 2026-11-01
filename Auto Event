@@ -309,7 +309,7 @@ if typeof(isfile) == "function" and isfile("AutoEvent.file") then
 end
 
 local ScriptLoadstring = [[if isfile and isfile("AutoEvent.file") and readfile("AutoEvent.file") == "true" then
-    loadstring(game:HttpGet("https://rjr-loader.top/script/autoevent"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Auto%20Event"))()
 end]]
 
 -- Anti AFK
