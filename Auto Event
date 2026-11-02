@@ -1712,6 +1712,9 @@ end
 
 task.spawn(function()
     task.wait(2)
+    if _G.AutoHalloweenGacha then
+        pcall(Halloween.PullGacha, true)
+    end
     while task.wait(60) do
         if _G.AutoHalloweenGacha then
             pcall(Halloween.PullGacha, true)
@@ -2681,12 +2684,14 @@ end
 function Halloween.PumpkinBoss.Round(active)
     local state, clearedAt, quietAt, cardAt = Halloween.PumpkinBoss, nil, nil, nil
     local deadline, character = tick() + 900, LocalPlayer.Character
+    local bossMissingAt = nil
     while active() and tick() < deadline do
         local arena = state.Arena()
         local hum = GetHumanoid()
         if not hum or hum.Health <= 0 or LocalPlayer.Character ~= character then return end
         if not state.Inside(arena) then return end
         if arena:GetAttribute("ArenaState") == "Cleared" then
+            bossMissingAt = nil
             clearedAt = clearedAt or tick()
             local pending = state.Collect(arena, active)
             if pending > 0 then quietAt = nil
@@ -2713,10 +2718,19 @@ function Halloween.PumpkinBoss.Round(active)
         else
             local boss = Workspace:FindFirstChild("Dapper Jack", true)
             if boss and Attack.Alive(boss) then
+                bossMissingAt = nil
                 Halloween.Target, Halloween.FloorY = boss, arena:GetAttribute("ArenaCenter").Y
                 KillLoop(boss, function() return active() and state.Inside(arena) end,
                     function() return arena:GetAttribute("ArenaState") == "Cleared" end, false, true)
                 Halloween.Target, Halloween.FloorY = nil, nil
+            else
+                -- 場地未清空卻找不到 BOSS (卡 bug / Boss 消失)，持續 8 秒後自動退出
+                bossMissingAt = bossMissingAt or tick()
+                if tick() - bossMissingAt >= 8 then
+                    Halloween.Target, Halloween.FloorY = nil, nil
+                    state.Leave(active)
+                    return
+                end
             end
         end
         task.wait(0.25)
@@ -3206,3 +3220,33 @@ task.spawn(function()
         end
     end
 end)
+
+-- 依存檔配置啟動各元件 (等同手動開啟開關)
+if _G.AutoHalloweenGacha then
+    task.spawn(Halloween.PullGacha)
+end
+
+if _G.AutoStoreFruit then
+    task.spawn(function()
+        pcall(Tick_AutoStoreFruit)
+    end)
+end
+
+if _G.AutoPumpkinBoss then
+    Halloween.PumpkinBoss.NextCheck = 0
+    pcall(Halloween.BossGate)
+end
+
+if _G.AutoRarePumpkin then
+    Halloween.RareHoldUntil, Halloween.RareMissingAt = 0, nil
+end
+
+if _G.FastAttack then
+    stopManual()
+else
+    startManual()
+end
+
+if _G.BringMobs then
+    StartBringMobs()
+end
