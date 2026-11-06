@@ -213,6 +213,178 @@ task.spawn(function()
     end)
 end)
 
+----------------------------------------
+-- 翻譯核心
+----------------------------------------
+TranslationState = {}
+_G.Language = _G.Language or "中文"
+TranslationState.Translations = {
+    English = {
+        ["腳本已在運行中，請勿重複執行！"] = "The script is already running. Please do not run it again!",
+        ["語言"] = "Language",
+        ["語言已切換為: English"] = "Language switched to English",
+        ["語言已切換為: 中文"] = "Language switched to Chinese",
+        ["萬聖節活動"] = "Halloween Event",
+        ["配置"] = "Config",
+        ["設定"] = "Settings",
+        ["萬聖節"] = "Halloween",
+        ["自動整點活動"] = "Auto Hourly Event",
+        ["萬聖節扭蛋"] = "Halloween Gacha",
+        ["自動存果實"] = "Auto Store Fruit",
+        ["南瓜"] = "Pumpkin",
+        ["自動刷南瓜（普通＋稀有）"] = "Auto Farm Pumpkin (Normal + Rare)",
+        ["自動刷稀有南瓜（僅稀有）"] = "Auto Farm Rare Pumpkin (Rare Only)",
+        ["找不到稀有南瓜自動跳服"] = "Auto Server Hop If No Rare Pumpkin",
+        ["自動召喚並擊殺南瓜 Boss"] = "Auto Summon & Kill Pumpkin Boss",
+        ["選擇陣營"] = "Select Team",
+        ["海賊"] = "Pirates",
+        ["海軍"] = "Marines",
+        ["選擇武器"] = "Select Weapon",
+        ["近戰"] = "Melee",
+        ["劍"] = "Sword",
+        ["槍械"] = "Gun",
+        ["惡魔果實"] = "Blox Fruit",
+        ["自動攻擊"] = "Auto Attack",
+        ["自動武裝色"] = "Auto Buso",
+        ["自動見聞色"] = "Auto Observation Haki",
+        ["聚怪"] = "Bring Mobs",
+        ["重置腳本"] = "Reset Script",
+        ["將所有配置恢復初始"] = "Restore All Settings To Default",
+        ["標記為待重置 下次啟動腳本時改為初始設定"] = "Marked for reset. Default settings will apply on the next script start.",
+        ["配置等待重置"] = "Config Reset Pending",
+        ["下次啟動腳本後將完全生效 當前功能不受影響"] = "Changes will take full effect the next time the script starts. Current features will not be affected.",
+        ["重置失敗"] = "Reset Failed",
+        ["無法儲存設定檔 請確認執行器是否支援檔案寫入"] = "Unable to save the config file. Check whether your executor supports file writing.",
+        ["超低配模式"] = "Ultra-Low Graphics Mode",
+        ["換服後自動執行"] = "Auto-Execute After Hop",
+        ["通知"] = "Notifications",
+        ["已開啟自動執行"] = "Auto-execution enabled",
+        ["支援錯誤"] = "Unsupported Executor",
+        ["你目前的注入器不支援"] = "Your current executor is not supported",
+        ["已關閉自動執行"] = "Auto-execution disabled",
+        ["防止閒置被踢出"] = "Prevents being kicked for being idle",
+        ["快捷鍵"] = "Hotkey",
+        ["可更改"] = "Changeable",
+        ["停用快捷鍵"] = "Disable Hotkey",
+        ["開啟後將禁用快捷鍵"] = "Disables the hotkey when enabled",
+        ["換服"] = "Server Hop",
+        ["已取消換服"] = "Server hop cancelled",
+        ["換服中 "] = "Hopping to ",
+        ["換服倒數: "] = "Hop countdown: ",
+        ["換服傳送失敗"] = "Server hop teleport failed",
+        ["未取到伺服器列表"] = "Could not fetch the server list",
+        ["沒有找到可用的伺服器"] = "No available servers found",
+        ["未發現稀有南瓜，3 秒後換服"] = "No rare pumpkin found; hopping in 3 seconds",
+        ["已抽取萬聖節扭蛋"] = "Halloween gacha pulled",
+        ["扭蛋抽取失敗"] = "Gacha pull failed",
+        ["扭蛋模組載入失敗"] = "Failed to load the gacha module",
+        ["已開啟"] = "Enabled",
+        ["已關閉"] = "Disabled",
+        ["無"] = "None",
+        ["載入中..."] = "Loading...",
+    }
+}
+
+L = function(text)
+    if type(text) ~= "string" or _G.Language ~= "English" then return text end
+    local state = TranslationState
+    if not state.Index then
+        state.Index = {}
+        for zh, en in pairs(state.Translations.English) do state.Index[#state.Index + 1] = { zh = zh, en = en } end
+        table.sort(state.Index, function(x, y) return #x.zh > #y.zh end)
+        state.Cache = {}
+    end
+    local cached = state.Cache[text]
+    if cached ~= nil then return cached end
+    local exact = state.Translations.English[text]
+    local result = exact or text
+    if not exact then
+        for _, entry in ipairs(state.Index) do
+            if entry.zh ~= "" and string.find(result, entry.zh, 1, true) then
+                local escaped = entry.zh:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+                result = string.gsub(result, escaped, function() return entry.en end)
+            end
+        end
+    end
+    state.Cache[text] = result
+    return result
+end
+
+local ReverseTranslationIndex
+local ReverseTranslationCache = {}
+
+local function TranslateToChinese(text)
+    if type(text) ~= "string" then return text end
+    local cached = ReverseTranslationCache[text]
+    if cached ~= nil then return cached end
+    if not ReverseTranslationIndex then
+        ReverseTranslationIndex = {}
+        for zh, en in pairs(TranslationState.Translations.English) do
+            if type(en) == "string" and en ~= "" then
+                ReverseTranslationIndex[#ReverseTranslationIndex + 1] = { en = en, zh = zh }
+            end
+        end
+        table.sort(ReverseTranslationIndex, function(a, b) return #a.en > #b.en end)
+    end
+    local result = text
+    for _, entry in ipairs(ReverseTranslationIndex) do
+        if string.find(result, entry.en, 1, true) then
+            local escaped = entry.en:gsub("([^%w])", "%%%1")
+            result = string.gsub(result, escaped, function() return entry.zh end)
+        end
+    end
+    ReverseTranslationCache[text] = result
+    return result
+end
+
+local function TranslateParts(text)
+    if type(text) ~= "string" then return text end
+    return L(text)
+end
+
+TranslationState.RefreshVisibleLanguage = function()
+    local roots = {}
+    pcall(function() roots[#roots + 1] = game:GetService("CoreGui") end)
+    pcall(function() roots[#roots + 1] = LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+    for _, root in ipairs(roots) do
+        if root then
+            for _, gui in ipairs(root:GetDescendants()) do
+                if gui:IsA("ScreenGui") then
+                    local name = string.lower(gui.Name)
+                    if string.find(name, "wind", 1, true) or string.find(name, "xu", 1, true)
+                        or string.find(name, "liquidglass", 1, true) then
+                        for _, item in ipairs(gui:GetDescendants()) do
+                            if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+                                pcall(function()
+                                    item.Text = _G.Language == "English" and TranslateParts(item.Text) or TranslateToChinese(item.Text)
+                                end)
+                                if item:IsA("TextBox") then
+                                    pcall(function()
+                                        item.PlaceholderText = _G.Language == "English" and TranslateParts(item.PlaceholderText) or TranslateToChinese(item.PlaceholderText)
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- 持續監聽：WindUI 重繪 (切換頁籤 / 展開下拉) 後會還原原文，這裡自動補回翻譯
+TranslationState.StartWatch = function()
+    if TranslationState.Watching then return end
+    TranslationState.Watching = true
+    task.spawn(function()
+        while _G.Language == "English" do
+            pcall(TranslationState.RefreshVisibleLanguage)
+            task.wait(0.5)
+        end
+        TranslationState.Watching = false
+    end)
+end
+
 --------------------------
 -- WindUI 載入
 --------------------------
@@ -351,7 +523,8 @@ local ConfigKeys = {
     "AntiAFK_ENABLED",
 		"LowCpuMode",
     "CurrentKey",
-    "KeyDisabled"
+    "KeyDisabled",
+    "Language"
 }
 
 local function CopyConfigValue(value)
@@ -453,7 +626,7 @@ local cachedChar, cachedParts = nil, nil
 
 local function Notify(title, message, duration)
     if WindUI then
-        WindUI:Notify({ Title = title, Content = message, Duration = duration or 3 })
+        WindUI:Notify({ Title = L(title), Content = L(message), Duration = duration or 3 })
     end
 end
 
@@ -1544,47 +1717,6 @@ Halloween = {
         },
     },
 }
-
-Halloween.PotionRecipes = {
-    "Big Head Elixir", "Disguise Elixir", "Lava Bomb Elixir", "Pumpkin Potion",
-    "Suspicious Growth Potion", "Monster Mash Elixir", "Soul Swap Potion", "Poltergeist Potion",
-}
-
-function Halloween.CraftPotion(recipe, quantity)
-    quantity = tonumber(quantity or 1)
-    if Halloween.PotionBusy then return end
-    if not table.find(Halloween.PotionRecipes, recipe) or not quantity or quantity % 1 ~= 0 or quantity < 1 or quantity > 99 then
-        Notify("女巫藥水", "請選擇藥水並輸入 1 到 99 的整數", 4)
-        return
-    end
-    local readIdentity, writeIdentity = getthreadidentity or getidentity, setthreadidentity or setidentity
-    if type(readIdentity) ~= "function" or type(writeIdentity) ~= "function" then
-        Notify("女巫藥水", "執行器不支援身分識別 API", 4)
-        return
-    end
-    Halloween.PotionBusy = true
-    task.spawn(function()
-        local identity, crafted = nil, 0
-        local ok, result = pcall(function()
-            identity = readIdentity()
-            if type(identity) ~= "number" then error("Cannot read thread identity.") end
-            writeIdentity(2)
-            local remote = require(Net):RemoteFunction("Craft")
-            for i = 1, quantity do
-                local response = remote:InvokeServer("Craft", recipe, 1, {})
-                if type(response) ~= "table" then error(tostring(response), 0) end
-                crafted = crafted + 1
-                if i < quantity then task.wait(0.15) end
-            end
-        end)
-        if type(identity) == "number" then
-            local restored, err = pcall(writeIdentity, identity)
-            if not restored then warn("[女巫藥水] Identity restore failed: " .. tostring(err)) end
-        end
-        Halloween.PotionBusy = false
-        Notify("女巫藥水", "已製作 " .. crafted .. "/" .. quantity .. ": " .. recipe .. (ok and "" or (" | " .. tostring(result))), 4)
-    end)
-end
 
 function Halloween.Doors()
     return Halloween.DoorBySea[Sea1 and 1 or Sea2 and 2 or Sea3 and 3 or 0] or {}
@@ -2907,15 +3039,15 @@ end
 -- UI 分頁與元件
 --------------------------
 local Tabs = {
-    Auto      = Window:Tab({ Title = "萬聖節活動", Icon = "ghost" }),
-    Config    = Window:Tab({ Title = "配置", Icon = "wrench" }),
-    Settings  = Window:Tab({ Title = "設定",   Icon = "settings" })
+    Auto      = Window:Tab({ Title = L("萬聖節活動"), Icon = "ghost" }),
+    Config    = Window:Tab({ Title = L("配置"), Icon = "wrench" }),
+    Settings  = Window:Tab({ Title = L("設定"),   Icon = "settings" })
 }
 
-Tabs.Auto:Section({ Title = "萬聖節" })
+Tabs.Auto:Section({ Title = L("萬聖節") })
 
 Tabs.Auto:Toggle({
-    Title = "自動整點活動",
+    Title = L("自動整點活動"),
     Desc = "XX:00~XX:10",
     Value = _G.HalloweenAuto,
     Callback = function(state)
@@ -2928,7 +3060,7 @@ Tabs.Auto:Toggle({
 })
 
 Tabs.Auto:Toggle({
-    Title = "萬聖節扭蛋",
+    Title = L("萬聖節扭蛋"),
     Value = _G.AutoHalloweenGacha,
     Callback = function(state)
         _G.AutoHalloweenGacha = state
@@ -2939,17 +3071,17 @@ Tabs.Auto:Toggle({
 })
 
 Tabs.Auto:Toggle({
-    Title = "自動存果實",
+    Title = L("自動存果實"),
     Value = _G.AutoStoreFruit,
     Callback = function(v)
         _G.AutoStoreFruit = v
     end
 })
 
-Tabs.Auto:Section({ Title = "南瓜" })
+Tabs.Auto:Section({ Title = L("南瓜") })
 
 Tabs.Auto:Toggle({
-    Title = "自動刷南瓜（普通＋稀有）",
+    Title = L("自動刷南瓜（普通＋稀有）"),
     Value = _G.AutoPumpkin,
     Callback = function(state)
         _G.AutoPumpkin = state
@@ -2961,7 +3093,7 @@ Tabs.Auto:Toggle({
 })
 
 Tabs.Auto:Toggle({
-    Title = "自動刷稀有南瓜（僅稀有）",
+    Title = L("自動刷稀有南瓜（僅稀有）"),
     Value = _G.AutoRarePumpkin,
     Callback = function(state)
         _G.AutoRarePumpkin = state
@@ -2975,7 +3107,7 @@ Tabs.Auto:Toggle({
 })
 
 Tabs.Auto:Toggle({
-    Title = "找不到稀有南瓜自動跳服",
+    Title = L("找不到稀有南瓜自動跳服"),
     Value = _G.AutoRarePumpkinHop,
     Callback = function(state)
         _G.AutoRarePumpkinHop = state
@@ -2985,7 +3117,7 @@ Tabs.Auto:Toggle({
 })
 
 Tabs.Auto:Toggle({
-    Title = "自動召喚並擊殺南瓜 Boss",
+    Title = L("自動召喚並擊殺南瓜 Boss"),
     Value = _G.AutoPumpkinBoss,
     Callback = function(state)
         _G.AutoPumpkinBoss = state
@@ -2994,35 +3126,10 @@ Tabs.Auto:Toggle({
     end
 })
 
-Tabs.Auto:Section({ Title = "藥水" })
-
-Tabs.Auto:Dropdown({
-    Title = "選擇藥水",
-    Values = { "選擇藥水", table.unpack(Halloween.PotionRecipes) },
-    Value = "選擇藥水",
-    Callback = function(value)
-        Halloween.SelectedPotion = type(value) == "table" and value[1] or value
-    end,
-})
-
-Halloween.PotionQuantity = 1
-
-Tabs.Auto:Slider({
-    Title = "製作數量",
-    Value = { Min = 1, Max = 99, Default = 1 },
-    Step = 1,
-    Callback = function(value) Halloween.PotionQuantity = tonumber(value) or 1 end,
-})
-
-Tabs.Auto:Button({
-    Title = "製作",
-    Callback = function() Halloween.CraftPotion(Halloween.SelectedPotion, Halloween.PotionQuantity or 0) end,
-})
-
-Tabs.Config:Section({ Title = "配置" })
+Tabs.Config:Section({ Title = L("配置") })
 
 Tabs.Config:Dropdown({
-    Title = "選擇陣營",
+    Title = L("選擇陣營"),
     Values = { "海賊", "海軍" },
     Value = _G.SelectTeam == "Pirates" and "海賊" or "海軍",
     Callback = function(v)
@@ -3032,7 +3139,7 @@ Tabs.Config:Dropdown({
 })
 
 Tabs.Config:Dropdown({
-    Title = "選擇武器",
+    Title = L("選擇武器"),
     Values = { "近戰", "劍", "槍械", "惡魔果實" },
     Value = ({ Melee = "近戰", Sword = "劍", Gun = "槍械", ["Blox Fruit"] = "惡魔果實" })[_G.ChooseWP] or "近戰",
     Callback = function(v)
@@ -3043,7 +3150,7 @@ Tabs.Config:Dropdown({
 })
 
 Tabs.Config:Toggle({
-    Title    = "自動攻擊",
+    Title    = L("自動攻擊"),
     Value    = _G.FastAttack,
     Callback = function(v)
         _G.FastAttack = v
@@ -3056,7 +3163,7 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Config:Toggle({
-    Title    = "自動武裝色",
+    Title    = L("自動武裝色"),
     Value    = _G.AutoBusoEnabled,
     Callback = function(v)
         _G.AutoBusoEnabled = v
@@ -3064,7 +3171,7 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Config:Toggle({
-    Title = "自動見聞色",
+    Title = L("自動見聞色"),
     Value = _G.AutoKenSilent,
     Callback = function(v)
         _G.AutoKenSilent = v
@@ -3072,19 +3179,65 @@ Tabs.Config:Toggle({
 })
 
 Tabs.Config:Toggle({
-    Title = "聚怪",
+    Title = L("聚怪"),
     Value = _G.BringMobs,
     Callback = function(v)
         if v then StartBringMobs() else StopBringMobs() end
     end
 })
 
-Tabs.Settings:Section({ Title = "重置腳本" })
+Tabs.Settings:Section({ Title = L("語言") })
+
+Tabs.Settings:Dropdown({
+    Title = L("語言"),
+    Values = { "中文", "English" },
+    Value = _G.Language,
+    Callback = function(value)
+        _G.Language = value
+        task.defer(TranslationState.RefreshVisibleLanguage)
+        task.delay(0.3, TranslationState.RefreshVisibleLanguage)
+        task.delay(1, TranslationState.RefreshVisibleLanguage)
+        WindUI:Notify({ Title = L("語言"), Content = _G.Language == "English" and L("語言已切換為: English") or L("語言已切換為: 中文"), Duration = 3 })
+        if _G.Language == "English" then
+            TranslationState.StartWatch()
+        end
+    end
+})
+
+Window:CreateTopbarButton("Translation", "languages", function()
+    pcall(function() Tabs.Settings:Select() end)
+    pcall(function() Window:SelectTab(Tabs.Settings) end)
+    task.defer(function()
+        local roots = {}
+        pcall(function() roots[#roots + 1] = game:GetService("CoreGui") end)
+        pcall(function() roots[#roots + 1] = LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+        for _, root in ipairs(roots) do
+            if root then
+                for _, item in ipairs(root:GetDescendants()) do
+                    if (item:IsA("TextButton") or item:IsA("TextLabel"))
+                        and (item.Text == "語言" or item.Text == "Language") then
+                        local node = item
+                        for _ = 1, 4 do
+                            if not node or not node.Parent then break end
+                            if node:IsA("GuiButton") then
+                                pcall(function() node:Activate() end)
+                                return
+                            end
+                            node = node.Parent
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end, 1)
+
+Tabs.Settings:Section({ Title = L("重置腳本") })
 
 Tabs.Settings:Button({
-    Title = "將所有配置恢復初始",
+    Title = L("將所有配置恢復初始"),
     Icon = "trash-2",
-    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Desc = L("標記為待重置 下次啟動腳本時改為初始設定"),
     Callback = function()
         local ok = pcall(function()
             if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
@@ -3097,24 +3250,24 @@ Tabs.Settings:Button({
         
         if ok then
             WindUI:Notify({
-                Title = "配置等待重置",
-                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Title = L("配置等待重置"),
+                Content = L("下次啟動腳本後將完全生效 當前功能不受影響"),
                 Duration = 4
             })
         else
             WindUI:Notify({
-                Title = "重置失敗",
-                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
+                Title = L("重置失敗"),
+                Content = L("無法儲存設定檔 請確認執行器是否支援檔案寫入"),
                 Duration = 4
             })
         end
     end
 })
 
-Tabs.Settings:Section({ Title = "設定" })
+Tabs.Settings:Section({ Title = L("設定") })
 
 Tabs.Settings:Toggle({
-    Title = "超低配模式",
+    Title = L("超低配模式"),
     Value = _G.LowCpuMode,
     Callback = function(v)
         _G.LowCpuMode = v
@@ -3125,7 +3278,7 @@ Tabs.Settings:Toggle({
 })
 
 Tabs.Settings:Toggle({ 
-    Title = "換服後自動執行",
+    Title = L("換服後自動執行"),
     Value = _G.AutoExecute,
     Callback = function(v)
         _G.AutoExecute = v
@@ -3137,14 +3290,14 @@ Tabs.Settings:Toggle({
                 end
                 GetQueueOnTeleport()(ScriptLoadstring)
                 WindUI:Notify({
-                    Title = "通知",
-                    Content = "已開啟自動執行",
+                    Title = L("通知"),
+                    Content = L("已開啟自動執行"),
                     Duration = 3
                 })
             else
                 WindUI:Notify({
-                    Title = "支援錯誤",
-                    Content = "你目前的注入器不支援",
+                    Title = L("支援錯誤"),
+                    Content = L("你目前的注入器不支援"),
                     Duration = 3
                 })
             end
@@ -3153,8 +3306,8 @@ Tabs.Settings:Toggle({
                 delfile("AutoEvent.file")
             end
             WindUI:Notify({
-                Title = "通知",
-                Content = "已關閉自動執行",
+                Title = L("通知"),
+                Content = L("已關閉自動執行"),
                 Duration = 3
             })
         end
@@ -3163,7 +3316,7 @@ Tabs.Settings:Toggle({
 
 Tabs.Settings:Toggle({ 
     Title    = "Anti AFK", 
-    Desc     = "防止閒置被踢出", 
+    Desc     = L("防止閒置被踢出"), 
     Value    = _G.AntiAFK_ENABLED,
     Callback = function(v) 
         _G.AntiAFK_ENABLED = v
@@ -3176,8 +3329,8 @@ Tabs.Settings:Toggle({
 })
 
 Tabs.Settings:Keybind({ 
-    Title = "快捷鍵", 
-    Desc = "可更改", 
+    Title = L("快捷鍵"), 
+    Desc = L("可更改"), 
     Value = _G.CurrentKey,
     Callback = function(v)
         _G.CurrentKey = v
@@ -3189,8 +3342,8 @@ Tabs.Settings:Keybind({
 })
 
 Tabs.Settings:Toggle({
-    Title = "停用快捷鍵",
-    Desc = "開啟後將禁用快捷鍵",
+    Title = L("停用快捷鍵"),
+    Desc = L("開啟後將禁用快捷鍵"),
     Value = _G.KeyDisabled,
     Callback = function(state)
         _G.KeyDisabled = state
@@ -3249,4 +3402,9 @@ end
 
 if _G.BringMobs then
     StartBringMobs()
+end
+
+if _G.Language == "English" then
+    task.defer(TranslationState.RefreshVisibleLanguage)
+    TranslationState.StartWatch()
 end
