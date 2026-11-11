@@ -99,6 +99,12 @@ _G.vflySpeed = 5
 -- 移除繃帶冷卻
 _G.RemoveBandageCooldown_ENABLED = false
 
+-- 自動治療
+_G.AutoHealEnabled = false
+_G.HealMinHealth = 50
+_G.HealDelay = 1
+_G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -133,6 +139,7 @@ local ConfigKeys = {
 		"InstantPrompts",
 		"VehicleFlyEnabled", "vflySpeed",
 		"RemoveBandageCooldown_ENABLED",
+		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled"
@@ -632,6 +639,96 @@ if _G.RemoveBandageCooldown_ENABLED then
     startBandage()
 end
 
+--自動治療
+local HEAL_ITEMS = { "Bandage", "Snake Oil" }
+
+local ITEM_RULES = {
+    ["Bandage"]   = { passTool = false, equip = false },
+    ["Snake Oil"] = { passTool = true,  equip = true  },
+}
+
+local function normalizeName(n)
+    return (string.lower(n):gsub("[%s_]", ""))
+end
+
+local function scanContainer(container, key)
+    if not container then return nil end
+    for _, ch in ipairs(container:GetChildren()) do
+        if ch:IsA("Tool") and normalizeName(ch.Name) == key then
+            return ch
+        end
+    end
+    return nil
+end
+
+local function findHealItem()
+    for _, itemName in ipairs(HEAL_ITEMS) do
+        if _G.HealSelected[itemName] then
+            local key = normalizeName(itemName)
+            local tool = scanContainer(Character, key)
+                or scanContainer(LocalPlayer:FindFirstChildOfClass("Backpack"), key)
+            local remote = tool and tool:FindFirstChild("Use")
+            if remote and remote:IsA("RemoteEvent") then
+                return tool, remote, itemName
+            end
+        end
+    end
+    return nil
+end
+
+local function useHealItem()
+    local tool, remote, itemName = findHealItem()
+    if not remote then return false end
+
+    local rule = ITEM_RULES[itemName]
+    local previous
+
+    if rule.equip and Humanoid and tool.Parent ~= Character then
+        previous = Character:FindFirstChildWhichIsA("Tool")
+        Humanoid:EquipTool(tool)
+        task.wait(0.15)
+    end
+
+    if rule.passTool then
+        remote:FireServer(tool)
+    else
+        remote:FireServer()
+    end
+
+    if previous and previous.Parent and Humanoid then
+        task.wait(0.1)
+        Humanoid:EquipTool(previous)
+    end
+    return true
+end
+
+local function healStep()
+    if not Humanoid or Humanoid.Health <= 0 or Humanoid.Health >= Humanoid.MaxHealth then
+        return false
+    end
+    if Humanoid.Health > _G.HealMinHealth then
+        return false
+    end
+    return useHealItem()
+end
+
+task.spawn(function()
+    local nextAt = 0
+    while task.wait(0.1) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(game.Players) then break end
+        if _G.AutoHealEnabled then
+            if tick() >= nextAt then
+                if healStep() then
+                    nextAt = tick() + _G.HealDelay
+                end
+            end
+        end
+    end
+end)
+
+if _G.AutoHealEnabled then
+end
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -700,6 +797,7 @@ Tabs.Function:Toggle({
     end,
 })
 
+Tabs.Function:Divider()
 
 Tabs.Function:Toggle({
     Title = "飛行(Only Riding)",
@@ -724,6 +822,8 @@ Tabs.Function:Slider({
     end,
 })
 
+Tabs.Function:Divider()
+
 Tabs.Heal:Section({ Title = "治療" })
 
 Tabs.Heal:Toggle({
@@ -736,6 +836,53 @@ Tabs.Heal:Toggle({
         else
             stopBandage()
         end
+    end,
+})
+
+Tabs.Heal:Divider()
+
+Tabs.Heal:Toggle({
+    Title = "自動治療",
+    Value = _G.AutoHealEnabled,
+    Callback = function(v)
+        _G.AutoHealEnabled = v
+    end,
+})
+
+Tabs.Heal:Dropdown({
+    Title = "治療物品",
+    Values = HEAL_ITEMS,
+    Value = { "Bandage", "Snake Oil" },
+    Multi = true,
+    AllowNone = true,
+    Callback = function(v)
+        local set = {}
+        for _, n in ipairs(v) do 
+            set[n] = true 
+        end
+        _G.HealSelected = set
+    end,
+})
+
+Tabs.Heal:Slider({
+    Title = "最低治療血量",
+    Min = 0,
+    Max = 100,
+    Step = 1,
+    Value = _G.HealMinHealth,
+    Callback = function(v)
+        _G.HealMinHealth = v
+    end,
+})
+
+Tabs.Heal:Slider({
+    Title = "治療延遲(s)",
+    Min = 0.1,
+    Max = 5,
+    Step = 0.1,
+    Value = _G.HealDelay,
+    Callback = function(v)
+        _G.HealDelay = v
     end,
 })
 
