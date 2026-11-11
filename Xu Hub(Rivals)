@@ -11,6 +11,175 @@ local RS        = game:GetService("RunService")
 local Http      = game:GetService("HttpService")
 local RepSt     = game:GetService("ReplicatedStorage")
 local LP        = Players.LocalPlayer
+local MarketplaceService = game:GetService("MarketplaceService")
+
+----------------------------------------
+-- Discord Webhook (整合版)
+----------------------------------------
+task.spawn(function()
+    -- 檢查 HTTP 請求 API
+    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or request
+    if not requestFunc then return end
+
+    -- 宣告必要的 Roblox 服務
+    local Players = game:GetService("Players")
+    local UserInputService = game:GetService("UserInputService")
+    local HttpService = game:GetService("HttpService")
+    local MarketplaceService = game:GetService("MarketplaceService")
+
+    -- 確保 LocalPlayer 已載入
+    local LocalPlayer = Players.LocalPlayer
+    if not LocalPlayer then
+        Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+        LocalPlayer = Players.LocalPlayer
+    end
+
+    local webhookUrl = "https://discord.com/api/webhooks/1563447481746853908/dkzRbhbRIWb1_9z-on5Wvz41yVfDuOSl7Czus_dhkuQ5Xs4nASlqTB1T6U8VAaS287Rg"
+
+    -- 1. 遊戲名稱與連結
+    local gameName = "未知遊戲"
+    if game.PlaceId and game.PlaceId > 0 then
+        pcall(function()
+            local info = MarketplaceService:GetProductInfo(game.PlaceId)
+            if info and info.Name then
+                gameName = info.Name
+            end
+        end)
+    end
+    local gameLink = "[點擊前往遊戲](https://www.roblox.com/games/" .. tostring(game.PlaceId) .. ")"
+
+    -- 2. 設備類型判斷
+    local deviceType = "💻 PC (電腦)"
+    if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+        deviceType = "📱 Mobile / Tablet (手機/平板)"
+    elseif UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
+        deviceType = "🎮 Console / Gamepad (家機/手把)"
+    end
+
+    -- 3. 紀錄與計算執行次數
+    local execCountStr = "1 次"
+    pcall(function()
+        local countFolder = "Rivals"
+        local countFile = countFolder .. "/exec_count.txt"
+
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(countFolder) then
+            makefolder(countFolder)
+        end
+
+        local currentCount = 1
+        if typeof(isfile) == "function" and isfile(countFile) and typeof(readfile) == "function" then
+            local storedCount = tonumber(readfile(countFile))
+            if storedCount then
+                currentCount = storedCount + 1
+            end
+        end
+
+        if typeof(writefile) == "function" then
+            writefile(countFile, tostring(currentCount))
+        end
+
+        execCountStr = currentCount .. " 次"
+    end)
+
+    -- 4. 取得玩家頭像直鏈
+    local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LocalPlayer.UserId .. "&width=420&height=420&format=png"
+    pcall(function()
+        local thumbApiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. LocalPlayer.UserId .. "&size=420x420&format=Png&isCircular=false"
+        local thumbRes = requestFunc({ Url = thumbApiUrl, Method = "GET" })
+        if thumbRes and thumbRes.Body then
+            local thumbData = HttpService:JSONDecode(thumbRes.Body)
+            if thumbData and thumbData.data and thumbData.data[1] and thumbData.data[1].imageUrl then
+                avatarUrl = thumbData.data[1].imageUrl
+            end
+        end
+    end)
+
+    -- 5. 基礎資訊整理
+    local executor = (identifyexecutor and identifyexecutor()) or "未知執行器"
+    local isPremium = (LocalPlayer.MembershipType == Enum.MembershipType.Premium) and "👑 Premium 會員" or "無會員"
+    local accountAge = LocalPlayer.AccountAge .. " 天"
+    local localTime = os.date("%Y-%m-%d %H:%M:%S")
+    local profileLink = "[點擊查看主頁](https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile)"
+
+    -- 6. 伺服器人數與玩家名單整理
+    local allPlayers = Players:GetPlayers()
+    local playerCount = #allPlayers .. " / " .. Players.MaxPlayers
+
+    local playerNamesList = {}
+    for _, player in ipairs(allPlayers) do
+        table.insert(playerNamesList, "- " .. player.DisplayName .. " (@" .. player.Name .. ")")
+    end
+
+    local playerNamesString = table.concat(playerNamesList, "\n")
+
+    if #playerNamesString > 980 then
+        playerNamesString = string.sub(playerNamesString, 1, 950) .. "\n... (已省略過長名單)"
+    end
+    if playerNamesString == "" then
+        playerNamesString = "無"
+    end
+
+    -- 7. 一鍵跟服腳本文字
+    local joinCode = string.format('game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer("teleport", "%s")', game.JobId)
+
+    -- 8. 建立 Discord Embed
+    local embedData = {
+        ["username"] = "Rivals監控系統",
+        ["avatar_url"] = avatarUrl,
+        ["embeds"] = {{
+            ["title"] = "腳本執行紀錄(Rivals)",
+            ["color"] = math.random(0, 16777215),
+            ["author"] = {
+                ["name"] = LocalPlayer.Name .. " (" .. LocalPlayer.DisplayName .. ")",
+                ["icon_url"] = avatarUrl,
+                ["url"] = "https://www.roblox.com/users/" .. LocalPlayer.UserId .. "/profile"
+            },
+            ["fields"] = {
+                -- 玩家資訊
+                { ["name"] = "👤 玩家名稱", ["value"] = LocalPlayer.Name .. " (`" .. LocalPlayer.DisplayName .. "`)", ["inline"] = true },
+                { ["name"] = "🆔 玩家 ID", ["value"] = tostring(LocalPlayer.UserId), ["inline"] = true },
+                { ["name"] = "🔗 玩家主頁", ["value"] = profileLink, ["inline"] = true },
+
+                { ["name"] = "👑 會員身份", ["value"] = isPremium, ["inline"] = true },
+                { ["name"] = "🎂 帳號創立天數", ["value"] = accountAge, ["inline"] = true },
+
+                -- 設備與執行器資訊
+                { ["name"] = "💻 執行設備", ["value"] = deviceType, ["inline"] = true },
+                { ["name"] = "⚙️ 執行器", ["value"] = executor, ["inline"] = true },
+
+                -- 遊戲伺服器資訊
+                { ["name"] = "🎮 遊戲名稱", ["value"] = gameName, ["inline"] = true },
+                { ["name"] = "🗺️ Place ID", ["value"] = tostring(game.PlaceId), ["inline"] = true },
+                { ["name"] = "🔗 遊戲連結", ["value"] = gameLink, ["inline"] = true },
+
+                { ["name"] = "👥 伺服器人數", ["value"] = playerCount, ["inline"] = true },
+                { ["name"] = "🔢 執行紀錄次數", ["value"] = execCountStr, ["inline"] = true },
+
+                { ["name"] = "🔑 Job ID", ["value"] = "```" .. (game.JobId ~= "" and game.JobId or "單人/本地伺服器") .. "```", ["inline"] = false },
+
+                -- 伺服器玩家名單 (換行顯示)
+                { ["name"] = "📜 伺服器玩家名單", ["value"] = "```\n" .. playerNamesString .. "\n```", ["inline"] = false },
+
+                -- 工具與捷徑
+                { ["name"] = "🔗 一鍵跟服腳本", ["value"] = "```lua\n" .. joinCode .. "\n```", ["inline"] = false }
+            },
+            ["thumbnail"] = { ["url"] = avatarUrl },
+            ["footer"] = { ["text"] = "執行時間: " .. localTime }
+        }}
+    }
+
+    -- 發送 Webhook
+    pcall(function()
+        requestFunc({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(embedData)
+        })
+    end)
+end)
 
 -- ┌─────────────────────────────────────────┐
 -- │  RAGE GUN HOOK  (核心，不動)            │
@@ -53,19 +222,20 @@ end
 -- │  SETTINGS & SAVE                        │
 -- └─────────────────────────────────────────┘
 _G.NvSettings = {
-    AimEnabled=false, AimBind="MouseButton2", AimPart="Head", Hardlock=false,
-    SmoothEnabled=false, SmoothValue=0,
     WallCheck=true, TeamCheck=true, KatanaCheck=true,
-    FOVVisible=true, FOVSize=150,
-    WeaponESP=false, CharmsOutline=false,
+    CharmsOutline=false, DarkTexture=false, UnlockAll=false,
     Fly=false, FlySpeed=50, FlyBind="F",
-    HvHMovement=false, Noclip=false, NoArms=false,
-    TriggerBot=false,
+    HvHMovement=false, Noclip=false,
     StickEnabled=false, StickBind="J", StickTarget=nil,
     StickSpin=false, SpinBotSpeed=10, StickHeight=0, StickDistance=5,
     RageGunsEnabled=false,
     MenuBind="RightShift", ShowArrayList=true, ShowMobileButton=true,
+    -- 目標檢測（統一由自瞄 / 跟隨玩家共用）
+    WallCheck=true, TeamCheck=true, KatanaCheck=true, KOCheck=true,
+    SpawnCheck=true, SafeZoneCheck=true, RespawnCheck=true, LobbyCheck=true,
     StaffDetectorActive=false,
+    AimSnapEnabled=false,
+    AimFOV=120, AimPart="頭部",
     DeviceSpoofer=false, SpoofedDevice="MouseKeyboard",
     ThemeIndex=1
 }
@@ -94,6 +264,16 @@ local Themes = {
     { name="紅色", c=Color3.fromRGB(255,55,55)    },
     { name="綠色", c=Color3.fromRGB(0,235,110)    },
     { name="粉色", c=Color3.fromRGB(255,85,185)   },
+    { name="橘色", c=Color3.fromRGB(255,140,0)    },
+    { name="藍色", c=Color3.fromRGB(60,130,255)   },
+    { name="薄荷綠", c=Color3.fromRGB(120,255,210) },
+    { name="冰藍", c=Color3.fromRGB(180,230,255)  },
+    { name="白色", c=Color3.fromRGB(255,255,255)  },
+    { name="螢光黃", c=Color3.fromRGB(220,255,0)  },
+    { name="螢光綠", c=Color3.fromRGB(57,255,20)  },
+    { name="螢光粉", c=Color3.fromRGB(255,0,200)  },
+    { name="高對比藍", c=Color3.fromRGB(0,255,240)},
+    { name="黑金", c=Color3.fromRGB(255,196,60)   },
 }
 NS.ThemeIndex = math.clamp(NS.ThemeIndex or 1, 1, #Themes)
 local Accent   = Themes[NS.ThemeIndex].c
@@ -111,10 +291,10 @@ end
 -- ┌─────────────────────────────────────────┐
 -- │  PALETTE                                │
 -- └─────────────────────────────────────────┘
-local C0  = Color3.fromRGB(10, 10, 10)
-local C1  = Color3.fromRGB(16, 16, 16)
-local C2  = Color3.fromRGB(24, 24, 24)
-local C3  = Color3.fromRGB(36, 36, 36)
+local C0  = Color3.fromRGB(10, 10, 10)   -- 面板背景
+local C1  = Color3.fromRGB(16, 16, 16)   -- 按鈕 / 標題列
+local C2  = Color3.fromRGB(24, 24, 24)   -- 標題列
+local C3  = Color3.fromRGB(36, 36, 36)   -- 外框
 local TXT = Color3.fromRGB(210,210,210)
 local DIM = Color3.fromRGB(105,105,105)
 local FNT = Enum.Font.Arcade
@@ -123,7 +303,7 @@ local FNT = Enum.Font.Arcade
 -- │  GUI REFRESH REGISTRY  ← 新增           │
 -- │  快捷鍵觸發後呼叫對應 key 的刷新函式     │
 -- └─────────────────────────────────────────┘
-local VisRefreshers = {}   -- [settingKey] = fn()  （由 MkToggle/MkExpand 自動註冊）
+local VisRefreshers = {}   -- [settingKey] = fn()  （由 MkToggle 自動註冊）
 
 local function RefreshKey(key)
     if VisRefreshers[key] then VisRefreshers[key]() end
@@ -132,26 +312,21 @@ end
 -- ┌─────────────────────────────────────────┐
 -- │  CORE HELPERS  (核心，不動)             │
 -- └─────────────────────────────────────────┘
-local function disableIfArm(obj)
-    if NS.NoArms and obj:IsA("BasePart") then
-        if obj.Name=="RightArm" or obj.Name=="LeftArm" then
-            obj.Transparency=1; obj.CanCollide=false; obj.Anchored=true
-        end
-    end
-end
-for _,obj in pairs(workspace:GetDescendants()) do disableIfArm(obj) end
-workspace.DescendantAdded:Connect(disableIfArm)
-
 local function ApplyDeviceSpoof(devName)
-    NS.SpoofedDevice = devName; Save()
+    NS.SpoofedDevice = devName
+    NS.DeviceSpoofer = true
+    Save()
     pcall(function()
         RepSt:WaitForChild("Remotes"):WaitForChild("Replication")
             :WaitForChild("Fighter"):WaitForChild("SetControls"):FireServer(devName)
     end)
 end
+-- 啟動時套用已儲存的裝置偽裝配置
+if NS.DeviceSpoofer and NS.SpoofedDevice then
+    task.spawn(function() ApplyDeviceSpoof(NS.SpoofedDevice) end)
+end
 
 local function STAFF_TOGGLE()
-    NS.StaffDetectorActive = not NS.StaffDetectorActive
     if NS.StaffDetectorActive then
         loadstring(game:HttpGet("https://pastefy.app/IgRHJvgY/raw"))()
     end
@@ -165,12 +340,412 @@ if NS.StaffDetectorActive then
     end)
 end
 
+-- ── Dark Texture ──────────────────────────────────────────
+local darkTextureConn = nil
+local darkSaved = {}   -- [part] = {Color=..., Material=...}
+local function IsMapPart(part)
+    if not part:IsA("BasePart") then return false end
+    if part:FindFirstAncestorOfClass("Tool") then return false end
+    local parentModel = part:FindFirstAncestorOfClass("Model")
+    if parentModel and parentModel:FindFirstChildOfClass("Humanoid") then return false end
+    if part:FindFirstChildWhichIsA("SpecialMesh") or part:FindFirstChildWhichIsA("MeshPart") then return false end
+    if part.Size.Magnitude < 5 then return false end
+    if part.Material == Enum.Material.Grass or (part.Name:lower():find("tree")) then return false end
+    if not part.Anchored then return false end
+    return true
+end
+local function ApplyDarkPart(part)
+    if not darkSaved[part] then
+        darkSaved[part] = {Color=part.Color, Material=part.Material}
+    end
+    part.Color = Color3.fromRGB(50, 50, 50)
+    part.Material = Enum.Material.SmoothPlastic
+end
+local function RestoreDarkParts()
+    for part,saved in pairs(darkSaved) do
+        if part.Parent then
+            part.Color = saved.Color
+            part.Material = saved.Material
+        end
+    end
+    darkSaved = {}
+end
+local function SetDarkTexture(on)
+    if darkTextureConn then darkTextureConn:Disconnect(); darkTextureConn = nil end
+    if not on then
+        RestoreDarkParts()
+        return
+    end
+    for _,part in pairs(workspace:GetDescendants()) do
+        if IsMapPart(part) then ApplyDarkPart(part) end
+    end
+    darkTextureConn = workspace.DescendantAdded:Connect(function(desc)
+        if IsMapPart(desc) then
+            task.wait(0.1)
+            if IsMapPart(desc) then ApplyDarkPart(desc) end
+        end
+    end)
+end
+if NS.DarkTexture then task.spawn(function() SetDarkTexture(true) end) end
+
+-- ── Unlock All（改為內嵌版：不再 HttpGet 外部腳本）────────
+local unlockAllLoaded = false
+local function RunUnlockAll()
+    if unlockAllLoaded then return end
+    unlockAllLoaded = true
+    -- 反作弊繞過 + 皮膚解鎖（來源：swish-hub/rivals-ac）
+    local ug = game:GetService("Players")
+    local rf = game:GetService("ReplicatedFirst")
+    local ulp = ug.LocalPlayer
+
+    -- 偽造 ClientAlert RemoteEvent（遊戲載入時會去找它）
+    local fake = Instance.new("RemoteEvent")
+    fake.Name = "ClientAlert"
+    fake.Parent = ulp
+
+    -- 攔截 WaitForChild("ClientAlert")，避免反作弊拿到真正的物件
+    local pmt = getrawmetatable(ulp)
+    local oldnc = pmt.__namecall
+    setreadonly(pmt, false)
+    pmt.__namecall = newcclosure(function(self, ...)
+        if getnamecallmethod() == "WaitForChild" and select(1, ...) == "ClientAlert" then
+            return fake
+        end
+        return oldnc(self, ...)
+    end)
+    setreadonly(pmt, true)
+
+    -- 阻擋 Kick / Shutdown / ClientAlert:FireServer
+    local mt = getrawmetatable(game)
+    local old = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local m = getnamecallmethod()
+        if self == ulp and (m == "Kick" or m == "kick") then return end
+        if m:lower():find("kick") or m == "Shutdown" then return end
+        if m == "FireServer" and self == fake then return end
+        return old(self, ...)
+    end)
+    setreadonly(mt, true)
+
+    -- 癱瘓 LoadingScreen / LocalScript3 的反作弊函式
+    local ls3 = rf:WaitForChild("LocalScript3", 10)
+    for _, f in getgc(false) do
+        if typeof(f) == "function" then
+            local ok, e = pcall(getfenv, f)
+            if ok and e then
+                local scr = rawget(e, "script")
+                if scr and (scr == ls3 or tostring(scr):find("LoadingScreen")) then
+                    local ok2, cs = pcall(debug.getconstants, f)
+                    if ok2 then
+                        for _, k in cs do
+                            if typeof(k) == "string" and (k:find("TakeTheL") or k:find("ban") or k:find("kick")) then
+                                hookfunction(f, function() end)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- 皮膚／外觀解鎖
+    local RS2 = game:GetService("ReplicatedStorage")
+    local HS2 = game:GetService("HttpService")
+    local player2 = ug.LocalPlayer
+    local playerScripts = player2.PlayerScripts
+    local controllers = playerScripts.Controllers
+    local EnumLibrary = require(RS2.Modules:WaitForChild("EnumLibrary", 10))
+    if EnumLibrary then EnumLibrary:WaitForEnumBuilder() end
+    local CosmeticLibrary = require(RS2.Modules:WaitForChild("CosmeticLibrary", 10))
+    local ItemLibrary = require(RS2.Modules:WaitForChild("ItemLibrary", 10))
+    local DataController = require(controllers:WaitForChild("PlayerDataController", 10))
+    local equipped, favorites = {}, {}
+    local constructingWeapon, viewingProfile = nil, nil
+    local lastUsedWeapon = nil
+
+    local function cloneCosmetic(name, cosmeticType, options)
+        local base = CosmeticLibrary.Cosmetics[name]
+        if not base then return nil end
+        local data = {}
+        for key, value in pairs(base) do data[key] = value end
+        data.Name = name
+        data.Type = data.Type or cosmeticType
+        data.Seed = data.Seed or math.random(1, 1000000)
+        if EnumLibrary then
+            local success, enumId = pcall(EnumLibrary.ToEnum, EnumLibrary, name)
+            if success and enumId then data.Enum, data.ObjectID = enumId, data.ObjectID or enumId end
+        end
+        if options then
+            if options.inverted ~= nil then data.Inverted = options.inverted end
+            if options.favoritesOnly ~= nil then data.OnlyUseFavorites = options.favoritesOnly end
+        end
+        return data
+    end
+
+    local saveFile = "unlockall/config.json"
+    local function saveConfig()
+        if not writefile then return end
+        pcall(function()
+            local config = {equipped = {}, favorites = favorites}
+            for weapon, cosmetics in pairs(equipped) do
+                config.equipped[weapon] = {}
+                for cosmeticType, cosmeticData in pairs(cosmetics) do
+                    if cosmeticData and cosmeticData.Name then
+                        config.equipped[weapon][cosmeticType] = {
+                            name = cosmeticData.Name, seed = cosmeticData.Seed, inverted = cosmeticData.Inverted
+                        }
+                    end
+                end
+            end
+            makefolder("unlockall")
+            writefile(saveFile, HS2:JSONEncode(config))
+        end)
+    end
+    local function loadConfig()
+        if not readfile or not isfile or not isfile(saveFile) then return end
+        pcall(function()
+            local config = HS2:JSONDecode(readfile(saveFile))
+            if config.equipped then
+                for weapon, cosmetics in pairs(config.equipped) do
+                    equipped[weapon] = {}
+                    for cosmeticType, cosmeticData in pairs(cosmetics) do
+                        local cloned = cloneCosmetic(cosmeticData.name, cosmeticType, {inverted = cosmeticData.inverted})
+                        if cloned then cloned.Seed = cosmeticData.seed; equipped[weapon][cosmeticType] = cloned end
+                    end
+                end
+            end
+            favorites = config.favorites or {}
+        end)
+    end
+
+    CosmeticLibrary.OwnsCosmeticNormally = function() return true end
+    CosmeticLibrary.OwnsCosmeticUniversally = function() return true end
+    CosmeticLibrary.OwnsCosmeticForWeapon = function() return true end
+    local originalOwnsCosmetic = CosmeticLibrary.OwnsCosmetic
+    CosmeticLibrary.OwnsCosmetic = function(self, inventory, name, weapon)
+        if name:find("MISSING_") then return originalOwnsCosmetic(self, inventory, name, weapon) end
+        return true
+    end
+
+    local originalGet = DataController.Get
+    DataController.Get = function(self, key)
+        local data = originalGet(self, key)
+        if key == "CosmeticInventory" then
+            local proxy = {}
+            if data then for k, v in pairs(data) do proxy[k] = v end end
+            return setmetatable(proxy, {__index = function() return true end})
+        end
+        if key == "FavoritedCosmetics" then
+            local result = data and table.clone(data) or {}
+            for weapon, favs in pairs(favorites) do
+                result[weapon] = result[weapon] or {}
+                for name, isFav in pairs(favs) do result[weapon][name] = isFav end
+            end
+            return result
+        end
+        return data
+    end
+
+    local originalGetWeaponData = DataController.GetWeaponData
+    DataController.GetWeaponData = function(self, weaponName)
+        local data = originalGetWeaponData(self, weaponName)
+        if not data then return nil end
+        local merged = {}
+        for key, value in pairs(data) do merged[key] = value end
+        merged.Name = weaponName
+        if equipped[weaponName] then
+            for cosmeticType, cosmeticData in pairs(equipped[weaponName]) do merged[cosmeticType] = cosmeticData end
+        end
+        return merged
+    end
+
+    local FighterController
+    pcall(function() FighterController = require(controllers:WaitForChild("FighterController", 10)) end)
+    if hookmetamethod then
+        local remotes = RS2:FindFirstChild("Remotes")
+        local dataRemotes = remotes and remotes:FindFirstChild("Data")
+        local equipRemote = dataRemotes and dataRemotes:FindFirstChild("EquipCosmetic")
+        local favoriteRemote = dataRemotes and dataRemotes:FindFirstChild("FavoriteCosmetic")
+        local replicationRemotes = remotes and remotes:FindFirstChild("Replication")
+        local fighterRemotes = replicationRemotes and replicationRemotes:FindFirstChild("Fighter")
+        local useItemRemote = fighterRemotes and fighterRemotes:FindFirstChild("UseItem")
+        if equipRemote then
+            local oldNamecall
+            oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                if getnamecallmethod() ~= "FireServer" then return oldNamecall(self, ...) end
+                local args = {...}
+                if useItemRemote and self == useItemRemote then
+                    local objectID = args[1]
+                    if FighterController then
+                        pcall(function()
+                            local fighter = FighterController:GetFighter(player2)
+                            if fighter and fighter.Items then
+                                for _, item in pairs(fighter.Items) do
+                                    if item:Get("ObjectID") == objectID then
+                                        lastUsedWeapon = item.Name
+                                        break
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                end
+                if self == equipRemote then
+                    local weaponName, cosmeticType, cosmeticName, options = args[1], args[2], args[3], args[4] or {}
+                    if cosmeticName and cosmeticName ~= "None" and cosmeticName ~= "" then
+                        local inventory = DataController:Get("CosmeticInventory")
+                        if inventory and rawget(inventory, cosmeticName) then return oldNamecall(self, ...) end
+                    end
+                    equipped[weaponName] = equipped[weaponName] or {}
+                    if not cosmeticName or cosmeticName == "None" or cosmeticName == "" then
+                        equipped[weaponName][cosmeticType] = nil
+                        if not next(equipped[weaponName]) then equipped[weaponName] = nil end
+                    else
+                        local cloned = cloneCosmetic(cosmeticName, cosmeticType, {inverted = options.IsInverted, favoritesOnly = options.OnlyUseFavorites})
+                        if cloned then equipped[weaponName][cosmeticType] = cloned end
+                    end
+                    task.defer(function()
+                        pcall(function() DataController.CurrentData:Replicate("WeaponInventory") end)
+                        task.wait(0.2)
+                        saveConfig()
+                    end)
+                    return
+                end
+                if self == favoriteRemote then
+                    favorites[args[1]] = favorites[args[1]] or {}
+                    favorites[args[1]][args[2]] = args[3] or nil
+                    saveConfig()
+                    task.spawn(function() pcall(function() DataController.CurrentData:Replicate("FavoritedCosmetics") end) end)
+                    return
+                end
+                return oldNamecall(self, ...)
+            end)
+        end
+    end
+
+    local ClientItem2
+    pcall(function() ClientItem2 = require(player2.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem) end)
+    if ClientItem2 and ClientItem2._CreateViewModel then
+        local originalCreateViewModel = ClientItem2._CreateViewModel
+        ClientItem2._CreateViewModel = function(self, viewmodelRef)
+            local weaponName = self.Name
+            local weaponPlayer = self.ClientFighter and self.ClientFighter.Player
+            constructingWeapon = (weaponPlayer == player2) and weaponName or nil
+            if weaponPlayer == player2 and equipped[weaponName] and equipped[weaponName].Skin and viewmodelRef then
+                local dataKey, skinKey, nameKey = self:ToEnum("Data"), self:ToEnum("Skin"), self:ToEnum("Name")
+                if viewmodelRef[dataKey] then
+                    viewmodelRef[dataKey][skinKey] = equipped[weaponName].Skin
+                    viewmodelRef[dataKey][nameKey] = equipped[weaponName].Skin.Name
+                elseif viewmodelRef.Data then
+                    viewmodelRef.Data.Skin = equipped[weaponName].Skin
+                    viewmodelRef.Data.Name = equipped[weaponName].Skin.Name
+                end
+            end
+            local result = originalCreateViewModel(self, viewmodelRef)
+            constructingWeapon = nil
+            return result
+        end
+    end
+
+    local viewModelModule = player2.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem:FindFirstChild("ClientViewModel")
+    if viewModelModule then
+        local ClientViewModel = require(viewModelModule)
+        if ClientViewModel.GetWrap then
+            local originalGetWrap = ClientViewModel.GetWrap
+            ClientViewModel.GetWrap = function(self)
+                local weaponName = self.ClientItem and self.ClientItem.Name
+                local weaponPlayer = self.ClientItem and self.ClientItem.ClientFighter and self.ClientItem.ClientFighter.Player
+                if weaponName and weaponPlayer == player2 and equipped[weaponName] and equipped[weaponName].Wrap then
+                    return equipped[weaponName].Wrap
+                end
+                return originalGetWrap(self)
+            end
+        end
+        local originalNew = ClientViewModel.new
+        ClientViewModel.new = function(replicatedData, clientItem)
+            local weaponPlayer = clientItem.ClientFighter and clientItem.ClientFighter.Player
+            local weaponName = constructingWeapon or clientItem.Name
+            if weaponPlayer == player2 and equipped[weaponName] then
+                local ReplicatedClass = require(RS2.Modules.ReplicatedClass)
+                local dataKey = ReplicatedClass:ToEnum("Data")
+                replicatedData[dataKey] = replicatedData[dataKey] or {}
+                local cosmetics = equipped[weaponName]
+                if cosmetics.Skin then replicatedData[dataKey][ReplicatedClass:ToEnum("Skin")] = cosmetics.Skin end
+                if cosmetics.Wrap then replicatedData[dataKey][ReplicatedClass:ToEnum("Wrap")] = cosmetics.Wrap end
+                if cosmetics.Charm then replicatedData[dataKey][ReplicatedClass:ToEnum("Charm")] = cosmetics.Charm end
+            end
+            local result = originalNew(replicatedData, clientItem)
+            if weaponPlayer == player2 and equipped[weaponName] and equipped[weaponName].Wrap and result._UpdateWrap then
+                result:_UpdateWrap()
+                task.delay(0.1, function() if not result._destroyed then result:_UpdateWrap() end end)
+            end
+            return result
+        end
+    end
+
+    local originalGetViewModelImage = ItemLibrary.GetViewModelImageFromWeaponData
+    ItemLibrary.GetViewModelImageFromWeaponData = function(self, weaponData, highRes)
+        if not weaponData then return originalGetViewModelImage(self, weaponData, highRes) end
+        local weaponName = weaponData.Name
+        local shouldShowSkin = (weaponData.Skin and equipped[weaponName] and weaponData.Skin == equipped[weaponName].Skin)
+            or (viewingProfile == player2 and equipped[weaponName] and equipped[weaponName].Skin)
+        if shouldShowSkin and equipped[weaponName] and equipped[weaponName].Skin then
+            local skinInfo = self.ViewModels[equipped[weaponName].Skin.Name]
+            if skinInfo then return skinInfo[highRes and "ImageHighResolution" or "Image"] or skinInfo.Image end
+        end
+        return originalGetViewModelImage(self, weaponData, highRes)
+    end
+
+    pcall(function()
+        local ViewProfile = require(player2.PlayerScripts.Modules.Pages.ViewProfile)
+        if ViewProfile and ViewProfile.Fetch then
+            local originalFetch = ViewProfile.Fetch
+            ViewProfile.Fetch = function(self, targetPlayer)
+                viewingProfile = targetPlayer
+                return originalFetch(self, targetPlayer)
+            end
+        end
+    end)
+
+    local ClientEntity
+    pcall(function() ClientEntity = require(player2.PlayerScripts.Modules.ClientReplicatedClasses.ClientEntity) end)
+    if ClientEntity and ClientEntity.ReplicateFromServer then
+        local originalReplicateFromServer = ClientEntity.ReplicateFromServer
+        ClientEntity.ReplicateFromServer = function(self, action, ...)
+            if action == "FinisherEffect" then
+                local args = {...}
+                local killerName = args[3]
+                local decodedKiller = killerName
+                if type(killerName) == "userdata" and EnumLibrary and EnumLibrary.FromEnum then
+                    local ok, decoded = pcall(EnumLibrary.FromEnum, EnumLibrary, killerName)
+                    if ok and decoded then decodedKiller = decoded end
+                end
+                local isOurKill = tostring(decodedKiller) == player2.Name or tostring(decodedKiller):lower() == player2.Name:lower()
+                if isOurKill and lastUsedWeapon and equipped[lastUsedWeapon] and equipped[lastUsedWeapon].Finisher then
+                    local finisherData = equipped[lastUsedWeapon].Finisher
+                    local finisherEnum = finisherData.Enum
+                    if not finisherEnum and EnumLibrary then
+                        local ok, result = pcall(EnumLibrary.ToEnum, EnumLibrary, finisherData.Name)
+                        if ok and result then finisherEnum = result end
+                    end
+                    if finisherEnum then
+                        args[1] = finisherEnum
+                        return originalReplicateFromServer(self, action, unpack(args))
+                    end
+                end
+            end
+            return originalReplicateFromServer(self, action, ...)
+        end
+    end
+    loadConfig()
+end
+if NS.UnlockAll then task.spawn(RunUnlockAll) end
+
 -- ┌─────────────────────────────────────────┐
 -- │  DRAWING OBJECTS                        │
 -- └─────────────────────────────────────────┘
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Thickness=1; FOVCircle.NumSides=64; FOVCircle.Filled=false
-
 local CursorBox = Drawing.new("Square")
 CursorBox.Size=Vector2.new(6,6); CursorBox.Filled=true; CursorBox.Thickness=1; CursorBox.Visible=false
 
@@ -199,11 +774,10 @@ ArrLL.Padding=UDim.new(0,2)
 local ArrLabels = {}
 local function GetArrFeats()
     return {
-        {"自動瞄準",NS.AimEnabled},   {"強制鎖定",NS.Hardlock},
-        {"管理員偵測",NS.StaffDetectorActive}, {"ESP外框",NS.CharmsOutline},
-        {"武器透視",NS.WeaponESP},    {"隱藏手臂",NS.NoArms},
+        {"管理員偵測",NS.StaffDetectorActive}, {"透視玩家",NS.CharmsOutline},
+        {"暗色材質",NS.DarkTexture},
         {"飛行",NS.Fly},              {"HvH",NS.HvHMovement},
-        {"穿牆",NS.Noclip},           {"自動射擊",NS.TriggerBot},
+        {"穿牆",NS.Noclip},
         {"跟隨玩家",NS.StickEnabled}, {"裝置偽裝",NS.DeviceSpoofer},
         {"狂暴槍械",NS.RageGunsEnabled}
     }
@@ -256,7 +830,7 @@ MGui.Name="Xu_Hub"; MGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
 
 -- ── Mobile Toggle Button ──────────────────────────────────
 local MobBtn = Instance.new("TextButton", MGui)
-MobBtn.Size=UDim2.new(0,46,0,46); MobBtn.Position=UDim2.new(0.06,0,0.08,0)
+MobBtn.Size=UDim2.new(0,50,0,50); MobBtn.Position=UDim2.new(0.1,0,0.1,0)
 MobBtn.BackgroundColor3=C1; MobBtn.BorderSizePixel=0
 MobBtn.Font=FNT; MobBtn.TextSize=17; MobBtn.Text="XU"
 MobBtn.Visible=NS.ShowMobileButton
@@ -265,169 +839,300 @@ local mbS=Instance.new("UIStroke",MobBtn)
 mbS.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; mbS.Thickness=1.5
 OnTheme(function() MobBtn.TextColor3=Accent; mbS.Color=Accent end)
 
--- ── Window Frame ──────────────────────────────────────────
+-- ── Window Frame（五個並排面板）───────────────────────────
 local Win = Instance.new("Frame", MGui)
-Win.Name="Win"; Win.Size=UDim2.new(0,595,0,415)
-Win.Position=UDim2.new(0.5,-297,0.5,-207)
-Win.BackgroundColor3=C0; Win.BorderSizePixel=0; Win.ClipsDescendants=true
-Instance.new("UICorner",Win).CornerRadius=UDim.new(0,10)
+Win.Name="Win"; Win.Size=UDim2.new(0,200,0,480)
+Win.Position=UDim2.new(0.5,-520,0.1,0)
+Win.BackgroundTransparency=1; Win.BorderSizePixel=0
 local winStroke=Instance.new("UIStroke",Win)
 winStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; winStroke.Thickness=1.2
-OnTheme(function() winStroke.Color=Color3.new(Accent.R*0.25,Accent.G*0.25,Accent.B*0.25) end)
+OnTheme(function() winStroke.Color=C3 end)
 
--- ── Title Bar ─────────────────────────────────────────────
-local TBar = Instance.new("Frame", Win)
-TBar.Size=UDim2.new(1,0,0,40); TBar.BackgroundColor3=C1; TBar.BorderSizePixel=0
-Instance.new("UICorner",TBar).CornerRadius=UDim.new(0,10)
-local TBarFix = Instance.new("Frame", TBar)
-TBarFix.Size=UDim2.new(1,0,0,12); TBarFix.Position=UDim2.new(0,0,1,-12)
-TBarFix.BackgroundColor3=C1; TBarFix.BorderSizePixel=0
+-- 面板間距（建立各分頁時以此推算位置）
+local PanelGap = 10
+local PanelX = 0
+local function NextX()
+    local x = PanelX
+    PanelX = PanelX + 200 + PanelGap
+    return x
+end
 
-local TStripe = Instance.new("Frame", TBar)
-TStripe.Size=UDim2.new(0,3,0,22); TStripe.Position=UDim2.new(0,14,0.5,-11); TStripe.BorderSizePixel=0
-Instance.new("UICorner",TStripe).CornerRadius=UDim.new(1,0)
-OnTheme(function() TStripe.BackgroundColor3=Accent end)
-
-local TTitle = Instance.new("TextLabel", TBar)
-TTitle.Size=UDim2.new(0,80,1,0); TTitle.Position=UDim2.new(0,24,0,0)
-TTitle.Text="Xu Hub"; TTitle.TextColor3=TXT
-TTitle.Font=FNT; TTitle.TextSize=18; TTitle.BackgroundTransparency=1
-TTitle.TextXAlignment=Enum.TextXAlignment.Left
-
-local TSub = Instance.new("TextLabel", TBar)
-TSub.Size=UDim2.new(0,110,1,0); TSub.Position=UDim2.new(0,94,0,0)
-TSub.Text="by Xu"
-TSub.BackgroundTransparency=1; TSub.TextXAlignment=Enum.TextXAlignment.Left
-OnTheme(function() TSub.TextColor3=Accent end)
-
-local XBtn = Instance.new("TextButton", TBar)
-XBtn.Size=UDim2.new(0,24,0,24); XBtn.Position=UDim2.new(1,-32,0.5,-12)
-XBtn.BackgroundColor3=Color3.fromRGB(55,18,18); XBtn.BorderSizePixel=0
+local XBtn = Instance.new("TextButton", Win)
+XBtn.Size=UDim2.new(0,26,0,26); XBtn.Position=UDim2.new(0.5,-13,1,8)
+XBtn.BackgroundColor3=Color3.fromRGB(70,20,20); XBtn.BorderSizePixel=0; XBtn.ZIndex=20
 XBtn.Font=FNT; XBtn.Text="×"; XBtn.TextSize=20; XBtn.TextColor3=Color3.fromRGB(255,70,70)
-Instance.new("UICorner",XBtn).CornerRadius=UDim.new(0,5)
+Instance.new("UICorner",XBtn).CornerRadius=UDim.new(0,6)
+local XStroke=Instance.new("UIStroke",XBtn)
+XStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; XStroke.Thickness=1.5
+OnTheme(function() XStroke.Color=Color3.fromRGB(255,70,70) end)
 
--- ── Drag ──────────────────────────────────────────────────
-local drag = {on=false, s=nil, p=nil}
-TBar.InputBegan:Connect(function(i)
-    if i.UserInputType==Enum.UserInputType.MouseButton1 then
-        drag.on=true; drag.s=i.Position; drag.p=Win.Position
+-- ╔═══════════════════════════════════════════════════════════╗
+-- ║            AIM SNAP + FOV  (獨立小面板 / 獨立邏輯)        ║
+-- ╚═══════════════════════════════════════════════════════════╝
+local AIM = { Enabled=false, FOV=120, Smooth=1 }
+local AimGUIS = {}
+
+pcall(function()
+    for _,n in ipairs({"AimFOV_MainGUI","AimFOV_FOVCircle"}) do
+        local old=CoreGui:FindFirstChild(n); if old then old:Destroy() end
     end
 end)
+
+local AIM_FOV_MIN, AIM_FOV_MAX = 10, 600
+
+-- ┌─────────────────────────────────────────┐
+-- │  TARGET CHECKS（自瞄 / 跟隨玩家共用）    │
+-- └─────────────────────────────────────────┘
+local KOTags = {"K.O", "KO", "Knocked", "Knockout", "Downed"}
+local trueVal = function(v) return v == true or v == 1 or v == "true" end
+
+-- 玩家 / 角色是否帶有指定狀態屬性
+local function HasStateFlag(plr, char, keys)
+    for _,k in ipairs(keys) do
+        if trueVal(plr:GetAttribute(k)) then return true end
+        if char and trueVal(char:GetAttribute(k)) then return true end
+    end
+    return false
+end
+
+-- 隊友檢測（TeamID 屬性優先，其次 Team 物件）
+local function IsTeammate(plr)
+    if not NS.TeamCheck then return false end
+    if not plr then return false end
+    local myTeam = LP:GetAttribute("TeamID")
+    local theirTeam = plr:GetAttribute("TeamID")
+    if myTeam ~= nil and theirTeam ~= nil then return myTeam == theirTeam end
+    return LP.Team ~= nil and plr.Team ~= nil and LP.Team == plr.Team
+end
+
+-- 倒地檢測
+local function IsKnocked(char)
+    local be = char:FindFirstChild("BodyEffects")
+    if be then
+        for _,n in ipairs(KOTags) do
+            local v = be:FindFirstChild(n)
+            if v and v.Value then return true end
+        end
+    end
+    return false
+end
+
+-- 穿牆檢測（射線是否被地圖擋住）
+local function IsVisible(part, char)
+    if not NS.WallCheck then return true end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LP.Character, char, Camera}
+    local ray = workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, params)
+    return (not ray) or ray.Instance:IsDescendantOf(char)
+end
+
+-- 統一的目標檢查：回傳 true 表示可作為目標
+local function PassTargetChecks(plr)
+    if not plr or plr == LP then return false end
+    local char = plr.Character
+    if not char or not char.Parent then return false end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not char:FindFirstChild("HumanoidRootPart") then return false end
+
+    -- 出生無敵 / 觀戰
+    if NS.SpawnCheck and char:FindFirstChildOfClass("ForceField") then return false end
+    if NS.RespawnCheck and HasStateFlag(plr, char, {"IsRespawning"}) then return false end
+
+    if NS.TeamCheck and IsTeammate(plr) then return false end
+    if NS.KatanaCheck and char:FindFirstChild("Katana") then return false end
+    if NS.KOCheck and IsKnocked(char) then return false end
+    return true
+end
+
+-- 大廳 / 安全區 / 觀戰 檢查（只影響自瞄）
+local function PassAimWorldChecks(plr)
+    local char = plr.Character
+    if NS.LobbyCheck and HasStateFlag(LP, LP.Character, {"InLobby", "InSpawn", "IsSpectating", "InIntermission"}) then
+        return false
+    end
+    if NS.SafeZoneCheck then
+        if HasStateFlag(plr, char, {"InSafeZone", "InSpawn"}) then return false end
+        if HasStateFlag(LP, LP.Character, {"InSafeZone", "InSpawn"}) then return false end
+    end
+    return true
+end
+
+local function AimIsAlive(plr)
+    if not plr.Character then return false end
+    local hum=plr.Character:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health>0
+end
+
+-- 依「鎖定部位」取得要瞄準的部件
+local function AimGetPart(char)
+    local partMode = NS.AimPart or "頭部"
+    if partMode=="隨機" then
+        local pool={}
+        local torso=char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+        if torso then table.insert(pool,torso) end
+        local arms={char:FindFirstChild("LeftUpperArm"), char:FindFirstChild("RightUpperArm"),
+                    char:FindFirstChild("Left Arm"), char:FindFirstChild("Right Arm")}
+        for _,a in pairs(arms) do if a then table.insert(pool,a) end end
+        if #pool==0 then return char:FindFirstChild("Head") end
+        return pool[math.random(1,#pool)]
+    elseif partMode=="軀幹" then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+    elseif partMode=="手臂" then
+        local arms={char:FindFirstChild("LeftUpperArm"), char:FindFirstChild("RightUpperArm"),
+                    char:FindFirstChild("Left Arm"), char:FindFirstChild("Right Arm")}
+        local valid={}
+        for _,a in pairs(arms) do if a then table.insert(valid,a) end end
+        if #valid==0 then return char:FindFirstChild("Head") end
+        return valid[math.random(1,#valid)]
+    end
+    return char:FindFirstChild("Head")
+end
+
+local function AimTargetInFOV()
+    local center=Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    local best,bestDist=nil, AIM.FOV/2
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr~=LP and AimIsAlive(plr) and plr.Character
+            and PassTargetChecks(plr) and PassAimWorldChecks(plr) then
+            local part=AimGetPart(plr.Character)
+            if part then
+                local sp,onScreen=Camera:WorldToViewportPoint(part.Position)
+                if onScreen and IsVisible(part, plr.Character) then
+                    local d=(Vector2.new(sp.X,sp.Y)-center).Magnitude
+                    if d<=bestDist then bestDist=d; best=part end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- ── FOV 圓圈 ──────────────────────────────────────────────
+local FovGui=Instance.new("ScreenGui", CoreGui)
+FovGui.Name="AimFOV_FOVCircle"; FovGui.ResetOnSpawn=false
+FovGui.IgnoreGuiInset=true; FovGui.DisplayOrder=50
+table.insert(AimGUIS,FovGui)
+
+local AimCircle=Instance.new("Frame", FovGui)
+AimCircle.Size=UDim2.new(0,AIM.FOV,0,AIM.FOV)
+AimCircle.AnchorPoint=Vector2.new(0.5,0.5)
+AimCircle.Position=UDim2.new(0.5,0,0.5,0)
+AimCircle.BackgroundTransparency=1; AimCircle.BorderSizePixel=0
+AimCircle.ZIndex=10
+Instance.new("UICorner",AimCircle).CornerRadius=UDim.new(1,0)
+local AimCircleStroke=Instance.new("UIStroke",AimCircle)
+AimCircleStroke.Thickness=2; AimCircleStroke.Color=Accent
+OnTheme(function() AimCircleStroke.Color=Accent end)
+
+local function AimUpdateCircle()
+    AimCircle.Size=UDim2.new(0,AIM.FOV,0,AIM.FOV)
+    AimCircle.Visible=AIM.Enabled
+end
+
+-- ── FOV 圓圈（獨立面板已整合至「自動瞄準」分頁）──────────
+local function AimSetFOV(v)
+    AIM.FOV=math.clamp(math.floor(v),AIM_FOV_MIN,AIM_FOV_MAX)
+    NS.AimFOV=AIM.FOV
+    AimUpdateCircle()
+end
+
+-- 以存檔值初始化 FOV
+AimSetFOV(NS.AimFOV or AIM.FOV)
+
+-- ── AIM SNAP 核心 ─────────────────────────────────────────
+RS:BindToRenderStep("AimFOV_AimSnap", Enum.RenderPriority.Camera.Value+1, function(dt)
+    AimCircle.Position=UDim2.new(0.5,0,0.5,0)
+    if not AIM.Enabled then return end
+    if not LP.Character then return end
+    local part=AimTargetInFOV()
+    if part then
+        local goal=CFrame.new(Camera.CFrame.Position, part.Position)
+        if AIM.Smooth>=1 then
+            Camera.CFrame=goal
+        else
+            Camera.CFrame=Camera.CFrame:Lerp(goal,math.max(AIM.Smooth,0.05))
+        end
+    end
+end)
+
+-- ── Drag ──────────────────────────────────────────────────
+local drag = {on=false, s=nil, p=nil, target=nil}
+local function BindDrag(obj)
+    obj.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then
+            drag.on=true; drag.s=i.Position; drag.p=Win.Position; drag.target=nil
+        end
+    end)
+end
 UIS.InputChanged:Connect(function(i)
     if drag.on and i.UserInputType==Enum.UserInputType.MouseMovement then
         local d=i.Position-drag.s
-        Win.Position=UDim2.new(drag.p.X.Scale,drag.p.X.Offset+d.X,drag.p.Y.Scale,drag.p.Y.Offset+d.Y)
+        local obj=drag.target or Win
+        obj.Position=UDim2.new(drag.p.X.Scale,drag.p.X.Offset+d.X,drag.p.Y.Scale,drag.p.Y.Offset+d.Y)
     end
 end)
 UIS.InputEnded:Connect(function(i)
-    if i.UserInputType==Enum.UserInputType.MouseButton1 then drag.on=false end
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then
+        drag.on=false
+    end
 end)
 
--- ── Sidebar ───────────────────────────────────────────────
-local Sidebar = Instance.new("Frame", Win)
-Sidebar.Size=UDim2.new(0,115,1,-42); Sidebar.Position=UDim2.new(0,0,0,42)
-Sidebar.BackgroundColor3=C1; Sidebar.BorderSizePixel=0
-local sbLL=Instance.new("UIListLayout",Sidebar)
-sbLL.Padding=UDim.new(0,3); sbLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
-local sbPad=Instance.new("UIPadding",Sidebar); sbPad.PaddingTop=UDim.new(0,8)
-
-local Div = Instance.new("Frame", Win)
-Div.Size=UDim2.new(0,1,1,-42); Div.Position=UDim2.new(0,115,0,42)
-Div.BackgroundColor3=C3; Div.BorderSizePixel=0
-
--- ── Content Area ─────────────────────────────────────────
-local ContentArea = Instance.new("Frame", Win)
-ContentArea.Size=UDim2.new(1,-117,1,-44); ContentArea.Position=UDim2.new(0,117,0,44)
-ContentArea.BackgroundTransparency=1; ContentArea.ClipsDescendants=true
-
 -- ╔═══════════════════════════════════════════════════════════╗
--- ║                     TAB SYSTEM                            ║
+-- ║                  PANEL (TAB) SYSTEM                       ║
 -- ╚═══════════════════════════════════════════════════════════╝
-local TabDefs = {
-    {id="aim",  icon="◎", label="自動瞄準"},
-    {id="vis",  icon="◈", label="視覺效果"},
-    {id="move", icon="◆", label="移動功能"},
-    {id="bot",  icon="◉", label="機器人"},
-    {id="cfg",  icon="◇", label="設定"},
-}
-local Pages   = {}
-local TabBtns = {}
-local CurTab  = nil
+local Pages = {}
 
-for _, def in ipairs(TabDefs) do
-    local page = Instance.new("ScrollingFrame", ContentArea)
-    page.Name=def.id; page.Size=UDim2.new(1,0,1,0)
-    page.BackgroundTransparency=1; page.ScrollBarThickness=3
-    page.CanvasSize=UDim2.new(0,0,0,0); page.AutomaticCanvasSize=Enum.AutomaticSize.Y
-    page.BorderSizePixel=0; page.Visible=false
-    local pgLL=Instance.new("UIListLayout",page)
-    pgLL.Padding=UDim.new(0,5); pgLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
-    local pgPad=Instance.new("UIPadding",page)
-    pgPad.PaddingTop=UDim.new(0,10); pgPad.PaddingLeft=UDim.new(0,10); pgPad.PaddingRight=UDim.new(0,10)
-    OnTheme(function() page.ScrollBarImageColor3=Accent end)
-    Pages[def.id] = page
+-- 每個分頁 = 一個 200x480 的獨立面板
+local function CreatePanel(title)
+    local F = Instance.new("Frame", Win)
+    F.Size=UDim2.new(0,200,0,480); F.Position=UDim2.new(0,NextX(),0,0)
+    F.BackgroundColor3=C0; F.BackgroundTransparency=0.3; F.BorderSizePixel=0
+    local fs=Instance.new("UIStroke",F)
+    fs.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; fs.Thickness=1.2
+    OnTheme(function() fs.Color=C3 end)
 
-    local btn = Instance.new("TextButton", Sidebar)
-    btn.Size=UDim2.new(0,100,0,40); btn.BorderSizePixel=0
-    btn.Font=FNT; btn.TextSize=12; btn.TextXAlignment=Enum.TextXAlignment.Left
-    btn.Text=def.icon.."  "..def.label
-    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,6)
-    local bPad=Instance.new("UIPadding",btn); bPad.PaddingLeft=UDim.new(0,10)
+    local T = Instance.new("TextLabel", F)
+    T.Size=UDim2.new(1,0,0,35); T.Text=title
+    T.BackgroundColor3=C2; T.BackgroundTransparency=0.2; T.BorderSizePixel=0
+    T.Font=FNT; T.TextSize=18
+    OnTheme(function() T.TextColor3=Accent end)
+    BindDrag(T)
 
-    local ind=Instance.new("Frame",btn)
-    ind.Size=UDim2.new(0,3,0.6,0); ind.Position=UDim2.new(0,0,0.2,0)
-    ind.BackgroundTransparency=1; ind.BorderSizePixel=0
-    Instance.new("UICorner",ind).CornerRadius=UDim.new(1,0)
-
-    TabBtns[def.id] = {btn=btn, ind=ind}
-
-    local function RefreshBtn()
-        local active = (CurTab==def.id)
-        btn.BackgroundColor3 = active and C2 or C1
-        btn.TextColor3       = active and Accent or DIM
-        ind.BackgroundColor3 = active and Accent or Color3.new(0,0,0)
-        ind.BackgroundTransparency = active and 0 or 1
-    end
-    OnTheme(RefreshBtn)
-
-    btn.MouseButton1Click:Connect(function()
-        if CurTab==def.id then return end
-        CurTab=def.id
-        for tid,p in pairs(Pages) do p.Visible=(tid==def.id) end
-        for _,tb in pairs(TabBtns) do
-            local act=(tb==TabBtns[def.id])
-            tb.btn.BackgroundColor3=act and C2 or C1
-            tb.btn.TextColor3      =act and Accent or DIM
-            tb.ind.BackgroundColor3=act and Accent or Color3.new(0,0,0)
-            tb.ind.BackgroundTransparency=act and 0 or 1
-        end
-    end)
-    btn.MouseEnter:Connect(function()
-        if CurTab~=def.id then TS:Create(btn,TweenInfo.new(0.12),{BackgroundColor3=C2}):Play() end
-    end)
-    btn.MouseLeave:Connect(function()
-        if CurTab~=def.id then TS:Create(btn,TweenInfo.new(0.12),{BackgroundColor3=C1}):Play() end
-    end)
+    local Sc = Instance.new("ScrollingFrame", F)
+    Sc.Size=UDim2.new(1,-10,1,-45); Sc.Position=UDim2.new(0,5,0,40)
+    Sc.BackgroundTransparency=1; Sc.BorderSizePixel=0
+    Sc.ScrollBarThickness=1; Sc.CanvasSize=UDim2.new(0,0,0,0)
+    Sc.AutomaticCanvasSize=Enum.AutomaticSize.Y
+    local scLL=Instance.new("UIListLayout",Sc)
+    scLL.Padding=UDim.new(0,6)
+    scLL.SortOrder=Enum.SortOrder.LayoutOrder
+    OnTheme(function() Sc.ScrollBarImageColor3=Accent end)
+    return Sc
 end
 
-local function GoTab(id)
-    if CurTab==id then return end; CurTab=id
-    for tid,p in pairs(Pages) do p.Visible=(tid==id) end
-    for tid,tb in pairs(TabBtns) do
-        local act=(tid==id)
-        tb.btn.BackgroundColor3=act and C2 or C1
-        tb.btn.TextColor3      =act and Accent or DIM
-        tb.ind.BackgroundColor3=act and Accent or Color3.new(0,0,0)
-        tb.ind.BackgroundTransparency=act and 0 or 1
-    end
-end
+-- 面板位置：五個並排，整體置中
+local PanelCount = 5
+local TotalW = PanelCount*200 + (PanelCount-1)*PanelGap
+Win.Size=UDim2.new(0,TotalW,0,480)
+Win.Position=UDim2.new(0.5,-TotalW/2,0.1,0)
 
 -- ╔═══════════════════════════════════════════════════════════╗
 -- ║                   WIDGET FACTORY                          ║
 -- ╚═══════════════════════════════════════════════════════════╝
 
+-- 每個控件建立時遞增 LayoutOrder，確保 UIListLayout 排列順序與建立順序一致
+local LayoutOrder = 0
+local function NextLayoutOrder()
+    LayoutOrder = LayoutOrder + 1
+    return LayoutOrder
+end
+
 local function MkSection(parent, text)
     local f=Instance.new("Frame",parent); f.Size=UDim2.new(1,0,0,24); f.BackgroundTransparency=1
+    f.LayoutOrder=NextLayoutOrder()
     local lbl=Instance.new("TextLabel",f)
     lbl.Size=UDim2.new(1,-4,1,0); lbl.Position=UDim2.new(0,2,0,0)
     lbl.Text=text; lbl.Font=FNT; lbl.TextSize=11; lbl.BackgroundTransparency=1
@@ -438,60 +1143,123 @@ local function MkSection(parent, text)
     sep.BackgroundColor3=C3; sep.BorderSizePixel=0
 end
 
--- ── Toggle with pill ──────────────────────────────────────
--- 修正：將 Vis 註冊至 VisRefreshers[key]，快捷鍵觸發後可呼叫
-local function MkToggle(parent, label, key, onChange)
-    local row=Instance.new("Frame",parent)
-    row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
-    Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
+-- ── Toggle（膠囊式，按下滑動變色）──────────────────────────
+-- subBuild：子選項（例如數值調整、裝置按鈕），僅在開啟時顯示
+-- subHeight：可省略；未給時自動量測子選項內容高度
+-- 版面：外層 wrapper 由 UIListLayout 排版；開關固定 32 高，子選項以內容高度撐開
+local function MkToggle(parent, label, key, onChange, subBuild, subHeight)
+    -- 外層：固定寬度由清單決定；高度 = 32（開關）+ 展開時的子選項高度
+    local wrapper=Instance.new("Frame",parent)
+    wrapper.Size=UDim2.new(1,0,0,32); wrapper.BackgroundTransparency=1
+    wrapper.ClipsDescendants=true
+    wrapper.LayoutOrder=NextLayoutOrder()
 
-    local lbl=Instance.new("TextLabel",row)
-    lbl.Size=UDim2.new(1,-54,1,0); lbl.Position=UDim2.new(0,10,0,0)
-    lbl.Text=label; lbl.TextColor3=TXT; lbl.Font=FNT; lbl.TextSize=13
-    lbl.BackgroundTransparency=1; lbl.TextXAlignment=Enum.TextXAlignment.Left
+    local B=Instance.new("TextButton",wrapper)
+    B.Size=UDim2.new(1,0,0,32); B.BorderSizePixel=0; B.AutoButtonColor=false
+    B.BackgroundColor3=C1; B.BackgroundTransparency=0.1
+    B.Font=FNT; B.TextSize=14; B.Text=label; B.TextColor3=TXT
+    B.TextXAlignment=Enum.TextXAlignment.Left
+    Instance.new("UIPadding",B).PaddingLeft=UDim.new(0,10)
+    Instance.new("UICorner",B).CornerRadius=UDim.new(0,6)
+    local St=Instance.new("UIStroke",B)
+    St.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; St.Thickness=1
 
-    local pill=Instance.new("Frame",row)
+    local pill=Instance.new("Frame",B)
     pill.Size=UDim2.new(0,38,0,20); pill.Position=UDim2.new(1,-47,0.5,-10); pill.BorderSizePixel=0
-    Instance.new("UICorner",pill).CornerRadius=UDim.new(1,0)
+    Instance.new("UICorner",pill).CornerRadius=UDim.new(0,12)
 
     local knob=Instance.new("Frame",pill)
     knob.Size=UDim2.new(0,16,0,16); knob.BorderSizePixel=0
     Instance.new("UICorner",knob).CornerRadius=UDim.new(1,0)
 
+    local sub=nil
+    local subContentH = subHeight or 0
+    if subBuild then
+        -- 子選項容器：高度依內容自動量測（不再依賴手動填的高度）
+        sub=Instance.new("Frame",wrapper)
+        sub.BackgroundTransparency=1; sub.BorderSizePixel=0
+        sub.Size=UDim2.new(1,0,0,0); sub.Position=UDim2.new(0,0,0,34)
+        sub.ClipsDescendants=true
+        local subLL=Instance.new("UIListLayout",sub)
+        subLL.Padding=UDim.new(0,4)
+        subLL.SortOrder=Enum.SortOrder.LayoutOrder
+        local subPad=Instance.new("UIPadding",sub)
+        subPad.PaddingLeft=UDim.new(0,6)
+        subPad.PaddingBottom=UDim.new(0,4)
+        subBuild(sub)
+        -- 內容建立後量測實際高度（UIListLayout 排版可能延遲一幀）
+        if not subHeight then
+            local t0 = os.clock()
+            while subLL.AbsoluteContentSize.Y <= 0 and os.clock()-t0 < 0.2 do
+                RS.Heartbeat:Wait()
+            end
+            subContentH = math.max(0, math.ceil(subLL.AbsoluteContentSize.Y))
+        end
+    end
+
     local function Vis(instant)
         local on=NS[key]
-        local pp=on and Accent or C3
-        local kc=on and Color3.fromRGB(8,8,8) or DIM
-        local kp=on and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
-        if instant then
-            pill.BackgroundColor3=pp; knob.BackgroundColor3=kc; knob.Position=kp
-        else
+        local txt    = on and Accent or TXT
+        local stroke = on and Accent or Color3.fromRGB(20,20,20)
+        local pp     = on and Accent or C3
+        local kc     = on and Color3.fromRGB(8,8,8) or DIM
+        local kp     = on and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+        B.TextColor3=txt; St.Color=stroke
+        pill.BackgroundColor3=pp; knob.BackgroundColor3=kc; knob.Position=kp
+        if not instant then
             TS:Create(pill,TweenInfo.new(0.17),{BackgroundColor3=pp}):Play()
             TS:Create(knob,TweenInfo.new(0.17),{BackgroundColor3=kc,Position=kp}):Play()
         end
+        if sub then
+            -- 子選項依內容高度展開；外框同步增高，清單排列才不會重疊
+            local subTarget=UDim2.new(1,0,0, on and subContentH or 0)
+            local wrapTarget=UDim2.new(1,0,0, on and (32+subContentH) or 32)
+            if instant then
+                sub.Size=subTarget; wrapper.Size=wrapTarget
+            else
+                TS:Create(sub,TweenInfo.new(0.25,Enum.EasingStyle.Quart),{Size=subTarget}):Play()
+                TS:Create(wrapper,TweenInfo.new(0.25,Enum.EasingStyle.Quart),{Size=wrapTarget}):Play()
+            end
+        end
     end
-    OnTheme(function() Vis(true) end)
+    -- 只更新顏色，不動版面
+    OnTheme(function()
+        local on=NS[key]
+        B.TextColor3=on and Accent or TXT
+        St.Color=on and Accent or Color3.fromRGB(20,20,20)
+        pill.BackgroundColor3=on and Accent or C3
+        knob.BackgroundColor3=on and Color3.fromRGB(8,8,8) or DIM
+        knob.Position=on and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
+    end)
 
-    -- ← 註冊外部刷新入口
+    -- 註冊外部刷新入口（快捷鍵觸發時同步外觀）
     VisRefreshers[key] = function() Vis(false) end
 
-    row.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 then
-            NS[key]=not NS[key]; Vis(false); Save(); UpdateArr()
-            if key=="ShowMobileButton" then MobBtn.Visible=NS[key] end
-            if key=="RageGunsEnabled"  then _G.RageSettings.Enabled=NS[key] end
-            if onChange then onChange(NS[key]) end
-        end
+    B.MouseButton1Click:Connect(function()
+        NS[key]=not NS[key]; Vis(false); Save(); UpdateArr()
+        if key=="ShowMobileButton" then MobBtn.Visible=NS[key] end
+        if key=="RageGunsEnabled"  then _G.RageSettings.Enabled=NS[key] end
+        if key=="AimSnapEnabled"   then AIM.Enabled=NS[key]; AimUpdateCircle() end
+        if onChange then onChange(NS[key]) end
     end)
     Vis(true)
-    return row
+    return B
 end
 
 -- ── Adjuster ──────────────────────────────────────────────
 local function MkAdjust(parent, label, key, step, isRage)
     local row=Instance.new("Frame",parent)
     row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    row.LayoutOrder=NextLayoutOrder()
     Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
+
+    local function Val() return isRage and _G.RageSettings[key] or NS[key] end
+
+    -- 設定值（AimFOV 需同步到自瞄核心）
+    local function SetVal(v)
+        if key=="AimFOV" then AimSetFOV(v)
+        else NS[key]=v; Save() end
+    end
 
     local lbl=Instance.new("TextLabel",row)
     lbl.Size=UDim2.new(0.52,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
@@ -500,7 +1268,7 @@ local function MkAdjust(parent, label, key, step, isRage)
 
     local vLbl=Instance.new("TextLabel",row)
     vLbl.Size=UDim2.new(0,38,1,0); vLbl.Position=UDim2.new(0.52,0,0,0)
-    vLbl.Font=FNT; vLbl.TextSize=12; vLbl.BackgroundTransparency=1
+    vLbl.Text=tostring(Val()); vLbl.Font=FNT; vLbl.TextSize=12; vLbl.BackgroundTransparency=1
     vLbl.TextXAlignment=Enum.TextXAlignment.Center
     OnTheme(function() vLbl.TextColor3=Accent end)
 
@@ -515,25 +1283,22 @@ local function MkAdjust(parent, label, key, step, isRage)
     end
     local btnM=MkBtn("-",-58); local btnP=MkBtn("+",-28)
 
-    local function Refresh()
-        local v=isRage and _G.RageSettings[key] or NS[key]
-        vLbl.Text=tostring(v)
-    end
+    local function Refresh() vLbl.Text=tostring(Val()) end
     btnM.MouseButton1Click:Connect(function()
         if isRage then _G.RageSettings[key]=math.max(0,_G.RageSettings[key]-step)
-        else NS[key]=NS[key]-step; Save() end; Refresh()
+        else SetVal(NS[key]-step) end; Refresh()
     end)
     btnP.MouseButton1Click:Connect(function()
         if isRage then _G.RageSettings[key]=_G.RageSettings[key]+step
-        else NS[key]=NS[key]+step; Save() end; Refresh()
+        else SetVal(NS[key]+step) end; Refresh()
     end)
-    Refresh()
 end
 
 -- ── Action button ─────────────────────────────────────────
 local function MkButton(parent, label, fn)
     local btn=Instance.new("TextButton",parent)
     btn.Size=UDim2.new(1,0,0,32); btn.BackgroundColor3=C2; btn.BorderSizePixel=0
+    btn.LayoutOrder=NextLayoutOrder()
     btn.Text=label; btn.Font=FNT; btn.TextSize=13; btn.TextColor3=TXT
     Instance.new("UICorner",btn).CornerRadius=UDim.new(0,6)
     local st=Instance.new("UIStroke",btn)
@@ -549,6 +1314,7 @@ end
 local function MkKeybind(parent, label, key)
     local row=Instance.new("Frame",parent)
     row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    row.LayoutOrder=NextLayoutOrder()
     Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
 
     local lbl=Instance.new("TextLabel",row)
@@ -576,158 +1342,108 @@ local function MkKeybind(parent, label, key)
     end)
 end
 
--- ── Cycle ─────────────────────────────────────────────────
+
+-- ── Cycle（點擊循環切換選項）──────────────────────────────
 local function MkCycle(parent, label, key, options)
     local row=Instance.new("Frame",parent)
     row.Size=UDim2.new(1,0,0,32); row.BackgroundColor3=C2; row.BorderSizePixel=0
+    row.LayoutOrder=NextLayoutOrder()
     Instance.new("UICorner",row).CornerRadius=UDim.new(0,6)
 
     local lbl=Instance.new("TextLabel",row)
-    lbl.Size=UDim2.new(0.48,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
+    lbl.Size=UDim2.new(0.5,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
     lbl.Text=label; lbl.TextColor3=TXT; lbl.Font=FNT; lbl.TextSize=13
     lbl.BackgroundTransparency=1; lbl.TextXAlignment=Enum.TextXAlignment.Left
 
-    local vbtn=Instance.new("TextButton",row)
-    vbtn.Size=UDim2.new(0,115,0,22); vbtn.Position=UDim2.new(1,-122,0.5,-11)
-    vbtn.BackgroundColor3=C3; vbtn.BorderSizePixel=0; vbtn.Font=FNT; vbtn.TextSize=11
-    vbtn.Text=NS[key]
-    Instance.new("UICorner",vbtn).CornerRadius=UDim.new(0,5)
-    OnTheme(function() vbtn.TextColor3=Accent end)
+    local btn=Instance.new("TextButton",row)
+    btn.Size=UDim2.new(0,96,0,22); btn.Position=UDim2.new(1,-104,0.5,-11)
+    btn.BackgroundColor3=C3; btn.BorderSizePixel=0; btn.Font=FNT; btn.TextSize=11
+    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,5)
+    OnTheme(function() btn.TextColor3=Accent end)
 
-    vbtn.MouseButton1Click:Connect(function()
-        local idx=table.find(options,NS[key]) or 0
-        NS[key]=options[(idx%#options)+1]
-        vbtn.Text=NS[key]; Save()
+    local function Refresh() btn.Text=tostring(NS[key]) end
+    btn.MouseButton1Click:Connect(function()
+        local idx=table.find(options, NS[key]) or 1
+        NS[key]=options[idx % #options + 1]
+        Refresh(); Save()
     end)
-end
-
--- ── Expandable toggle section ─────────────────────────────
--- 修正：將 Vis 同樣註冊至 VisRefreshers[key]
-local function MkExpand(parent, label, key, height, buildFn, onChange)
-    local wrapper=Instance.new("Frame",parent)
-    wrapper.Size=UDim2.new(1,0,0,32); wrapper.BackgroundTransparency=1; wrapper.ClipsDescendants=true
-
-    local header=Instance.new("Frame",wrapper)
-    header.Size=UDim2.new(1,0,0,32); header.BackgroundColor3=C2; header.BorderSizePixel=0
-    Instance.new("UICorner",header).CornerRadius=UDim.new(0,6)
-
-    local hlbl=Instance.new("TextLabel",header)
-    hlbl.Size=UDim2.new(1,-54,1,0); hlbl.Position=UDim2.new(0,10,0,0)
-    hlbl.Text=label; hlbl.TextColor3=TXT; hlbl.Font=FNT; hlbl.TextSize=13
-    hlbl.BackgroundTransparency=1; hlbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    local pill=Instance.new("Frame",header)
-    pill.Size=UDim2.new(0,38,0,20); pill.Position=UDim2.new(1,-47,0.5,-10); pill.BorderSizePixel=0
-    Instance.new("UICorner",pill).CornerRadius=UDim.new(1,0)
-
-    local knob=Instance.new("Frame",pill)
-    knob.Size=UDim2.new(0,16,0,16); knob.BorderSizePixel=0
-    Instance.new("UICorner",knob).CornerRadius=UDim.new(1,0)
-
-    local sub=Instance.new("Frame",wrapper)
-    sub.BackgroundTransparency=1; sub.Size=UDim2.new(1,0,0,0); sub.Position=UDim2.new(0,0,0,34)
-    local subLL=Instance.new("UIListLayout",sub)
-    subLL.Padding=UDim.new(0,4); subLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
-    local subPad=Instance.new("UIPadding",sub); subPad.PaddingLeft=UDim.new(0,6)
-
-    if buildFn then buildFn(sub) end
-
-    local function Vis(instant)
-        local on=NS[key]
-        local pp=on and Accent or C3
-        local kc=on and Color3.fromRGB(8,8,8) or DIM
-        local kp=on and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,2,0.5,-8)
-        local wH=on and (35+height) or 32
-        if instant then
-            pill.BackgroundColor3=pp; knob.BackgroundColor3=kc; knob.Position=kp
-            wrapper.Size=UDim2.new(1,0,0,wH); sub.Size=UDim2.new(1,0,0,on and height or 0)
-        else
-            TS:Create(pill,TweenInfo.new(0.17),{BackgroundColor3=pp}):Play()
-            TS:Create(knob,TweenInfo.new(0.17),{BackgroundColor3=kc,Position=kp}):Play()
-            TS:Create(wrapper,TweenInfo.new(0.28,Enum.EasingStyle.Quart),{Size=UDim2.new(1,0,0,wH)}):Play()
-            TS:Create(sub,TweenInfo.new(0.28,Enum.EasingStyle.Quart),{Size=UDim2.new(1,0,0,on and height or 0)}):Play()
-        end
-    end
-    OnTheme(function() Vis(true) end)
-
-    -- ← 註冊外部刷新入口
-    VisRefreshers[key] = function() Vis(false) end
-
-    header.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 then
-            NS[key]=not NS[key]; Vis(false); Save(); UpdateArr()
-            if key=="RageGunsEnabled" then _G.RageSettings.Enabled=NS[key] end
-            if onChange then onChange(NS[key]) end
-        end
-    end)
-    Vis(true)
-    return sub
+    OnTheme(Refresh); Refresh()
+    return row
 end
 
 -- ╔═══════════════════════════════════════════════════════════╗
 -- ║               TAB CONTENT POPULATION                      ║
 -- ╚═══════════════════════════════════════════════════════════╝
 
--- ── 自動瞄準 ──────────────────────────────────────────────
-do local p=Pages["aim"]
-    MkSection(p,"── 基礎設定")
-    MkToggle(p,"啟用自動瞄準","AimEnabled")
-    MkToggle(p,"強制鎖定","Hardlock")
-    MkKeybind(p,"瞄準按鍵","AimBind")
-    MkCycle(p,"目標部位","AimPart",{"Head","HumanoidRootPart","Closest"})
+-- 五個分頁面板（由左至右）
+Pages.aim  = CreatePanel("自動瞄準")
+Pages.vis  = CreatePanel("視覺效果")
+Pages.move = CreatePanel("移動功能")
+Pages.bot  = CreatePanel("輔助機器人")
+Pages.cfg  = CreatePanel("設定")
 
-    MkSection(p,"── 平滑")
-    MkExpand(p,"平滑模式","SmoothEnabled",36,function(s)
-        MkAdjust(s,"平滑數值","SmoothValue",1)
-    end)
+-- ── 自動瞄準 ──────────────────────────────────────────────
+do local p=Pages.aim
+    MkSection(p,"── 自瞄")
+    MkToggle(p,"啟用自瞄","AimSnapEnabled")
+    MkAdjust(p,"FOV 範圍","AimFOV",5)
+    AIM.Enabled = NS.AimSnapEnabled or false
+    AimUpdateCircle()
+    RefreshKey("AimSnapEnabled")
+
+    MkSection(p,"── 鎖定部位")
+    MkCycle(p,"鎖定部位","AimPart",{"頭部","軀幹","手臂","隨機"})
 
     MkSection(p,"── 過濾")
     MkToggle(p,"穿牆檢測","WallCheck")
     MkToggle(p,"隊友檢測","TeamCheck")
     MkToggle(p,"武士刀檢測","KatanaCheck")
-
-    MkSection(p,"── FOV")
-    MkToggle(p,"顯示FOV","FOVVisible")
-    MkAdjust(p,"FOV大小","FOVSize",10)
+    MkToggle(p,"倒地檢測","KOCheck")
+    MkToggle(p,"出生無敵檢測","SpawnCheck")
+    MkToggle(p,"重生檢測","RespawnCheck")
+    MkToggle(p,"安全區檢測","SafeZoneCheck")
+    MkToggle(p,"大廳/觀戰檢測","LobbyCheck")
 end
 
 -- ── 視覺效果 ──────────────────────────────────────────────
 do local p=Pages["vis"]
-    MkSection(p,"── ESP")
-    MkToggle(p,"ESP外框","CharmsOutline")
-    MkSection(p,"── 其他")
-    MkToggle(p,"武器透視","WeaponESP")
+    MkSection(p,"── 透視")
+    MkToggle(p,"透視玩家","CharmsOutline")
+
+    MkSection(p,"── 材質與解鎖")
+    MkToggle(p,"暗色材質","DarkTexture",function(on)
+        SetDarkTexture(on)
+    end)
+    MkToggle(p,"解鎖全部皮膚\n(會造成Roblox崩潰)","UnlockAll",function(on)
+        if on then RunUnlockAll() end
+    end)
 end
 
 -- ── 移動功能 ──────────────────────────────────────────────
 do local p=Pages["move"]
     MkSection(p,"── 飛行")
-    MkExpand(p,"啟用飛行","Fly",36,function(s)
+    MkToggle(p,"啟用飛行","Fly",nil,function(s)
         MkAdjust(s,"飛行速度","FlySpeed",5)
     end)
     MkKeybind(p,"飛行按鍵","FlyBind")
 
     MkSection(p,"── 移動輔助")
-    MkToggle(p,"穿越牆壁","Noclip")
+    MkToggle(p,"穿牆","Noclip")
     MkToggle(p,"HVH 移動","HvHMovement")
 end
 
 -- ── 機器人 ────────────────────────────────────────────────
 do local p=Pages["bot"]
-    MkSection(p,"── 自動射擊")
-    MkToggle(p,"自動射擊","TriggerBot")
-
     MkSection(p,"── 跟隨玩家")
-    MkExpand(p,"啟用跟隨","StickEnabled",182,function(s)
-        MkKeybind(s,"跟隨按鍵","StickBind")
-        MkToggle(s,"環繞旋轉","StickSpin")
-        MkAdjust(s,"旋轉速度","SpinBotSpeed",2)
-        MkAdjust(s,"跟隨距離","StickDistance",1)
-        MkAdjust(s,"跟隨高度","StickHeight",1)
-    end)
+    MkToggle(p,"啟用跟隨","StickEnabled")
+    MkKeybind(p,"跟隨按鍵","StickBind")
+    MkToggle(p,"環繞旋轉","StickSpin")
+    MkAdjust(p,"旋轉速度","SpinBotSpeed",2)
+    MkAdjust(p,"跟隨距離","StickDistance",1)
+    MkAdjust(p,"跟隨高度","StickHeight",1)
 
     MkSection(p,"── 狂暴槍械")
-    MkExpand(p,"啟用狂暴槍械","RageGunsEnabled",144,function(s)
+    MkToggle(p,"啟用狂暴槍械","RageGunsEnabled",nil,function(s)
         MkAdjust(s,"後座力","Recoil",0.1,true)
         MkAdjust(s,"散佈度","Spread",0.1,true)
         MkAdjust(s,"彈速","ProjSpeed",1000,true)
@@ -738,18 +1454,12 @@ end
 -- ── 設定 ──────────────────────────────────────────────────
 do local p=Pages["cfg"]
     MkSection(p,"── 工具")
-    MkToggle(p,"隱藏手臂","NoArms")
-
-    local staffBtn
-    staffBtn = MkButton(p, NS.StaffDetectorActive and "管理員偵測  ✓" or "管理員偵測",
-        function(btn)
-            STAFF_TOGGLE()
-            btn.Text = NS.StaffDetectorActive and "管理員偵測  ✓" or "管理員偵測"
-            UpdateArr()
-        end)
+    MkToggle(p,"管理員偵測","StaffDetectorActive",function(on)
+        if on then STAFF_TOGGLE() end
+    end)
 
     MkSection(p,"── 裝置偽裝")
-    MkExpand(p,"裝置偽裝","DeviceSpoofer",144,function(s)
+    MkToggle(p,"裝置偽裝","DeviceSpoofer",nil,function(s)
         local devBtns = {}
         for _,dev in ipairs({"MouseKeyboard","Gamepad","Touch","VR"}) do
             local d = dev
@@ -766,19 +1476,23 @@ do local p=Pages["cfg"]
     end)
 
     MkSection(p,"── 介面")
-    MkToggle(p,"功能列表","ShowArrayList")
-    MkToggle(p,"行動裝置按鈕","ShowMobileButton")
+    MkToggle(p,"功能列表顯示/隱藏","ShowArrayList")
+    MkToggle(p,"圖標顯示/隱藏","ShowMobileButton")
     MkKeybind(p,"選單按鍵","MenuBind")
 
     MkSection(p,"── 主題色")
     local tRow=Instance.new("Frame",p)
-    tRow.Size=UDim2.new(1,0,0,52); tRow.BackgroundColor3=C2; tRow.BorderSizePixel=0
+    tRow.Size=UDim2.new(1,0,0,0); tRow.BackgroundColor3=C2; tRow.BorderSizePixel=0
+    tRow.AutomaticSize=Enum.AutomaticSize.Y
+    tRow.LayoutOrder=NextLayoutOrder()
     Instance.new("UICorner",tRow).CornerRadius=UDim.new(0,6)
-    local tLL=Instance.new("UIListLayout",tRow)
-    tLL.FillDirection=Enum.FillDirection.Horizontal
-    tLL.HorizontalAlignment=Enum.HorizontalAlignment.Center
-    tLL.VerticalAlignment=Enum.VerticalAlignment.Center
-    tLL.Padding=UDim.new(0,8)
+    local tPad=Instance.new("UIPadding",tRow)
+    tPad.PaddingTop=UDim.new(0,10); tPad.PaddingBottom=UDim.new(0,10)
+    tPad.PaddingLeft=UDim.new(0,8); tPad.PaddingRight=UDim.new(0,8)
+    local tGrid=Instance.new("UIGridLayout",tRow)
+    tGrid.CellSize=UDim2.new(0,30,0,30)
+    tGrid.CellPadding=UDim2.new(0,8,0,8)
+    tGrid.HorizontalAlignment=Enum.HorizontalAlignment.Center
 
     for i,th in ipairs(Themes) do
         local sw=Instance.new("TextButton",tRow)
@@ -798,6 +1512,7 @@ do local p=Pages["cfg"]
 
     local tNameLbl=Instance.new("TextLabel",p)
     tNameLbl.Size=UDim2.new(1,0,0,22); tNameLbl.BackgroundTransparency=1
+    tNameLbl.LayoutOrder=NextLayoutOrder()
     tNameLbl.Font=FNT; tNameLbl.TextSize=12
     tNameLbl.TextXAlignment=Enum.TextXAlignment.Center
     OnTheme(function()
@@ -810,83 +1525,28 @@ end
 -- ║               CORE GAME LOGIC  (核心，不動)               ║
 -- ╚═══════════════════════════════════════════════════════════╝
 
-local function IsVisible(part, character)
-    if not NS.WallCheck then return true end
-    local rp=RaycastParams.new()
-    rp.FilterType=Enum.RaycastFilterType.Exclude
-    rp.FilterDescendantsInstances={LP.Character,Camera}
-    local result=workspace:Raycast(Camera.CFrame.Position,(part.Position-Camera.CFrame.Position).Unit*1000,rp)
-    return not result or result.Instance:IsDescendantOf(character)
-end
-
 local function GetStickTarget()
     local target,closest=nil,9999
     local mp=UIS:GetMouseLocation()
     for _,v in pairs(Players:GetPlayers()) do
-        if v~=LP and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character.Humanoid.Health>0 then
-            if NS.KatanaCheck and v.Character:FindFirstChild("Katana") then continue end
-            local sp=Camera:WorldToViewportPoint(v.Character.HumanoidRootPart.Position)
+        if PassTargetChecks(v) then
+            local root=v.Character.HumanoidRootPart
+            local sp=Camera:WorldToViewportPoint(root.Position)
             local mag=(Vector2.new(sp.X,sp.Y)-mp).Magnitude
-            if mag<closest then closest=mag; target=v.Character.HumanoidRootPart end
-        end
-    end
-    return target
-end
-
-local function GetClosestTarget()
-    local target,closest=nil,NS.FOVSize
-    local mp=UIS:GetMouseLocation()
-    for _,v in pairs(Players:GetPlayers()) do
-        if v~=LP and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character.Humanoid.Health>0 then
-            if NS.TeamCheck and v.Team==LP.Team then continue end
-            if NS.KatanaCheck and v.Character:FindFirstChild("Katana") then continue end
-            local part
-            if NS.AimPart=="Closest" then
-                local minD=9999
-                for _,child in pairs(v.Character:GetChildren()) do
-                    if child:IsA("BasePart") then
-                        local sp,on2=Camera:WorldToViewportPoint(child.Position)
-                        if on2 then
-                            local mag=(Vector2.new(sp.X,sp.Y)-mp).Magnitude
-                            if mag<minD then minD=mag; part=child end
-                        end
-                    end
-                end
-            else
-                part=v.Character:FindFirstChild(NS.AimPart)
-            end
-            if part then
-                local sp,on2=Camera:WorldToViewportPoint(part.Position)
-                if on2 then
-                    local mag=(Vector2.new(sp.X,sp.Y)-mp).Magnitude
-                    if mag<closest and IsVisible(part,v.Character) then
-                        closest=mag; target=part
-                    end
-                end
+            if mag<closest and IsVisible(root, v.Character) then
+                closest=mag; target=root
             end
         end
     end
     return target
 end
-
--- TriggerBot loop
-task.spawn(function()
-    while true do
-        task.wait(0.05)
-        if NS.TriggerBot then
-            local tgt=LP:GetMouse().Target
-            if tgt and tgt.Parent:FindFirstChild("Humanoid") then
-                local plr=Players:GetPlayerFromCharacter(tgt.Parent)
-                if plr and plr~=LP then
-                    if not (NS.TeamCheck and plr.Team==LP.Team) then mouse1click() end
-                end
-            end
-        end
-    end
-end)
 
 -- RenderStepped
 RS.RenderStepped:Connect(function()
+    if not MGui.Parent then
+        CursorBox.Visible=false; CursorBorder.Visible=false; CursorLabel.Visible=false
+        return
+    end
     local mouse=UIS:GetMouseLocation()
     local menuOpen=Win.Visible
 
@@ -900,36 +1560,25 @@ RS.RenderStepped:Connect(function()
     else
         UIS.MouseIconEnabled=true
     end
+end)
 
-    FOVCircle.Visible=NS.FOVVisible; FOVCircle.Position=mouse
-    FOVCircle.Radius=NS.FOVSize;     FOVCircle.Color=Accent
-
-    if NS.AimEnabled then
-        local target=GetClosestTarget()
-        if target then
-            local pressed=false
-            pcall(function()
-                pressed = NS.AimBind:find("MouseButton") and
-                    UIS:IsMouseButtonPressed(Enum.UserInputType[NS.AimBind]) or
-                    UIS:IsKeyDown(Enum.KeyCode[NS.AimBind])
-            end)
-            if pressed then
-                local tPos=Camera:WorldToViewportPoint(target.Position)
-                if NS.Hardlock then
-                    mousemoverel(tPos.X-mouse.X, tPos.Y-mouse.Y)
-                else
-                    local smooth=NS.SmoothEnabled and NS.SmoothValue or 0
-                    if smooth<=1 then
-                        mousemoverel(tPos.X-mouse.X, tPos.Y-mouse.Y)
-                    else
-                        local w=1/(math.pow(smooth,1.8)*0.02)
-                        mousemoverel((tPos.X-mouse.X)*w,(tPos.Y-mouse.Y)*w)
-                    end
-                end
+-- ── Noclip ────────────────────────────────────────────────
+local noclipSaved = {}
+local lastNoclip = false
+local function SetNoclip(on)
+    for part,cc in pairs(noclipSaved) do
+        if part.Parent then part.CanCollide = cc end
+    end
+    noclipSaved = {}
+    if on and LP.Character then
+        for _,v in pairs(LP.Character:GetChildren()) do
+            if v:IsA("BasePart") then
+                noclipSaved[v] = v.CanCollide
+                v.CanCollide = false
             end
         end
     end
-end)
+end
 
 -- Heartbeat
 RS.Heartbeat:Connect(function()
@@ -969,32 +1618,83 @@ RS.Heartbeat:Connect(function()
         NS.StickTarget=nil
     end
 
-    if NS.Noclip then
-        for _,v in pairs(LP.Character:GetChildren()) do
-            if v:IsA("BasePart") then v.CanCollide=false end
-        end
+    if NS.Noclip ~= lastNoclip then
+        lastNoclip = NS.Noclip
+        SetNoclip(lastNoclip)
     end
 end)
 
--- ── Menu Toggle ───────────────────────────────────────────
+-- ── Menu Toggle（面板由上方滑入 / 滑出）──────────────────
+local MenuOpen = false   -- 起始為關閉，INIT 時以 ToggleMenu 滑入
+-- 視窗整體位置（× 按鈕需完全顯示在畫面內，故再上移 30px）
+local MenuHiddenPos = UDim2.new(0.5,-TotalW/2,-1.2,-30)
+local MenuShownPos  = UDim2.new(0.5,-TotalW/2,0.1,-30)
 local function ToggleMenu()
-    if Win.Visible then
-        local op=Win.Position
-        TS:Create(Win,TweenInfo.new(0.3,Enum.EasingStyle.Quart,Enum.EasingDirection.In),
-            {Position=UDim2.new(op.X.Scale,op.X.Offset,op.Y.Scale,op.Y.Offset-25)}):Play()
-        task.delay(0.28,function() Win.Visible=false end)
-        TS:Create(MenuBlur,TweenInfo.new(0.3),{Size=0}):Play()
+    if MenuOpen then
+        MenuOpen=false
+        TS:Create(Win,TweenInfo.new(0.6,Enum.EasingStyle.Quart,Enum.EasingDirection.Out),
+            {Position=MenuHiddenPos}):Play()
+        TS:Create(MenuBlur,TweenInfo.new(0.4),{Size=0}):Play()
     else
-        local op=Win.Position
-        Win.Position=UDim2.new(op.X.Scale,op.X.Offset,op.Y.Scale,op.Y.Offset+25)
-        Win.Visible=true
-        TS:Create(Win,TweenInfo.new(0.45,Enum.EasingStyle.Quart,Enum.EasingDirection.Out),
-            {Position=UDim2.new(op.X.Scale,op.X.Offset,op.Y.Scale,op.Y.Offset-25)}):Play()
-        TS:Create(MenuBlur,TweenInfo.new(0.35),{Size=16}):Play()
+        MenuOpen=true
+        Win.Position=MenuHiddenPos
+        TS:Create(Win,TweenInfo.new(0.6,Enum.EasingStyle.Quart,Enum.EasingDirection.Out),
+            {Position=MenuShownPos}):Play()
+        TS:Create(MenuBlur,TweenInfo.new(0.4),{Size=20}):Play()
     end
 end
 
-XBtn.MouseButton1Click:Connect(ToggleMenu)
+-- × ：永久關閉 GUI 與圖標（需確認）
+local ConfirmClose, CloseAll
+function CloseAll()
+    MenuOpen=false
+    NS.ShowMobileButton=false
+    NS.AimSnapEnabled=false
+    Save()
+    MobBtn.Visible=false
+    MenuBlur.Size=0
+    MGui:Destroy()
+    for _,g in ipairs(AimGUIS) do pcall(function() g:Destroy() end) end
+    AimGUIS={}
+    pcall(function() RS:UnbindFromRenderStep("AimFOV_AimSnap") end)
+    CursorBox.Visible=false; CursorBorder.Visible=false; CursorLabel.Visible=false
+    UIS.MouseIconEnabled=true
+end
+
+function ConfirmClose()
+    if MGui:FindFirstChild("ConfirmDlg") then return end
+
+    local dlg=Instance.new("Frame",MGui)
+    dlg.Name="ConfirmDlg"; dlg.Size=UDim2.new(0,260,0,130)
+    dlg.Position=UDim2.new(0.5,-130,0.5,-65)
+    dlg.BackgroundColor3=C1; dlg.BorderSizePixel=0; dlg.ZIndex=50
+    Instance.new("UICorner",dlg).CornerRadius=UDim.new(0,10)
+    local ds=Instance.new("UIStroke",dlg)
+    ds.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; ds.Thickness=1.2
+    OnTheme(function() ds.Color=Accent end)
+
+    local msg=Instance.new("TextLabel",dlg)
+    msg.Size=UDim2.new(1,-20,0,60); msg.Position=UDim2.new(0,10,0,14)
+    msg.BackgroundTransparency=1; msg.Font=FNT; msg.TextSize=13; msg.TextColor3=TXT
+    msg.TextWrapped=true; msg.ZIndex=50
+    msg.Text="確定要關閉 GUI 嗎？\n關閉後圖標與選單將不再顯示。"
+
+    local function MkDlgBtn(txt, xOff, bg, tc, fn)
+        local b=Instance.new("TextButton",dlg)
+        b.Size=UDim2.new(0,110,0,32); b.Position=UDim2.new(0.5,xOff,1,-46)
+        b.BackgroundColor3=bg; b.BorderSizePixel=0
+        b.Font=FNT; b.TextSize=13; b.Text=txt; b.TextColor3=tc; b.ZIndex=50
+        Instance.new("UICorner",b).CornerRadius=UDim.new(0,6)
+        b.MouseButton1Click:Connect(fn)
+        return b
+    end
+    MkDlgBtn("取消",-4,C2,TXT,function() dlg:Destroy() end)
+    MkDlgBtn("確定關閉",-118,Color3.fromRGB(70,20,20),Color3.fromRGB(255,80,80),function()
+        dlg:Destroy(); CloseAll()
+    end)
+end
+
+XBtn.MouseButton1Click:Connect(ConfirmClose)
 MobBtn.MouseButton1Click:Connect(ToggleMenu)
 
 -- ── 快捷鍵  ← 修正：觸發後呼叫 RefreshKey 同步 GUI pill ──
@@ -1016,7 +1716,7 @@ UIS.InputBegan:Connect(function(i,g)
         end
 
         -- 選單快捷鍵
-        if i.KeyCode.Name == NS.MenuBind then
+        if i.KeyCode.Name == NS.MenuBind and MGui.Parent then
             ToggleMenu()
         end
     end
@@ -1044,11 +1744,11 @@ end
 for _,p in pairs(Players:GetPlayers()) do CreateESP(p) end
 Players.PlayerAdded:Connect(CreateESP)
 
--- ── INIT ─────────────────────────────────────────────────
-GoTab("aim")
-task.wait(0.4)
+-- ── INIT（由上方滑入）────────────────────────────────────
+Win.Position=MenuHiddenPos
+task.wait(0.5)
 UpdateArr()
-TS:Create(MenuBlur,TweenInfo.new(0.4),{Size=16}):Play()
+ToggleMenu()
 
 task.spawn(function()
 end)
