@@ -150,6 +150,36 @@ _G.AntiAFK_Connection = nil
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
 
+-- Webhook 通知
+_G.ReportFruitWebhook = false
+_G.WebhookUrl = ""
+_G.PingRarities = { "Mythical", "Legendary" }
+
+-- 取得背包中所有果實
+local function GetFruitList()
+    local fruits = {}
+    local seen = {}
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local character = LocalPlayer.Character
+
+    local function scan(container)
+        if not container then return end
+        for _, v in pairs(container:GetChildren()) do
+            if v:IsA("Tool") and string.find(v.Name, "Fruit") then
+                local name = v:GetAttribute("OriginalName") or v.Name
+                if not seen[name] then
+                    seen[name] = true
+                    table.insert(fruits, name)
+                end
+            end
+        end
+    end
+
+    scan(backpack)
+    scan(character)
+    return fruits
+end
+
 ----------------------------------------
 -- 配置自動保存
 ----------------------------------------
@@ -169,7 +199,10 @@ local ConfigKeys = {
     "AutoExecute",
 		"AntiAFK_ENABLED",
     "CurrentKey",
-    "KeyDisabled"
+    "KeyDisabled",
+    "ReportFruitWebhook",
+    "WebhookUrl",
+    "PingRarities"
 }
 
 local function CopyConfigValue(value)
@@ -1098,11 +1131,232 @@ if _G.AntiAFK_ENABLED then
     EnableAntiAFK()
 end
 
+-- Webhook 發送
+local KnownFruits = {}
+local WebhookSending = false
+
+local RarityAliases = {
+    ["mythical"] = "Mythical",
+    ["mythic"] = "Mythical",
+    ["神話"] = "Mythical",
+    ["legendary"] = "Legendary",
+    ["legend"] = "Legendary",
+    ["傳說"] = "Legendary",
+    ["rare"] = "rare",
+    ["稀有"] = "rare",
+    ["uncommon"] = "uncommon",
+    ["罕見"] = "uncommon",
+    ["common"] = "common",
+    ["普通"] = "common",
+}
+
+local function NormalizeRarityTag(input)
+    if type(input) ~= "string" then return nil end
+    local key = string.lower((string.gsub(input, "%s+", "")))
+    if RarityAliases[key] then return RarityAliases[key] end
+    local lowerSet = { mythical = "Mythical", legendary = "Legendary", rare = "rare", uncommon = "uncommon", common = "common" }
+    return lowerSet[key]
+end
+
+-- 果實清單與稀有度對照
+local FruitList = {
+    -- Mythical
+    ["Dragon-West"]         = { name = "Dragon (West) Fruit", rarity = "Mythical" },
+    ["Dragon-East"]         = { name = "Dragon (East) Fruit", rarity = "Mythical" },
+    ["Kitsune-Kitsune"]     = { name = "Kitsune Fruit",       rarity = "Mythical" },
+    ["Tiger-Tiger"]         = { name = "Tiger Fruit",         rarity = "Mythical" },
+    ["Spirit-Spirit"]       = { name = "Spirit Fruit",        rarity = "Mythical" },
+    ["Magnet-Magnet"]       = { name = "Magnet Fruit",        rarity = "Mythical" },
+    ["Control-Control"]     = { name = "Control Fruit",       rarity = "Mythical" },
+    ["Venom-Venom"]         = { name = "Venom Fruit",         rarity = "Mythical" },
+    ["Shadow-Shadow"]       = { name = "Shadow Fruit",        rarity = "Mythical" },
+    ["Dough-Dough"]         = { name = "Dough Fruit",         rarity = "Mythical" },
+    ["T-Rex-T-Rex"]         = { name = "T-Rex Fruit",         rarity = "Mythical" },
+    ["Mammoth-Mammoth"]     = { name = "Mammoth Fruit",       rarity = "Mythical" },
+    ["Gravity-Gravity"]     = { name = "Gravity Fruit",       rarity = "Mythical" },
+    ["Gas-Gas"]             = { name = "Gas Fruit",           rarity = "Mythical" },
+    ["Yeti-Yeti"]           = { name = "Yeti Fruit",          rarity = "Mythical" },
+    -- Legendary
+    ["Blizzard-Blizzard"]   = { name = "Blizzard Fruit",      rarity = "Legendary" },
+    ["Pain-Pain"]           = { name = "Pain Fruit",          rarity = "Legendary" },
+    ["Lightning-Lightning"] = { name = "Lightning Fruit",     rarity = "Legendary" },
+    ["Portal-Portal"]       = { name = "Portal Fruit",        rarity = "Legendary" },
+    ["Phoenix-Phoenix"]     = { name = "Phoenix Fruit",       rarity = "Legendary" },
+    ["Sound-Sound"]         = { name = "Sound Fruit",         rarity = "Legendary" },
+    ["Spider-Spider"]       = { name = "Spider Fruit",        rarity = "Legendary" },
+    ["Creation-Creation"]   = { name = "Creation Fruit",      rarity = "Legendary" },
+    ["Love-Love"]           = { name = "Love Fruit",          rarity = "Legendary" },
+    ["Buddha-Buddha"]       = { name = "Buddha Fruit",        rarity = "Legendary" },
+    ["Quake-Quake"]         = { name = "Quake Fruit",         rarity = "Legendary" },
+    -- rare
+    ["Magma-Magma"]         = { name = "Magma Fruit",         rarity = "rare" },
+    ["Ghost-Ghost"]         = { name = "Ghost Fruit",         rarity = "rare" },
+    ["Rubber-Rubber"]       = { name = "Rubber Fruit",        rarity = "rare" },
+    ["Light-Light"]         = { name = "Light Fruit",         rarity = "rare" },
+    -- uncommon
+    ["Diamond-Diamond"]     = { name = "Diamond Fruit",       rarity = "uncommon" },
+    ["Dark-Dark"]           = { name = "Dark Fruit",          rarity = "uncommon" },
+    ["Sand-Sand"]           = { name = "Sand Fruit",          rarity = "uncommon" },
+    ["Ice-Ice"]             = { name = "Ice Fruit",           rarity = "uncommon" },
+    ["Eagle-Eagle"]         = { name = "Eagle Fruit",         rarity = "uncommon" },
+    ["Flame-Flame"]         = { name = "Flame Fruit",         rarity = "uncommon" },
+    -- common
+    ["Spike-Spike"]         = { name = "Spike Fruit",         rarity = "common" },
+    ["Smoke-Smoke"]         = { name = "Smoke Fruit",         rarity = "common" },
+    ["Bomb-Bomb"]           = { name = "Bomb Fruit",          rarity = "common" },
+    ["Spring-Spring"]       = { name = "Spring Fruit",        rarity = "common" },
+    ["Blade-Blade"]         = { name = "Blade Fruit",         rarity = "common" },
+    ["Spin-Spin"]           = { name = "Spin Fruit",          rarity = "common" },
+    ["Rocket-Rocket"]       = { name = "Rocket Fruit",        rarity = "common" }
+}
+
+local FruitByName = {}
+local function BuildLookupKey(raw)
+    if type(raw) ~= "string" then return nil end
+    local key = string.lower(raw)
+    key = string.gsub(key, "fruit", "")
+    key = string.gsub(key, "[%s_%-%(%)]", "")
+    return key
+end
+
+for id, data in pairs(FruitList) do
+    FruitByName[BuildLookupKey(id)] = data
+    FruitByName[BuildLookupKey(data.name)] = data
+end
+
+local function GetFruitRarity(fruitName)
+    if type(fruitName) ~= "string" or fruitName == "" then return nil end
+
+    for _, data in pairs(FruitList) do
+        if data.name == fruitName then
+            return data.rarity
+        end
+    end
+
+    local key = BuildLookupKey(fruitName)
+    if key and FruitByName[key] then
+        return FruitByName[key].rarity
+    end
+
+    local prefix = string.match(fruitName, "^([^%-]+)")
+    if prefix then
+        local pkey = BuildLookupKey(prefix)
+        if pkey and FruitByName[pkey] then
+            return FruitByName[pkey].rarity
+        end
+    end
+
+    return nil
+end
+
+local function GetRequestFunc()
+    return (syn and syn.request)
+        or (http and http.request)
+        or (fluxus and fluxus.request)
+        or http_request
+        or request
+end
+
+local function SendFruitEmbed(fruitName)
+    if _G.WebhookUrl == "" or not _G.WebhookUrl then return end
+
+    local requestFunc = GetRequestFunc()
+    if not requestFunc then return end
+
+    local needPing = false
+    local rarity = GetFruitRarity(fruitName)
+
+    if rarity then
+        local pingSet = {}
+        for _, r in ipairs(_G.PingRarities or {}) do
+            local norm = NormalizeRarityTag(r)
+            if norm then pingSet[norm] = true end
+        end
+        needPing = pingSet[rarity] == true
+    else
+        warn("[Xu-Hub] 無法辨識果實稀有度，將不發送 @everyone：", tostring(fruitName))
+    end
+
+    print(string.format("[Xu-Hub] 果實: %s | 稀有度: %s | @everyone: %s",
+        tostring(fruitName), tostring(rarity), tostring(needPing)))
+
+    local displayName = fruitName
+    local key = BuildLookupKey(fruitName)
+    if key and FruitByName[key] then
+        displayName = FruitByName[key].name
+    elseif string.find(fruitName, "Fruit", 1, true) == nil then
+        displayName = fruitName .. " Fruit"
+    end
+
+    local payloadData = {
+        ["username"] = "Xu-hub",
+        ["embeds"] = {{
+            ["title"] = "🍎 目前拿到果實",
+            ["description"] = "```\n" .. displayName .. "\n```",
+            ["color"] = 0x7F00FF,
+            ["footer"] = {
+                ["text"] = "Xu-hub | " .. os.date("%Y-%m-%d %H:%M:%S")
+            }
+        }}
+    }
+
+    if needPing then
+        payloadData["content"] = "@everyone"
+        payloadData["allowed_mentions"] = { ["parse"] = { "everyone" } }
+    end
+
+    requestFunc({
+        Url = _G.WebhookUrl,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = HttpService:JSONEncode(payloadData)
+    })
+end
+
+local function CheckAndSendFruits()
+    if WebhookSending then return end
+    if _G.WebhookUrl == "" or not _G.WebhookUrl then return end
+    if not GetRequestFunc() then return end
+
+    WebhookSending = true
+
+    local newFruits = {}
+    for _, name in ipairs(GetFruitList()) do
+        if not KnownFruits[name] then
+            KnownFruits[name] = true
+            table.insert(newFruits, name)
+        end
+    end
+
+    if #newFruits > 0 then
+        for _, name in ipairs(newFruits) do
+            SendFruitEmbed(name)
+            task.wait(0.5)
+        end
+    end
+
+    WebhookSending = false
+end
+
+task.spawn(function()
+    for _, name in ipairs(GetFruitList()) do
+        KnownFruits[name] = true
+    end
+
+    while true do
+        task.wait(2)
+        if _G.ReportFruitWebhook then
+            CheckAndSendFruits()
+        end
+    end
+end)
+
 --------------------------
 -- 分頁
 --------------------------
 local Tabs = {
     Fruit = Window:Tab({ Title = "果實", Icon = "leaf" }),
+    Webhook = Window:Tab({ Title = "Webhook", Icon = "mail" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
@@ -1168,6 +1422,47 @@ Tabs.Fruit:Slider({
     },
     Callback = function(v)
         _G.HopDelayTime = v
+    end
+})
+
+Tabs.Webhook:Section({ Title = "Webhook 通知" })
+
+Tabs.Webhook:Input({
+    Title = "Webhook 網址",
+    Desc = "貼上 Discord Webhook URL",
+    Value = _G.WebhookUrl,
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Callback = function(text)
+        _G.WebhookUrl = text
+    end
+})
+
+Tabs.Webhook:Toggle({
+    Title = "拿到果實通知",
+    Value = _G.ReportFruitWebhook,
+    Callback = function(state)
+        _G.ReportFruitWebhook = state
+        WindUI:Notify({
+            Title = "Webhook 通知",
+            Content = state and "已開啟果實通知" or "已關閉果實通知",
+            Duration = 3
+        })
+    end
+})
+
+Tabs.Webhook:Dropdown({
+    Title = "選擇稀有度",
+    Values = { "Mythical", "Legendary", "rare", "uncommon", "common" },
+    Value = _G.PingRarities,
+    Multi = true,
+    AllowNone = true,
+    Callback = function(selected)
+        local normalized = {}
+        for _, r in ipairs(selected or {}) do
+            local norm = NormalizeRarityTag(r)
+            if norm then table.insert(normalized, norm) end
+        end
+        _G.PingRarities = normalized
     end
 })
 
