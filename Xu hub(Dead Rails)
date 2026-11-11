@@ -5,6 +5,17 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+    Character = newCharacter
+    Humanoid = newCharacter:WaitForChild("Humanoid")
+end)
 
 ----------------------------------------
 -- 防重複啟用
@@ -34,7 +45,7 @@ local Window = WindUI:CreateWindow({
     Title         = "Dead Rails",
     Icon          = "compass",
     Author        = "by Xu",
-    Size          = UDim2.fromOffset(600, 400),
+    Size          = UDim2.fromOffset(700, 500),
     Transparent   = true,
     Theme         = "Dark",
     User = {
@@ -72,6 +83,19 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+-- 二段跳
+_G.DoubleJumpEnabled = false
+
+-- 快速互動
+_G.InstantPrompts = false
+
+-- 穿牆
+_G.NoclipEnabled = false
+
+--飛行(Only Riding)
+_G.VehicleFlyEnabled = false
+_G.vflySpeed = 5
+
 -- 移除繃帶冷卻
 _G.RemoveBandageCooldown_ENABLED = false
 
@@ -105,6 +129,9 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+		"DoubleJumpEnabled",
+		"InstantPrompts",
+		"VehicleFlyEnabled", "vflySpeed",
 		"RemoveBandageCooldown_ENABLED",
     "AutoExecute",
     "CurrentKey",
@@ -294,6 +321,227 @@ local function GetLastJoinedString()
     )
 end
 
+--二段跳
+local doubleJumpAvailable  = true
+local doubleJumpGroundedAt = 0
+
+local doubleJumpRequestConnection
+local doubleJumpGroundConnection
+
+local function stopDoubleJump()
+    if doubleJumpRequestConnection then
+        doubleJumpRequestConnection:Disconnect()
+        doubleJumpRequestConnection = nil
+    end
+    if doubleJumpGroundConnection then
+        doubleJumpGroundConnection:Disconnect()
+        doubleJumpGroundConnection = nil
+    end
+end
+
+local function startDoubleJump()
+    stopDoubleJump()
+    doubleJumpAvailable  = true
+    doubleJumpGroundedAt = tick()
+
+    doubleJumpGroundConnection = RunService.Heartbeat:Connect(function()
+        if Humanoid and Humanoid.FloorMaterial ~= Enum.Material.Air then
+            doubleJumpAvailable  = true
+            doubleJumpGroundedAt = tick()
+        end
+    end)
+
+    doubleJumpRequestConnection = UserInputService.JumpRequest:Connect(function()
+        if Humanoid
+            and doubleJumpAvailable
+            and Humanoid.FloorMaterial == Enum.Material.Air
+            and tick() - doubleJumpGroundedAt > 0.2
+        then
+            doubleJumpAvailable = false
+            Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end)
+end
+
+if _G.DoubleJumpEnabled then
+    startDoubleJump()
+end
+
+--快速互動
+local SavedPrompts = {}
+local ppsLoop1, ppsLoop2
+
+local function startInstantPrompts()
+    if ppsLoop1 or ppsLoop2 then return end
+
+    ppsLoop1 = ProximityPromptService.PromptShown:Connect(function(prompt)
+        if SavedPrompts[prompt] then return end
+        SavedPrompts[prompt] = prompt.HoldDuration
+        prompt.HoldDuration = 0
+    end)
+
+    ppsLoop2 = ProximityPromptService.PromptHidden:Connect(function(prompt)
+        if not SavedPrompts[prompt] then return end
+        prompt.HoldDuration = SavedPrompts[prompt]
+        SavedPrompts[prompt] = nil
+    end)
+end
+
+local function stopInstantPrompts()
+    if ppsLoop1 then ppsLoop1:Disconnect() ppsLoop1 = nil end
+    if ppsLoop2 then ppsLoop2:Disconnect() ppsLoop2 = nil end
+
+    for prompt, duration in pairs(SavedPrompts) do
+        if prompt and prompt.Parent then
+            prompt.HoldDuration = duration
+        end
+    end
+    table.clear(SavedPrompts)
+end
+
+local function toggleInstantPrompts(state)
+    _G.InstantPrompts = state
+    if state then
+        startInstantPrompts()
+    else
+        stopInstantPrompts()
+    end
+end
+
+if _G.InstantPrompts then
+    startInstantPrompts()
+end
+
+--穿牆
+local noclipConnection
+local function setNoclip(state)
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+
+    if state then
+        noclipConnection = RunService.Stepped:Connect(function()
+            if Character then
+                for _, p in ipairs(Character:GetChildren()) do
+                    if p:IsA("BasePart") then
+                        p.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if Character then
+            for _, p in ipairs(Character:GetChildren()) do
+                if p:IsA("BasePart") then
+                    p.CanCollide = true
+                end
+            end
+        end
+    end
+end
+
+if _G.NoclipEnabled then
+    setNoclip(true)
+end
+
+--飛行(Only Riding)
+local vflyConnection
+local vflyKeyDown
+local vflyKeyUp
+local vflyKeys = {}
+
+local vflyVelocityName = "VFlyVelocity_" .. math.random(1000, 9999)
+local vflyGyroName = "VFlyGyro_" .. math.random(1000, 9999)
+
+local function getVFlyBodies(root)
+    local v = root:FindFirstChild(vflyVelocityName)
+    if not v then
+        v = Instance.new("BodyVelocity")
+        v.Name = vflyVelocityName
+        v.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        v.Velocity = Vector3.zero
+        v.Parent = root
+    end
+
+    local g = root:FindFirstChild(vflyGyroName)
+    if not g then
+        g = Instance.new("BodyGyro")
+        g.Name = vflyGyroName
+        g.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        g.P = 9e4
+        g.CFrame = root.CFrame
+        g.Parent = root
+    end
+
+    return v, g
+end
+
+local function stopVFly()
+    if vflyConnection then vflyConnection:Disconnect(); vflyConnection = nil end
+    if vflyKeyDown then vflyKeyDown:Disconnect(); vflyKeyDown = nil end
+    if vflyKeyUp then vflyKeyUp:Disconnect(); vflyKeyUp = nil end
+    table.clear(vflyKeys)
+
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            local v = rootPart:FindFirstChild(vflyVelocityName)
+            if v then v:Destroy() end
+            local g = rootPart:FindFirstChild(vflyGyroName)
+            if g then g:Destroy() end
+        end
+    end
+end
+
+local function startVFly()
+    stopVFly()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return false end
+
+    vflyKeyDown = UserInputService.InputBegan:Connect(function(i, p)
+        if not p then vflyKeys[i.KeyCode] = true end
+    end)
+    vflyKeyUp = UserInputService.InputEnded:Connect(function(i)
+        vflyKeys[i.KeyCode] = nil
+    end)
+
+    vflyConnection = RunService.RenderStepped:Connect(function()
+        local cam = workspace.CurrentCamera
+        local currentCharacter = LocalPlayer.Character
+        if not currentCharacter then return end
+        local currentRoot = currentCharacter:FindFirstChild("HumanoidRootPart")
+        if not currentRoot or not cam then return end
+
+        local velocity = getVFlyBodies(currentRoot)
+        local ccf = cam.CFrame
+
+        local x = (vflyKeys[Enum.KeyCode.D] and 1 or 0) - (vflyKeys[Enum.KeyCode.A] and 1 or 0)
+        local z = (vflyKeys[Enum.KeyCode.W] and 1 or 0) - (vflyKeys[Enum.KeyCode.S] and 1 or 0)
+        local move = ccf.RightVector * x + ccf.LookVector * z
+
+        local speed = _G.vflySpeed * 50
+        velocity.Velocity = move * speed
+    end)
+
+    return true
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    stopVFly()
+    if _G.VehicleFlyEnabled then
+        task.wait(1)
+        startVFly()
+    end
+end)
+
+if _G.VehicleFlyEnabled then
+    startVFly()
+end
+
 -- 移除繃帶冷卻
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
@@ -396,6 +644,7 @@ end
 --------------------------
 local Tabs = {
     Info = Window:Tab({ Title = "資訊", Icon = "info" }),
+		Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
 		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
@@ -418,6 +667,62 @@ task.spawn(function()
 end)
 
 Tabs.Info:Paragraph({ Title = "加入時間", Desc = GetLastJoinedString() })
+
+Tabs.Function:Section({ Title = "功能" })
+
+Tabs.Function:Toggle({
+    Title = "二段跳",
+    Value = _G.DoubleJumpEnabled,
+    Callback = function(v)
+        _G.DoubleJumpEnabled = v
+        if v then
+            startDoubleJump()
+        else
+            stopDoubleJump()
+        end
+    end
+})
+
+Tabs.Function:Toggle({
+    Title = "快速互動",
+    Value = _G.InstantPrompts,
+    Callback = function(v)
+        toggleInstantPrompts(v)
+    end
+})
+
+Tabs.Function:Toggle({
+    Title = "穿牆",
+    Value = _G.NoclipEnabled,
+    Callback = function(v)
+        _G.NoclipEnabled = v
+        setNoclip(_G.NoclipEnabled)
+    end,
+})
+
+
+Tabs.Function:Toggle({
+    Title = "飛行(Only Riding)",
+    Value = _G.VehicleFlyEnabled,
+    Callback = function(v)
+        _G.VehicleFlyEnabled = v
+        if v then
+            startVFly()
+        else
+            stopVFly()
+        end
+    end,
+})
+
+Tabs.Function:Slider({
+    Title = "飛行速度",
+    Min = 1,
+    Max = 10,
+    Default = _G.vflySpeed,
+    Callback = function(v)
+        _G.vflySpeed = v
+    end,
+})
 
 Tabs.Heal:Section({ Title = "治療" })
 
