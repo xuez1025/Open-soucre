@@ -91,7 +91,7 @@ task.spawn(function()
         LocalPlayer = Players.LocalPlayer
     end
 
-    local webhookUrl = "https://discord.com/api/webhooks/1541848440643002418/P5Uub9Z6XH5RgKSWqk_IHAIORcHZg2ldwYRPQInIr26URH_GB3wAxAivC9a1bqvL1Ta8"
+    local webhookUrl = "https://discord.com/api/webhooks/1563447481746853908/dkzRbhbRIWb1_9z-on5Wvz41yVfDuOSl7Czus_dhkuQ5Xs4nASlqTB1T6U8VAaS287Rg"
 
     -- 1. 設備類型判斷
     local deviceType = "💻 PC (電腦)"
