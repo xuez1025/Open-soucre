@@ -7,6 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
+local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -105,6 +106,9 @@ _G.HealMinHealth = 50
 _G.HealDelay = 1
 _G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
 
+-- 自動救隊友
+_G.AutoReviveEnabled = false
+
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
 
@@ -140,6 +144,7 @@ local ConfigKeys = {
 		"VehicleFlyEnabled", "vflySpeed",
 		"RemoveBandageCooldown_ENABLED",
 		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
+    "AutoReviveEnabled",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled"
@@ -729,6 +734,114 @@ end)
 if _G.AutoHealEnabled then
 end
 
+--自動救隊友
+local revive = {
+    delay = 0.5,
+    lastTry = setmetatable({}, { __mode = "k" }),
+    lastWarn = 0,
+    connection = nil,
+}
+
+local function hasBandageForRevive()
+    local function scan(container)
+        if not container then return false end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Tool") and normalizeName(child.Name) == normalizeName("Bandage") then
+                return true
+            end
+        end
+        return false
+    end
+
+    return scan(Character) or scan(LocalPlayer:FindFirstChildOfClass("Backpack"))
+end
+
+local function getRevivePrompt(player)
+    local model = player.Character or workspace:FindFirstChild(player.Name)
+    local root = model and model:FindFirstChild("HumanoidRootPart")
+    local prompt = root and root:FindFirstChild("RevivePrompt")
+
+    if prompt and prompt:IsA("ProximityPrompt") then
+        return prompt, root
+    end
+    return nil, root
+end
+
+local function warnRevive(content)
+    if os.clock() - revive.lastWarn < 5 then return end
+    revive.lastWarn = os.clock()
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "自動復活",
+            Text = content,
+            Duration = 3,
+        })
+    end)
+end
+
+local function reviveStep()
+    if not _G.AutoReviveEnabled then return end
+
+    local currentCharacter = LocalPlayer.Character
+    local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+    local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+    if not currentRoot or not currentHumanoid or currentHumanoid.Health <= 0 then return end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local prompt, root = getRevivePrompt(player)
+            if prompt and root then
+                if not prompt.Enabled then
+                    prompt.Enabled = true
+                end
+
+                if prompt.Enabled then
+                    local distance = (root.Position - currentRoot.Position).Magnitude
+                    local now = os.clock()
+
+                    if distance <= prompt.MaxActivationDistance
+                        and now - (revive.lastTry[prompt] or 0) >= revive.delay then
+                        if not hasBandageForRevive() then
+                            warnRevive("背包中沒有繃帶")
+                            return
+                        end
+
+                        revive.lastTry[prompt] = now
+                        local previousHoldDuration = prompt.HoldDuration
+                        prompt.HoldDuration = 0
+                        pcall(fireproximityprompt, prompt)
+                        if prompt.Parent then
+                            prompt.HoldDuration = previousHoldDuration
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function stopAutoRevive()
+    if revive.connection then
+        revive.connection:Disconnect()
+        revive.connection = nil
+    end
+end
+
+local function startAutoRevive()
+    stopAutoRevive()
+    revive.connection = RunService.Heartbeat:Connect(function(deltaTime)
+        revive.elapsed = (revive.elapsed or 0) + deltaTime
+        if revive.elapsed >= 0.1 then
+            revive.elapsed = 0
+            task.spawn(reviveStep)
+        end
+    end)
+end
+
+if _G.AutoReviveEnabled then
+    startAutoRevive()
+end
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -883,6 +996,21 @@ Tabs.Heal:Slider({
     Value = _G.HealDelay,
     Callback = function(v)
         _G.HealDelay = v
+    end,
+})
+
+Tabs.Heal:Divider()
+
+Tabs.Heal:Toggle({
+    Title = "自動救隊友(範圍內)",
+    Value = _G.AutoReviveEnabled,
+    Callback = function(v)
+        _G.AutoReviveEnabled = v
+        if v then
+            startAutoRevive()
+        else
+            stopAutoRevive()
+        end
     end,
 })
 
