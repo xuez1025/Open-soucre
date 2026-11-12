@@ -8,6 +8,10 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local StarterGui = game:GetService("StarterGui")
+local speaker = Players.LocalPlayer
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -84,6 +88,10 @@ end)
 ----------------------------------------
 --變數
 ----------------------------------------
+-- 時鐘顯示
+_G.ClockDisplay_ENABLED = false
+_G.ClockDisplay_Scale = 1
+
 -- 二段跳
 _G.DoubleJumpEnabled = false
 
@@ -108,6 +116,13 @@ _G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
 
 -- 自動救隊友
 _G.AutoReviveEnabled = false
+
+-- 移除迷霧
+_G.RemoveFogEnabled = false
+_G.FogConnection = nil
+
+--超低配模式 (Low CPU)
+_G.LowCpuMode = false
 
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -139,12 +154,16 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+		"ClockDisplay_ENABLED", "ClockDisplay_Scale",
 		"DoubleJumpEnabled",
 		"InstantPrompts",
+		"NoclipEnabled",
 		"VehicleFlyEnabled", "vflySpeed",
 		"RemoveBandageCooldown_ENABLED",
 		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
     "AutoReviveEnabled",
+		"RemoveFogEnabled",
+		"LowCpuMode",
     "AutoExecute",
     "CurrentKey",
     "KeyDisabled"
@@ -333,6 +352,114 @@ local function GetLastJoinedString()
     )
 end
 
+--時鐘顯示
+local clockGui
+local clockFrame
+local clockLabel
+local clockValueConnection
+local clockAddedConnection
+
+local function findClockValue()
+    local v = ReplicatedStorage:FindFirstChild("TimeHour")
+    if v and v:IsA("ValueBase") then
+        return v
+    end
+    return nil
+end
+
+local function applyClockScale()
+    if clockFrame then
+        clockFrame.Size = UDim2.fromOffset(180 * _G.ClockDisplay_Scale, 50 * _G.ClockDisplay_Scale)
+    end
+end
+
+local function destroyClockDisplay()
+    if clockAddedConnection then
+        clockAddedConnection:Disconnect()
+        clockAddedConnection = nil
+    end
+    if clockValueConnection then
+        clockValueConnection:Disconnect()
+        clockValueConnection = nil
+    end
+
+    if clockGui then
+        clockGui:Destroy()
+    end
+    clockGui, clockFrame, clockLabel = nil, nil, nil
+end
+
+local function buildClockDisplay(source)
+    clockGui = Instance.new("ScreenGui")
+    clockGui.Name = "DaraClockDisplay"
+    clockGui.ResetOnSpawn = false
+    clockGui.IgnoreGuiInset = true
+    clockGui.DisplayOrder = 10
+    clockGui.Parent = PlayerGui
+
+    clockFrame = Instance.new("Frame")
+    clockFrame.Name = "ClockFrame"
+    clockFrame.AnchorPoint = Vector2.new(0.5, 0)
+    clockFrame.Position = UDim2.new(0.5, 0, 0, 12)
+    clockFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    clockFrame.BackgroundTransparency = 0.35
+    clockFrame.BorderSizePixel = 0
+    clockFrame.Active = true
+    clockFrame.Draggable = true
+    clockFrame.Parent = clockGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = clockFrame
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, 6)
+    pad.PaddingRight = UDim.new(0, 6)
+    pad.PaddingTop = UDim.new(0, 4)
+    pad.PaddingBottom = UDim.new(0, 4)
+    pad.Parent = clockFrame
+
+    clockLabel = Instance.new("TextLabel")
+    clockLabel.Name = "ClockText"
+    clockLabel.Size = UDim2.fromScale(1, 1)
+    clockLabel.BackgroundTransparency = 1
+    clockLabel.Font = Enum.Font.GothamBold
+    clockLabel.TextScaled = true
+    clockLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    clockLabel.Text = tostring(source.Value)
+    clockLabel.Parent = clockFrame
+
+    applyClockScale()
+
+    clockValueConnection = source.Changed:Connect(function()
+        if clockLabel then
+            clockLabel.Text = tostring(source.Value)
+        end
+    end)
+end
+
+local function startClockDisplay()
+    destroyClockDisplay()
+
+    local found = findClockValue()
+    if found then
+        buildClockDisplay(found)
+        return
+    end
+
+    clockAddedConnection = ReplicatedStorage.ChildAdded:Connect(function(child)
+        if child.Name == "TimeHour" and child:IsA("ValueBase") then
+            clockAddedConnection:Disconnect()
+            clockAddedConnection = nil
+            buildClockDisplay(child)
+        end
+    end)
+end
+
+if _G.ClockDisplay_ENABLED then
+    startClockDisplay()
+end
+
 --二段跳
 local doubleJumpAvailable  = true
 local doubleJumpGroundedAt = 0
@@ -425,36 +552,115 @@ if _G.InstantPrompts then
 end
 
 --穿牆
-local noclipConnection
-local function setNoclip(state)
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-    end
+local noclipConnection = nil
+local boatNoclipConn = nil
+local boatNoclipRestore = {}
+local boatNoclipTracked = {}
+local boatNoclipBoat = nil
 
-    if state then
-        noclipConnection = RunService.Stepped:Connect(function()
-            if Character then
-                for _, p in ipairs(Character:GetChildren()) do
-                    if p:IsA("BasePart") then
-                        p.CanCollide = false
-                    end
-                end
+local function BoatNoclipGetBoat()
+    local char = speaker.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local seat = hum and hum.SeatPart
+    if not seat then return nil end
+    local model = seat:FindFirstAncestorOfClass("Model")
+    if model and model ~= workspace then return model end
+    return seat.Parent
+end
+
+local function BoatNoclipApply(boat)
+    for _, d in ipairs(boat:GetDescendants()) do
+        if d:IsA("BasePart") then
+            if not boatNoclipTracked[d] then
+                boatNoclipTracked[d] = true
+                boatNoclipRestore[d] = d.CanCollide
             end
-        end)
-    else
-        if Character then
-            for _, p in ipairs(Character:GetChildren()) do
-                if p:IsA("BasePart") then
-                    p.CanCollide = true
-                end
+            if d.CanCollide then
+                d.CanCollide = false
             end
         end
     end
 end
 
+local function BoatNoclipRestoreAll()
+    for part, orig in pairs(boatNoclipRestore) do
+        pcall(function()
+            if part.Parent and part.CanCollide ~= orig then
+                part.CanCollide = orig
+            end
+        end)
+    end
+    boatNoclipRestore = {}
+    boatNoclipTracked = {}
+end
+
+local function BoatNoclipStart()
+    if boatNoclipConn then return end
+    boatNoclipConn = RunService.Stepped:Connect(function()
+        if not _G.NoclipEnabled then return end
+        local boat = BoatNoclipGetBoat()
+        if boat ~= boatNoclipBoat then
+            BoatNoclipRestoreAll()
+            boatNoclipBoat = boat
+        end
+        if boat then
+            pcall(BoatNoclipApply, boat)
+        end
+    end)
+end
+
+local function BoatNoclipStop()
+    if boatNoclipConn then
+        boatNoclipConn:Disconnect()
+        boatNoclipConn = nil
+    end
+    BoatNoclipRestoreAll()
+    boatNoclipBoat = nil
+end
+
+local function SetNoclip(state)
+    _G.NoclipEnabled = state
+    if _G.NoclipEnabled then
+        if not noclipConnection then
+            noclipConnection = RunService.Stepped:Connect(function()
+                local char = speaker.Character
+                if char then
+                    for _, part in pairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        end
+        
+        BoatNoclipStart()
+    else
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        local char = speaker.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+        
+        BoatNoclipStop()
+    end
+end
+
+speaker.CharacterAdded:Connect(function()
+    if _G.NoclipEnabled then
+        SetNoclip(false)
+    end
+end)
+
 if _G.NoclipEnabled then
-    setNoclip(true)
+    SetNoclip(true)
 end
 
 --飛行(Only Riding)
@@ -842,6 +1048,86 @@ if _G.AutoReviveEnabled then
     startAutoRevive()
 end
 
+_G.ApplyRemoveFog = function()
+    local layers = Lighting:FindFirstChild("LightingLayers")
+    if layers then pcall(function() layers:Destroy() end) end
+    
+    local sky = Lighting:FindFirstChildOfClass("Sky")
+    if sky then pcall(function() sky:Destroy() end) end
+    
+    Lighting.FogEnd = 9e9
+end
+
+_G.ToggleFogService = function(enable)
+    _G.RemoveFogEnabled = enable
+    
+    if enable then
+        _G.ApplyRemoveFog()
+        
+        if not _G.FogConnection then
+            _G.FogConnection = Lighting:GetPropertyChangedSignal("FogEnd"):Connect(function()
+                if _G.RemoveFogEnabled and Lighting.FogEnd ~= 9e9 then
+                    Lighting.FogEnd = 9e9
+                end
+            end)
+        end
+    else
+        if _G.FogConnection then
+            _G.FogConnection:Disconnect()
+            _G.FogConnection = nil
+        end
+    end
+end
+
+if _G.RemoveFogEnabled then
+    _G.ToggleFogService(true)
+end
+
+--超低配模式 (Low CPU)
+local function LowCpu()
+    local decalsyeeted = true
+    local g = game
+    local w = g.Workspace
+    local l = g.Lighting
+    local t = w.Terrain
+    t.WaterWaveSize = 0
+    t.WaterWaveSpeed = 0
+    t.WaterReflectance = 0
+    t.WaterTransparency = 0
+    l.GlobalShadows = false
+    l.FogEnd = 9e9
+    l.Brightness = 0
+    settings().Rendering.QualityLevel = "Level01"
+    for i, v in pairs(g:GetDescendants()) do
+        if v:IsA("Part") or v:IsA("Union") or v:IsA("CornerWedgePart") or v:IsA("TrussPart") then
+            v.Material = "Plastic"
+            v.Reflectance = 0
+        elseif (v:IsA("Decal") or v:IsA("Texture")) and decalsyeeted then
+            v.Transparency = 1
+        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            v.Lifetime = NumberRange.new(0)
+        elseif v:IsA("Explosion") then
+            v.BlastPressure = 1
+            v.BlastRadius = 1
+        elseif v:IsA("Fire") or v:IsA("SpotLight") or v:IsA("Smoke") or v:IsA("Sparkles") then
+            v.Enabled = false
+        elseif v:IsA("MeshPart") then
+            v.Material = "Plastic"
+            v.Reflectance = 0
+            v.TextureID = 10385902758728957
+        end
+    end
+    for i, e in pairs(l:GetChildren()) do
+        if e:IsA("BlurEffect") or e:IsA("SunRaysEffect") or e:IsA("ColorCorrectionEffect") or e:IsA("BloomEffect") or e:IsA("DepthOfFieldEffect") then
+            e.Enabled = false
+        end
+    end
+end
+
+if _G.LowCpuMode then
+    pcall(LowCpu)
+end
+
 --自動執行
 local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
 
@@ -856,12 +1142,15 @@ local Tabs = {
     Info = Window:Tab({ Title = "資訊", Icon = "info" }),
 		Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
 		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
+		Graphics = Window:Tab({ Title = "畫質", Icon = "tv"}),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
 --------------------------
 -- 元件
 --------------------------
+Tabs.Info:Section({ Title = "資訊" })
+
 local ServerInfoParagraph = Tabs.Info:Paragraph({
     Title = "伺服器運行時間",
     Desc  = GetServerUptimeString()
@@ -877,6 +1166,35 @@ task.spawn(function()
 end)
 
 Tabs.Info:Paragraph({ Title = "加入時間", Desc = GetLastJoinedString() })
+
+Tabs.Info:Section({ Title = "時鐘" })
+
+Tabs.Info:Toggle({
+    Title = "時鐘顯示",
+    Desc = "在螢幕上顯示遊戲時間，可拖動移位",
+    Value = _G.ClockDisplay_ENABLED,
+    Callback = function(v)
+        _G.ClockDisplay_ENABLED = v
+        if v then
+            startClockDisplay()
+        else
+            destroyClockDisplay()
+        end
+    end,
+})
+
+Tabs.Info:Slider({
+    Title = "時鐘大小",
+    Step = 0.05,
+    Value = { Min = 0.5, Max = 2, Default = 1 },
+    Callback = function(v)
+        local parsedValue = tonumber(v)
+        if parsedValue then
+            _G.ClockDisplay_Scale = parsedValue
+        end
+        applyClockScale()
+    end,
+})
 
 Tabs.Function:Section({ Title = "功能" })
 
@@ -902,11 +1220,10 @@ Tabs.Function:Toggle({
 })
 
 Tabs.Function:Toggle({
-    Title = "穿牆",
+    Title = "穿牆(含馬)",
     Value = _G.NoclipEnabled,
     Callback = function(v)
-        _G.NoclipEnabled = v
-        setNoclip(_G.NoclipEnabled)
+        SetNoclip(v)
     end,
 })
 
@@ -1012,6 +1329,27 @@ Tabs.Heal:Toggle({
             stopAutoRevive()
         end
     end,
+})
+
+Tabs.Graphics:Section({ Title = "畫質" })
+
+Tabs.Graphics:Toggle({
+    Title = "移除迷霧",
+    Value = _G.RemoveFogEnabled,
+    Callback = function(v)
+        _G.ToggleFogService(v)
+    end
+})
+
+Tabs.Graphics:Toggle({
+    Title = "超低配模式",
+    Value = _G.LowCpuMode,
+    Callback = function(v)
+        _G.LowCpuMode = v
+        if v then
+            pcall(LowCpu)
+        end
+    end
 })
 
 Tabs.Settings:Section({ Title = "重置腳本" })
