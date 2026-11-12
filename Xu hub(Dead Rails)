@@ -145,6 +145,16 @@ _G.MobESP_HighlightColor = Color3.fromRGB(255, 0, 0)
 _G.MobESP_FontSize       = 14
 _G.MobESP_LastTextUpdate = 0
 
+-- ESP Items
+_G.ESP_ItemMaster = false
+_G.ESP_ItemShowName = false
+_G.ESP_ItemShowDistance = false
+_G.ESP_ItemShowTracers = false
+_G.ESP_ItemShowHighlights = false
+_G.ESP_ItemTracerColor = Color3.fromRGB(255, 255, 255)
+_G.ESP_ItemHighlightColor = Color3.fromRGB(255, 255, 255)
+_G.ESP_ItemFontSize = 14
+
 -- 移除迷霧
 _G.RemoveFogEnabled = false
 _G.FogConnection = nil
@@ -755,9 +765,11 @@ local vflyConnection
 local vflyKeyDown
 local vflyKeyUp
 local vflyKeys = {}
-
 local vflyVelocityName = "VFlyVelocity_" .. math.random(1000, 9999)
 local vflyGyroName = "VFlyGyro_" .. math.random(1000, 9999)
+
+local humanoidSitConn = nil
+local humanoidStateConn = nil
 
 local function getVFlyBodies(root)
     local v = root:FindFirstChild(vflyVelocityName)
@@ -768,7 +780,6 @@ local function getVFlyBodies(root)
         v.Velocity = Vector3.zero
         v.Parent = root
     end
-
     local g = root:FindFirstChild(vflyGyroName)
     if not g then
         g = Instance.new("BodyGyro")
@@ -778,7 +789,6 @@ local function getVFlyBodies(root)
         g.CFrame = root.CFrame
         g.Parent = root
     end
-
     return v, g
 end
 
@@ -787,7 +797,6 @@ local function stopVFly()
     if vflyKeyDown then vflyKeyDown:Disconnect(); vflyKeyDown = nil end
     if vflyKeyUp then vflyKeyUp:Disconnect(); vflyKeyUp = nil end
     table.clear(vflyKeys)
-
     local character = LocalPlayer.Character
     if character then
         local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -800,7 +809,19 @@ local function stopVFly()
     end
 end
 
+local function isSitting()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    return humanoid.Sit or humanoid:GetState() == Enum.HumanoidStateType.Seated
+end
+
 local function startVFly()
+    if not isSitting() then return false end
+    
+    if vflyConnection then return true end
+
     stopVFly()
     local character = LocalPlayer.Character
     if not character then return false end
@@ -813,38 +834,59 @@ local function startVFly()
     vflyKeyUp = UserInputService.InputEnded:Connect(function(i)
         vflyKeys[i.KeyCode] = nil
     end)
-
     vflyConnection = RunService.RenderStepped:Connect(function()
+        if not isSitting() then
+            stopVFly()
+            return
+        end
+
         local cam = workspace.CurrentCamera
         local currentCharacter = LocalPlayer.Character
         if not currentCharacter then return end
         local currentRoot = currentCharacter:FindFirstChild("HumanoidRootPart")
         if not currentRoot or not cam then return end
-
         local velocity = getVFlyBodies(currentRoot)
         local ccf = cam.CFrame
-
         local x = (vflyKeys[Enum.KeyCode.D] and 1 or 0) - (vflyKeys[Enum.KeyCode.A] and 1 or 0)
         local z = (vflyKeys[Enum.KeyCode.W] and 1 or 0) - (vflyKeys[Enum.KeyCode.S] and 1 or 0)
         local move = ccf.RightVector * x + ccf.LookVector * z
-
         local speed = _G.vflySpeed * 50
         velocity.Velocity = move * speed
     end)
-
     return true
 end
 
-LocalPlayer.CharacterAdded:Connect(function()
-    stopVFly()
-    if _G.VehicleFlyEnabled then
-        task.wait(1)
+local function updateFlyState()
+    if _G.VehicleFlyEnabled and isSitting() then
         startVFly()
+    else
+        stopVFly()
     end
+end
+
+local function setupCharacter(character)
+    if humanoidSitConn then humanoidSitConn:Disconnect(); humanoidSitConn = nil end
+    if humanoidStateConn then humanoidStateConn:Disconnect(); humanoidStateConn = nil end
+
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    if humanoid then
+        humanoidSitConn = humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
+            updateFlyState()
+        end)
+        humanoidStateConn = humanoid.StateChanged:Connect(function(_, _)
+            updateFlyState()
+        end)
+    end
+    updateFlyState()
+end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+    stopVFly()
+    setupCharacter(character)
 end)
 
-if _G.VehicleFlyEnabled then
-    startVFly()
+if LocalPlayer.Character then
+    setupCharacter(LocalPlayer.Character)
 end
 
 -- 移除繃帶冷卻
@@ -1664,6 +1706,427 @@ if _G.MobESP_Master then
     startNPCTracking()
 end
 
+--ESP Items
+local itemCategoryColors = {}
+local function addItemCategory(color, names)
+    for _, name in ipairs(names) do
+        if not itemCategoryColors[name] then
+            itemCategoryColors[name] = color
+        end
+    end
+end
+
+addItemCategory(Color3.fromRGB(190, 100, 255), {
+    "Chestplate", "Helmet", "Left Pauldron", "Right Pauldron", "Mining Helmet",
+    "Lincoln's Top Hat", "Lincoln's Ghost's Top Hat", "Horseshoes"
+})
+
+addItemCategory(Color3.fromRGB(0, 220, 255), {
+    "Sack", "Horse Cart", "Saddle", "Sheet Metal", "Barbed Wire", "Bear Trap",
+    "Lightning Rod", "Torch", "Red Torch", "Blue Torch", "Green Torch", "Lantern",
+    "Camera", "Banjo", "Bandage", "Snake Oil", "Glass Bottle", "Strange Mask",
+    "Campfire", "Canteen", "Bucket", "Occult Necklace", "Crate",
+    "Bottle Rocket Launcher", "Dynamite", "Gunpowder Barrel", "Firework Gun",
+    "Flamethrower", "Occultist's Seal", "Cursed Ledger", "Deathless Charm",
+    "The Ancient's Heart", "Commanding Sigil", "Grimoire", "Present", "Horse Feed",
+    "Horse Whistle", "Ritual Ash", "Bone Meal", "Easter Egg"
+})
+
+addItemCategory(Color3.fromRGB(255, 215, 0), {
+    "Gold Bar", "Gold Nugget", "Gold Statue", "Gold Painting", "Gold Cup", "Gold Plate",
+    "Gold Watch", "Gold Trophy", "Silver Bar", "Silver Nugget", "Silver Statue",
+    "Silver Painting", "Silver Cup", "Silver Plate", "Silver Watch", "Silver Trophy",
+    "Stone Statue", "Wooden Painting", "Brain In Jar", "Occult Currency", "Hex Stone",
+    "Occult Dagger", "Sand Buried Pocket Watch", "Sand Buried Painting", "Money Bag",
+    "Bond", "Grave Silver", "Fool's Gold"
+})
+
+addItemCategory(Color3.fromRGB(160, 160, 160), {
+    "Barrel", "Rope", "Wheel", "Book", "Newspaper", "Rock", "Vase", "Teapot",
+    "Wanted Poster", "Telegraph", "Ladder", "Flat Kettlebell", "Round Kettlebell",
+    "Dumbbell", "Barbell", "Wooden Club", "Corpse", "Bones", "Note", "Tumbleweed",
+    "Poster"
+})
+
+addItemCategory(Color3.fromRGB(255, 145, 40), {
+    "Coal", "Chair", "Entity Corpses", "Bank Combo"
+})
+
+addItemCategory(Color3.fromRGB(255, 80, 210), {
+    "Jade Tablet", "Werewolf Limb", "Strange Machine", "Skeleton Key",
+    "Supply Depot Key", "Ripped Bank Note", "Strange Map", "Fool's Key",
+    "Jack O'Lantern", "Golden Egg", "Phantom Key"
+})
+
+addItemCategory(Color3.fromRGB(255, 70, 70), {
+    "Shovel", "Axe", "Hammer", "Pickaxe", "Tomahawk", "Cavalry Sword", "Sword",
+    "Excalibur", "Jade Sword", "Vampire Knife", "Spear", "Spear of Longinus",
+    "Boxing Gloves", "Holy Wrench", "Revolver", "Mauser", "Navy Revolver", "Flintlock",
+    "Sawed-Off Shotgun", "Shotgun", "Blunderbuss", "Revolving Rifle", "Rifle",
+    "Bolt-Action Rifle", "Elephant Rifle", "Springfield", "Crossbow", "Electrocutioner",
+    "Thompson", "Maxim Gun", "Ballista", "Cannon", "Tesla Cannon", "Ray Pistol",
+    "Ray Rifle", "Holy Water", "Molotov", "Holy Hand Grenade", "Frost Grenade",
+    "Skeleton Grenade", "Landmine", "Acid Mine", "Acid Barrel", "Crucifix",
+    "Light Ammo", "Shotgun Shells", "Medium Ammo", "Firework Ammo", "Arrows",
+    "Ray Ammo", "Heavy Ammo", "Ballista Bolts", "Cannon Balls"
+})
+
+addItemCategory(Color3.fromRGB(80, 150, 255), {
+    "Water", "Kerosene", "Milk", "Blood", "Zombie Blood", "Unicorn Blood",
+    "Angel Tears", "Devil Tears", "Primordial Soup", "Cerebrus Blood", "Fire", "Acid",
+    "Frost"
+})
+
+-- 升級版：支援大小寫不敏感與模糊匹配的顏色獲取函式
+local function getItemColor(name, model)
+    local searchNames = {}
+    if name then table.insert(searchNames, tostring(name)) end
+    if model and model.Name then table.insert(searchNames, tostring(model.Name)) end
+
+    for _, searchName in ipairs(searchNames) do
+        -- 1. 精確符合
+        if itemCategoryColors[searchName] then
+            return itemCategoryColors[searchName]
+        end
+
+        -- 2. 不分大小寫符合
+        local lowerSearch = searchName:lower()
+        for catName, color in pairs(itemCategoryColors) do
+            if catName:lower() == lowerSearch then
+                return color
+            end
+        end
+
+        -- 3. 包含符合（模糊匹配）
+        for catName, color in pairs(itemCategoryColors) do
+            local lowerCat = catName:lower()
+            if lowerSearch:find(lowerCat) or lowerCat:find(lowerSearch) then
+                return color
+            end
+        end
+    end
+
+    return _G.ESP_ItemHighlightColor
+end
+
+local ESP_TEXT_INTERVAL = 0.2
+local itemTextCache = {}
+local itemEntries = {}
+local itemTracers = {}
+local itemESPConnection = nil
+local itemESPWasActive = false
+local itemLastTextUpdate = 0
+
+local function loadItemECS()
+    local ok, result = pcall(function()
+        local universe = ReplicatedStorage.Shared.Universe
+        local data = {}
+        data.world = require(universe.ECS.world)
+        data.comps = require(universe.ECS.components)
+        data.replicator = require(ReplicatedStorage.Client.Universe.Replication.clientReplicator)
+        return data
+    end)
+
+    if not ok then
+        return
+    end
+
+    return result
+end
+
+local ItemECS = loadItemECS()
+
+local function itemECSGet(id, component)
+    if not ItemECS then
+        return
+    end
+
+    local ok, value = pcall(ItemECS.world.get, ItemECS.world, id, component)
+    if not ok then
+        return
+    end
+
+    return value
+end
+
+local function getItemPosition(model, transform)
+    if transform then
+        if transform.Position then
+            return transform.Position
+        end
+        if transform.p then
+            return transform.p
+        end
+    end
+
+    if model then
+        return model:GetPivot().Position
+    end
+end
+
+local function getItemPart(model)
+    if not model then
+        return
+    end
+
+    local primary = model.PrimaryPart
+    if primary then
+        return primary
+    end
+
+    return model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getItemDistance(position)
+    if not ItemECS then return 0 end
+    local state = ItemECS.world:get_resource(ItemECS.comps.ClientStateResource)
+    local character = state and state.localCharacter
+    local myTransform = itemECSGet(character, ItemECS.comps.Transform)
+    local myPosition = getItemPosition(character, myTransform)
+
+    if myPosition and position then
+        return (position - myPosition).Magnitude
+    end
+
+    local camera = workspace.CurrentCamera
+    if camera and position then
+        return (position - camera.CFrame.Position).Magnitude
+    end
+
+    return 0
+end
+
+local function removeItemTracer(model)
+    local tracer = itemTracers[model]
+    if tracer then
+        tracer.Visible = false
+        tracer:Remove()
+        itemTracers[model] = nil
+    end
+end
+
+local function removeItemESP(model)
+    removeItemTracer(model)
+    itemTextCache[model] = nil
+
+    if model then
+        local highlight = model:FindFirstChild("ESP_ItemHighlight")
+        if highlight then
+            highlight:Destroy()
+        end
+
+        local part = getItemPart(model)
+        if part then
+            local billboard = part:FindFirstChild("ESP_ItemBillboard")
+            if billboard then
+                billboard:Destroy()
+            end
+        end
+    end
+end
+
+local function createItemESP(model, part, itemColor)
+    if not model or not part then
+        return
+    end
+
+    local highlight = model:FindFirstChild("ESP_ItemHighlight")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_ItemHighlight"
+        highlight.Adornee = model
+        highlight.Parent = model
+    end
+    highlight.FillColor = itemColor
+    highlight.OutlineColor = itemColor
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0.1
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+
+    if not _G.ESP_ItemShowName and not _G.ESP_ItemShowDistance then
+        local oldBillboard = part:FindFirstChild("ESP_ItemBillboard")
+        if oldBillboard then
+            oldBillboard:Destroy()
+        end
+        return
+    end
+
+    local billboard = part:FindFirstChild("ESP_ItemBillboard")
+    if not billboard then
+        billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP_ItemBillboard"
+        billboard.AlwaysOnTop = true
+        billboard.Size = UDim2.new(0, 220, 0, 80)
+        billboard.StudsOffset = Vector3.new(0, 2, 0)
+        billboard.Adornee = part
+        billboard.Parent = part
+
+        local info = Instance.new("TextLabel")
+        info.Name = "InfoLabel"
+        info.Size = UDim2.new(1, 0, 1, 0)
+        info.BackgroundTransparency = 1
+        info.TextColor3 = itemColor
+        info.TextStrokeTransparency = 0.1
+        info.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        info.Font = Enum.Font.GothamBold
+        info.TextWrapped = true
+        info.TextYAlignment = Enum.TextYAlignment.Bottom
+        info.Parent = billboard
+    end
+
+    local info = billboard:FindFirstChild("InfoLabel")
+    if info then
+        info.TextSize = _G.ESP_ItemFontSize
+        info.TextColor3 = itemColor
+    end
+end
+
+local function updateItemTracer(model, part, itemColor)
+    if not _G.ESP_ItemShowTracers then
+        removeItemTracer(model)
+        return
+    end
+    if not part then
+        removeItemTracer(model)
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    local localCharacter = LocalPlayer.Character
+    local myHRP = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    if not camera or not myHRP then
+        removeItemTracer(model)
+        return
+    end
+
+    local startPosition, startVisible = camera:WorldToViewportPoint(myHRP.Position)
+    local endPosition, endVisible = camera:WorldToViewportPoint(part.Position)
+    if not startVisible or not endVisible then
+        removeItemTracer(model)
+        return
+    end
+
+    local tracer = itemTracers[model]
+    if not tracer then
+        tracer = Drawing.new("Line")
+        itemTracers[model] = tracer
+    end
+
+    tracer.Visible = true
+    tracer.From = Vector2.new(startPosition.X, startPosition.Y)
+    tracer.To = Vector2.new(endPosition.X, endPosition.Y)
+    tracer.Color = itemColor
+    tracer.Thickness = 1.8
+    tracer.Transparency = 0.75
+end
+
+local function updateItemESP()
+    if not ItemECS then
+        return
+    end
+
+    local now = os.clock()
+    local updateText = now - itemLastTextUpdate >= ESP_TEXT_INTERVAL
+    if updateText then
+        itemLastTextUpdate = now
+    end
+
+    local alive = {}
+    for id in ItemECS.world:query(ItemECS.comps.Storable, ItemECS.comps.ObjectId, ItemECS.comps.ModelInstance) do
+        local model = itemECSGet(id, ItemECS.comps.ModelInstance)
+        if model and model.Parent then
+            local name = itemECSGet(id, ItemECS.comps.ObjectId)
+            local transform = itemECSGet(id, ItemECS.comps.Transform)
+            local position = getItemPosition(model, transform)
+            local part = getItemPart(model)
+
+            if part and position then
+                alive[model] = true
+                itemEntries[model] = part
+                
+                -- 取得對應的分類顏色（傳入名稱與 Model 進行智慧比對）
+                local itemColor = getItemColor(name, model)
+                createItemESP(model, part, itemColor)
+
+                local distance = getItemDistance(position)
+                local billboard = part:FindFirstChild("ESP_ItemBillboard")
+                local info = billboard and billboard:FindFirstChild("InfoLabel")
+                if info and updateText then
+                    local lines = {}
+                    if _G.ESP_ItemShowName then
+                        table.insert(lines, tostring(name))
+                    end
+                    if _G.ESP_ItemShowDistance then
+                        table.insert(lines, string.format("距離: %.0f", distance))
+                    end
+                    local text = table.concat(lines, "\n")
+                    itemTextCache[model] = text
+                    info.Text = text
+                    info.TextSize = _G.ESP_ItemFontSize
+                    info.TextColor3 = itemColor
+                elseif info and itemTextCache[model] then
+                    info.Text = itemTextCache[model]
+                    info.TextSize = _G.ESP_ItemFontSize
+                    info.TextColor3 = itemColor
+                end
+
+                updateItemTracer(model, part, itemColor)
+            end
+        end
+    end
+
+    for model in pairs(itemEntries) do
+        if not alive[model] then
+            removeItemESP(model)
+            itemEntries[model] = nil
+        end
+    end
+end
+
+local function clearItemESP()
+    for model in pairs(itemEntries) do
+        removeItemESP(model)
+        itemEntries[model] = nil
+    end
+
+    for model in pairs(itemTracers) do
+        removeItemTracer(model)
+    end
+end
+
+local function startItemESP()
+    if itemESPConnection then
+        return
+    end
+
+    itemESPWasActive = true
+    itemESPConnection = RunService.RenderStepped:Connect(function()
+        pcall(updateItemESP)
+    end)
+end
+
+local function stopItemESP()
+    if itemESPConnection then
+        itemESPConnection:Disconnect()
+        itemESPConnection = nil
+    end
+
+    itemESPWasActive = false
+    clearItemESP()
+end
+
+local function refreshItemESP()
+    if _G.ESP_ItemMaster then
+        startItemESP()
+    else
+        stopItemESP()
+    end
+end
+
+if _G.ESP_ItemMaster then
+    refreshItemESP()
+end
+
 --移除迷霧
 _G.ApplyRemoveFog = function()
     local layers = Lighting:FindFirstChild("LightingLayers")
@@ -2100,6 +2563,59 @@ Tabs.ESP:Slider({
     },
     Callback = function(v)
         _G.MobESP_FontSize = v
+    end
+})
+
+Tabs.ESP:Section({ Title = "ESP Items" })
+
+Tabs.ESP:Toggle({
+    Title = "物品 ESP 主開關",
+    Type = "Checkbox",
+    Value = _G.ESP_ItemMaster,
+    Callback = function(v)
+        _G.ESP_ItemMaster = v
+        refreshItemESP()
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "物品名稱",
+    Value = _G.ESP_ItemShowName,
+    Callback = function(v)
+        _G.ESP_ItemShowName = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "物品距離",
+    Value = _G.ESP_ItemShowDistance,
+    Callback = function(v)
+        _G.ESP_ItemShowDistance = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "物品射線",
+    Value = _G.ESP_ItemShowTracers,
+    Callback = function(v)
+        _G.ESP_ItemShowTracers = v
+        if not v then
+            for model in pairs(itemTracers) do
+                removeItemTracer(model)
+            end
+        end
+    end
+})
+
+Tabs.ESP:Slider({
+    Title = "ESP 字體大小",
+    Value = {
+        Min = 10,
+        Max = 32,
+        Default = _G.ESP_ItemFontSize
+    },
+    Callback = function(v)
+        _G.ESP_ItemFontSize = v
     end
 })
 
