@@ -12,6 +12,7 @@ local speaker = Players.LocalPlayer
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -120,6 +121,20 @@ _G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
 -- 自動救隊友
 _G.AutoReviveEnabled = false
 
+--ESP Players
+_G.ESP_Master         = false
+_G.ESP_ShowName       = false
+_G.ESP_ShowHealth     = false
+_G.ESP_ShowDistance   = false
+_G.ESP_ShowTracers    = false
+_G.ESP_TracerColor    = Color3.fromRGB(255, 255, 255)
+_G.ESP_HighlightColor = Color3.fromRGB(30, 30, 30)
+_G.ESP_FontSize       = 14
+_G.ESP_CharConns      = {}
+_G.ESP_LastTextUpdate = 0
+
+Tracers = {}
+
 -- 移除迷霧
 _G.RemoveFogEnabled = false
 _G.FogConnection = nil
@@ -166,6 +181,7 @@ local ConfigKeys = {
 		"RemoveBandageCooldown_ENABLED",
 		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
     "AutoReviveEnabled",
+		"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_FontSize",
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
@@ -1108,6 +1124,239 @@ if _G.AutoReviveEnabled then
     startAutoRevive()
 end
 
+--ESP Players
+ESP_TEXT_INTERVAL = 0.2
+espTextCache = {}
+espWasActive = false
+
+local function removeTracer(p)
+    if Tracers[p] then
+        Tracers[p].Visible = false
+        Tracers[p]:Remove()
+        Tracers[p] = nil
+    end
+end
+
+local function removeESP(p)
+    removeTracer(p)
+    if p.Character then
+        local h = p.Character:FindFirstChild("ESP_Highlight")
+        if h then h:Destroy() end
+        local head = p.Character:FindFirstChild("Head")
+        if head then
+            local bill = head:FindFirstChild("ESP_Billboard")
+            if bill then bill:Destroy() end
+        end
+    end
+end
+
+local function createESP(p)
+    if p == LocalPlayer or not _G.ESP_Master then return end
+    local char = p.Character if not char then return end
+    local head = char:FindFirstChild("Head") if not head then return end
+
+    if not char:FindFirstChild("ESP_Highlight") then
+        local h = Instance.new("Highlight")
+        h.Name = "ESP_Highlight"
+        h.FillColor = _G.ESP_HighlightColor
+        h.OutlineColor = Color3.fromRGB(255, 255, 255)
+        h.FillTransparency = 0.55
+        h.OutlineTransparency = 0.1
+        h.Adornee = char
+        h.Parent = char
+    end
+
+    if not head:FindFirstChild("ESP_Billboard") then
+        local bill = Instance.new("BillboardGui")
+        bill.Name = "ESP_Billboard"
+        bill.AlwaysOnTop = true
+        bill.Size = UDim2.new(0, 200, 0, 160)
+        bill.StudsOffset = Vector3.new(0, 4.5, 0)
+        bill.Adornee = head
+        bill.Parent = head
+
+        local text = Instance.new("TextLabel", bill)
+        text.Name = "InfoLabel"
+        text.Size = UDim2.new(1, 0, 0, 130)
+        text.BackgroundTransparency = 1
+        text.TextStrokeTransparency = 0.1
+        text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        text.Font = Enum.Font.GothamBold
+        text.TextSize = _G.ESP_FontSize
+        text.TextColor3 = Color3.fromRGB(255, 255, 255)
+        text.RichText = true
+        text.TextYAlignment = Enum.TextYAlignment.Bottom
+
+        local barBG = Instance.new("Frame", bill)
+        barBG.Name = "HealthBarBG"
+        barBG.Size = UDim2.new(0, 110, 0, 5)
+        barBG.Position = UDim2.new(0.5, -55, 0, 140)
+        barBG.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        barBG.BorderSizePixel = 0
+        barBG.Visible = false
+
+        local cornerBG = Instance.new("UICorner")
+        cornerBG.CornerRadius = UDim.new(1, 0)
+        cornerBG.Parent = barBG
+
+        local barFG = Instance.new("Frame", barBG)
+        barFG.Name = "HealthBarFG"
+        barFG.Size = UDim2.new(1, 0, 1, 0)
+        barFG.BackgroundColor3 = Color3.fromRGB(0, 255, 130)
+        barFG.BorderSizePixel = 0
+
+        local cornerFG = Instance.new("UICorner")
+        cornerFG.CornerRadius = UDim.new(1, 0)
+        cornerFG.Parent = barFG
+    end
+end
+
+local function updateTracer(p, targetHRP)
+    if not _G.ESP_ShowTracers or not _G.ESP_Master then 
+        removeTracer(p)
+        return 
+    end
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if myHRP and targetHRP then
+        local startPos, startEv = Camera:WorldToViewportPoint(myHRP.Position)
+        local endPos, ev = Camera:WorldToViewportPoint(targetHRP.Position)
+        if ev and startEv then
+            local tr = Tracers[p] or Drawing.new("Line")
+            Tracers[p] = tr
+            tr.Visible = true
+            tr.From = Vector2.new(startPos.X, startPos.Y)
+            tr.To = Vector2.new(endPos.X, endPos.Y)
+            tr.Color = _G.ESP_TracerColor
+            tr.Thickness = 1.8
+            tr.Transparency = 0.75
+        else
+            removeTracer(p)
+        end
+    else
+        removeTracer(p)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.ESP_Master then
+        espWasActive = true
+        local now = os.clock()
+        local updateText = (now - _G.ESP_LastTextUpdate) >= ESP_TEXT_INTERVAL
+        if updateText then _G.ESP_LastTextUpdate = now end
+
+        local players = Players:GetPlayers()
+        local localChar = LocalPlayer.Character
+        local myHRP = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+        for _, p in ipairs(players) do
+            if p ~= LocalPlayer and p.Character then
+                local char = p.Character
+                local head = char:FindFirstChild("Head")
+                local hrp2 = char:FindFirstChild("HumanoidRootPart")
+                local hum2 = char:FindFirstChildOfClass("Humanoid")
+
+                if head and hrp2 and hum2 then
+                    createESP(p)
+
+                    local bill = head:FindFirstChild("ESP_Billboard")
+                    local h = char:FindFirstChild("ESP_Highlight")
+
+                    if bill and h then
+                        local info = bill:FindFirstChild("InfoLabel")
+                        local barBG = bill:FindFirstChild("HealthBarBG")
+                        local barFG = barBG and barBG:FindFirstChild("HealthBarFG")
+
+                        if updateText then
+                            local display = ""
+
+                            if _G.ESP_ShowName then 
+                                display = display .. "<b>" .. p.Name .. "</b>\n" 
+                            end
+
+                            espTextCache[p] = display
+                            if info then 
+                                info.Text = display 
+                                info.TextSize = _G.ESP_FontSize
+                            end
+                        elseif info and espTextCache[p] then
+                            info.Text = espTextCache[p]
+                            info.TextSize = _G.ESP_FontSize
+                        end
+
+                        local hpText = ""
+                        if _G.ESP_ShowHealth then 
+                            hpText = '<font color="#FFFFFF">HP: ' .. math.floor(hum2.Health) .. "/" .. math.floor(hum2.MaxHealth) .. '</font> '
+                        end
+
+                        local distText = ""
+                        if _G.ESP_ShowDistance and myHRP then 
+                            distText = '<font color="#FFFFFF">[' .. math.floor((myHRP.Position - hrp2.Position).Magnitude) .. 'm]</font>' 
+                        end
+
+                        if info and (_G.ESP_ShowHealth or _G.ESP_ShowDistance) then
+                            info.Text = (espTextCache[p] or "") .. hpText .. distText .. "\n"
+                        end
+
+                        if barBG and barFG then
+                            if _G.ESP_ShowHealth then
+                                barBG.Visible = true
+                                local hpPercent = math.clamp(hum2.Health / hum2.MaxHealth, 0, 1)
+                                barFG.Size = UDim2.fromScale(hpPercent, 1)
+
+                                if hpPercent > 0.5 then
+                                    barFG.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent) * 2, 255, 50)
+                                else
+                                    barFG.BackgroundColor3 = Color3.fromRGB(255, 255 * hpPercent * 2, 50)
+                                end
+                            else
+                                barBG.Visible = false
+                            end
+                        end
+                    end
+
+                    updateTracer(p, hrp2)
+                else
+                    removeESP(p)
+                end
+            else
+                removeESP(p)
+            end
+        end
+    elseif espWasActive then
+        espWasActive = false
+        espTextCache = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            removeESP(p)
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeESP(p)
+    local conn = _G.ESP_CharConns[p]
+    if conn then
+        conn:Disconnect()
+        _G.ESP_CharConns[p] = nil
+    end
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    if _G.ESP_CharConns[p] then
+        _G.ESP_CharConns[p]:Disconnect()
+    end
+    _G.ESP_CharConns[p] = p.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if _G.ESP_Master then createESP(p) end
+    end)
+end)
+
+if _G.ESP_Master then
+    for _, p in ipairs(Players:GetPlayers()) do
+        createESP(p)
+    end
+end
+
+--移除迷霧
 _G.ApplyRemoveFog = function()
     local layers = Lighting:FindFirstChild("LightingLayers")
     if layers then pcall(function() layers:Destroy() end) end
@@ -1202,6 +1451,7 @@ local Tabs = {
     Info = Window:Tab({ Title = "資訊", Icon = "info" }),
 		Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
 		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
+		ESP = Window:Tab({ Title = "ESP", Icon = "eye" }),
 		Graphics = Window:Tab({ Title = "畫質", Icon = "tv"}),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
@@ -1404,6 +1654,70 @@ Tabs.Heal:Toggle({
             stopAutoRevive()
         end
     end,
+})
+
+Tabs.ESP:Section({ Title = "ESP Players" })
+
+Tabs.ESP:Toggle({
+    Title = "ESP 主開關",
+    Type = "Checkbox",
+    Value = _G.ESP_Master,
+    Callback = function(v)
+        _G.ESP_Master = v
+        for _, p in ipairs(Players:GetPlayers()) do
+            if v then createESP(p) else removeESP(p) end
+        end
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示名稱",
+    Value = _G.ESP_ShowName,
+    Callback = function(v)
+        _G.ESP_ShowName = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示血量和血條",
+    Value = _G.ESP_ShowHealth,
+    Callback = function(v)
+        _G.ESP_ShowHealth = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示距離",
+    Value = _G.ESP_ShowDistance,
+    Callback = function(v)
+        _G.ESP_ShowDistance = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示射線",
+    Desc = "第三人稱才可顯示",
+    Value = _G.ESP_ShowTracers,
+    Callback = function(v)
+        _G.ESP_ShowTracers = v
+        if not v then
+            for _, p in ipairs(Players:GetPlayers()) do
+                removeTracer(p)
+            end
+        end
+    end
+})
+
+Tabs.ESP:Slider({
+    Title = "ESP 字體大小",
+    Value = {
+        Min = 10,
+        Max = 32,
+        Default = _G.ESP_FontSize
+    },
+    Callback = function(v)
+        _G.ESP_FontSize = v
+    end
 })
 
 Tabs.Graphics:Section({ Title = "畫質" })
