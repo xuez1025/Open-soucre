@@ -133,7 +133,17 @@ _G.ESP_FontSize       = 14
 _G.ESP_CharConns      = {}
 _G.ESP_LastTextUpdate = 0
 
-Tracers = {}
+--ESP Monsters
+_G.MobESP_Master         = false
+_G.MobESP_ShowName       = false
+_G.MobESP_ShowDistance   = false
+_G.MobESP_ShowHealth     = false
+_G.MobESP_ShowState      = false
+_G.MobESP_ShowTracers    = false
+_G.MobESP_TracerColor    = Color3.fromRGB(255, 0, 0)
+_G.MobESP_HighlightColor = Color3.fromRGB(255, 0, 0)
+_G.MobESP_FontSize       = 14
+_G.MobESP_LastTextUpdate = 0
 
 -- 移除迷霧
 _G.RemoveFogEnabled = false
@@ -182,6 +192,7 @@ local ConfigKeys = {
 		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
     "AutoReviveEnabled",
 		"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_FontSize",
+		"MobESP_Master", "MobESP_ShowName", "MobESP_ShowDistance", "MobESP_ShowHealth", "MobESP_ShowState", "MobESP_ShowTracers", "MobESP_FontSize",
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
@@ -1127,6 +1138,7 @@ end
 --ESP Players
 ESP_TEXT_INTERVAL = 0.2
 espTextCache = {}
+Tracers = {}
 espWasActive = false
 
 local function removeTracer(p)
@@ -1354,6 +1366,302 @@ if _G.ESP_Master then
     for _, p in ipairs(Players:GetPlayers()) do
         createESP(p)
     end
+end
+
+--ESP Monsters
+local trackedNPCs = {}
+local mobTracers = {}
+local mobWasActive = false
+local mobTrackingActive = false
+local descendantConnection = nil
+local descendantUsers = 0
+local mobTextCache = {}
+local MOB_TEXT_INTERVAL = 0.2
+
+local function trackNPC(h)
+    local m = h.Parent
+    if m and m:IsA("Model") and not trackedNPCs[m] and not Players:GetPlayerFromCharacter(m) then
+        trackedNPCs[m] = h
+    end
+end
+
+local function startNPCTracking()
+    descendantUsers = descendantUsers + 1
+    if descendantUsers > 1 then return end
+    for _, o in ipairs(workspace:GetDescendants()) do
+        if o:IsA("Humanoid") then trackNPC(o) end
+    end
+    descendantConnection = workspace.DescendantAdded:Connect(function(o)
+        if o:IsA("Humanoid") then trackNPC(o) end
+    end)
+end
+
+local function stopNPCTracking()
+    if descendantUsers == 0 then return end
+    descendantUsers = descendantUsers - 1
+    if descendantUsers > 0 then return end
+    if descendantConnection then
+        descendantConnection:Disconnect()
+        descendantConnection = nil
+    end
+    table.clear(trackedNPCs)
+end
+
+local function getDistanceFromCamera(pos)
+    local cam = workspace.CurrentCamera
+    if not cam then return 0 end
+    return (pos - cam.CFrame.Position).Magnitude
+end
+
+local function getCharacterState(c)
+    local h = c:FindFirstChildOfClass("Humanoid")
+    if not h then return "未知" end
+    if h.Health <= 0 then return "死亡" end
+    if h.MoveDirection.Magnitude > 0 then return "移動中" end
+    return "靜止"
+end
+
+local function removeMobTracer(m)
+    if mobTracers[m] then
+        mobTracers[m].Visible = false
+        mobTracers[m]:Remove()
+        mobTracers[m] = nil
+    end
+end
+
+local function removeMobESP(m)
+    removeMobTracer(m)
+    if m then
+        local h = m:FindFirstChild("ESP_Highlight")
+        if h then h:Destroy() end
+        local head = m:FindFirstChild("Head") or m:FindFirstChild("HumanoidRootPart")
+        if head then
+            local bill = head:FindFirstChild("ESP_Billboard")
+            if bill then bill:Destroy() end
+        end
+    end
+end
+
+local function clearAllMobESP()
+    mobTrackingActive = false
+    stopNPCTracking()
+    for m, _ in pairs(trackedNPCs) do
+        removeMobESP(m)
+    end
+    table.clear(trackedNPCs)
+    for m, _ in pairs(mobTracers) do
+        removeMobTracer(m)
+    end
+    mobTextCache = {}
+    -- 徹底清除workspace中所有殘留的ESP物件，確保即開即關
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "ESP_Highlight" or obj.Name == "ESP_Billboard" then
+            obj:Destroy()
+        end
+    end
+end
+
+local function createMobESP(m, h)
+    if not _G.MobESP_Master then return end
+    local hrp = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Head")
+    if not hrp then return end
+
+    if not m:FindFirstChild("ESP_Highlight") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "ESP_Highlight"
+        hl.Adornee = m
+        hl.FillColor = _G.MobESP_HighlightColor
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0.3
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = m
+    end
+
+    local head = m:FindFirstChild("Head") or hrp
+    if not head:FindFirstChild("ESP_Billboard") then
+        local bill = Instance.new("BillboardGui")
+        bill.Name = "ESP_Billboard"
+        bill.AlwaysOnTop = true
+        bill.Size = UDim2.new(0, 200, 0, 160)
+        bill.StudsOffset = Vector3.new(0, 4.5, 0)
+        bill.Adornee = head
+        bill.Parent = head
+
+        local text = Instance.new("TextLabel", bill)
+        text.Name = "InfoLabel"
+        text.Size = UDim2.new(1, 0, 0, 130)
+        text.BackgroundTransparency = 1
+        text.TextStrokeTransparency = 0.1
+        text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        text.Font = Enum.Font.GothamBold
+        text.TextSize = _G.MobESP_FontSize
+        text.TextColor3 = Color3.fromRGB(255, 255, 255)
+        text.RichText = true
+        text.TextYAlignment = Enum.TextYAlignment.Bottom
+
+        local barBG = Instance.new("Frame", bill)
+        barBG.Name = "HealthBarBG"
+        barBG.Size = UDim2.new(0, 110, 0, 5)
+        barBG.Position = UDim2.new(0.5, -55, 0, 140)
+        barBG.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        barBG.BorderSizePixel = 0
+        barBG.Visible = false
+
+        local cornerBG = Instance.new("UICorner")
+        cornerBG.CornerRadius = UDim.new(1, 0)
+        cornerBG.Parent = barBG
+
+        local barFG = Instance.new("Frame", barBG)
+        barFG.Name = "HealthBarFG"
+        barFG.Size = UDim2.new(1, 0, 1, 0)
+        barFG.BackgroundColor3 = Color3.fromRGB(0, 255, 130)
+        barFG.BorderSizePixel = 0
+
+        local cornerFG = Instance.new("UICorner")
+        cornerFG.CornerRadius = UDim.new(1, 0)
+        cornerFG.Parent = barFG
+    end
+end
+
+local function updateMobTracer(m, targetHRP)
+    if not _G.MobESP_ShowTracers or not _G.MobESP_Master then 
+        removeMobTracer(m)
+        return 
+    end
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if myHRP and targetHRP then
+        local startPos, startEv = Camera:WorldToViewportPoint(myHRP.Position)
+        local endPos, ev = Camera:WorldToViewportPoint(targetHRP.Position)
+        if ev and startEv then
+            local tr = mobTracers[m] or Drawing.new("Line")
+            mobTracers[m] = tr
+            tr.Visible = true
+            tr.From = Vector2.new(startPos.X, startPos.Y)
+            tr.To = Vector2.new(endPos.X, endPos.Y)
+            tr.Color = _G.MobESP_TracerColor
+            tr.Thickness = 1.8
+            tr.Transparency = 0.75
+        else
+            removeMobTracer(m)
+        end
+    else
+        removeMobTracer(m)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not _G.MobESP_Master then
+        if mobWasActive then
+            mobWasActive = false
+            clearAllMobESP()
+        end
+        return
+    end
+
+    mobWasActive = true
+    if not mobTrackingActive then
+        mobTrackingActive = true
+        startNPCTracking()
+    end
+
+    local now = os.clock()
+    local updateText = (now - _G.MobESP_LastTextUpdate) >= MOB_TEXT_INTERVAL
+    if updateText then _G.MobESP_LastTextUpdate = now end
+
+    local localChar = LocalPlayer.Character
+    local myHRP = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+    for m, h in pairs(trackedNPCs) do
+        if not _G.MobESP_Master then break end
+        if not m.Parent or h.Health <= 0 then
+            removeMobESP(m)
+            trackedNPCs[m] = nil
+        else
+            local hrp = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChild("Head")
+            local hum = h
+            if hrp and hum then
+                createMobESP(m, hum)
+
+                local hl = m:FindFirstChild("ESP_Highlight")
+                if hl then
+                    hl.FillColor = _G.MobESP_HighlightColor
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                end
+
+                local head = m:FindFirstChild("Head") or hrp
+                local bill = head:FindFirstChild("ESP_Billboard")
+                if bill then
+                    local info = bill:FindFirstChild("InfoLabel")
+                    local barBG = bill:FindFirstChild("HealthBarBG")
+                    local barFG = barBG and barBG:FindFirstChild("HealthBarFG")
+
+                    if updateText then
+                        local display = ""
+                        if _G.MobESP_ShowName then
+                            local nameStr = m:GetAttribute("EntityName") or m.Name
+                            display = display .. "<b>" .. nameStr .. "</b>\n"
+                        end
+                        mobTextCache[m] = display
+                        if info then
+                            info.Text = display
+                            info.TextSize = _G.MobESP_FontSize
+                        end
+                    elseif info and mobTextCache[m] then
+                        info.Text = mobTextCache[m]
+                        info.TextSize = _G.MobESP_FontSize
+                    end
+
+                    local hpText = ""
+                    if _G.MobESP_ShowHealth then
+                        hpText = '<font color="#FFFFFF">HP: ' .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth) .. '</font> '
+                    end
+
+                    local distText = ""
+                    if _G.MobESP_ShowDistance and myHRP then
+                        distText = '<font color="#FFFFFF">[' .. math.floor((myHRP.Position - hrp.Position).Magnitude) .. 'm]</font>'
+                    end
+
+                    local stateText = ""
+                    if _G.MobESP_ShowState then
+                        stateText = '<font color="#FFFFFF">狀態: ' .. getCharacterState(m) .. '</font>'
+                    end
+
+                    if info and (_G.MobESP_ShowHealth or _G.MobESP_ShowDistance or _G.MobESP_ShowState) then
+                        local details = {}
+                        if _G.MobESP_ShowHealth then table.insert(details, hpText) end
+                        if _G.MobESP_ShowDistance then table.insert(details, distText) end
+                        if _G.MobESP_ShowState then table.insert(details, stateText) end
+                        info.Text = (mobTextCache[m] or "") .. table.concat(details, " | ") .. "\n"
+                    end
+
+                    if barBG and barFG then
+                        if _G.MobESP_ShowHealth then
+                            barBG.Visible = true
+                            local hpPercent = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                            barFG.Size = UDim2.fromScale(hpPercent, 1)
+
+                            if hpPercent > 0.5 then
+                                barFG.BackgroundColor3 = Color3.fromRGB(255 * (1 - hpPercent) * 2, 255, 50)
+                            else
+                                barFG.BackgroundColor3 = Color3.fromRGB(255, 255 * hpPercent * 2, 50)
+                            end
+                        else
+                            barBG.Visible = false
+                        end
+                    end
+                end
+
+                updateMobTracer(m, hrp)
+            else
+                removeMobESP(m)
+            end
+        end
+    end
+end)
+
+if _G.MobESP_Master then
+    startNPCTracking()
 end
 
 --移除迷霧
@@ -1659,7 +1967,7 @@ Tabs.Heal:Toggle({
 Tabs.ESP:Section({ Title = "ESP Players" })
 
 Tabs.ESP:Toggle({
-    Title = "ESP 主開關",
+    Title = "ESP 玩家主開關",
     Type = "Checkbox",
     Value = _G.ESP_Master,
     Callback = function(v)
@@ -1717,6 +2025,81 @@ Tabs.ESP:Slider({
     },
     Callback = function(v)
         _G.ESP_FontSize = v
+    end
+})
+
+Tabs.ESP:Section({ Title = "ESP Monsters" })
+
+Tabs.ESP:Toggle({
+    Title = "ESP 怪物主開關",
+    Type = "Checkbox",
+    Value = _G.MobESP_Master,
+    Callback = function(v)
+        _G.MobESP_Master = v
+        if not v then
+            stopNPCTracking()
+            for m, _ in pairs(trackedNPCs) do
+                removeMobESP(m)
+            end
+        end
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示名稱",
+    Value = _G.MobESP_ShowName,
+    Callback = function(v)
+        _G.MobESP_ShowName = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示血量和血條",
+    Value = _G.MobESP_ShowHealth,
+    Callback = function(v)
+        _G.MobESP_ShowHealth = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示距離",
+    Value = _G.MobESP_ShowDistance,
+    Callback = function(v)
+        _G.MobESP_ShowDistance = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示狀態",
+    Value = _G.MobESP_ShowState,
+    Callback = function(v)
+        _G.MobESP_ShowState = v
+    end
+})
+
+Tabs.ESP:Toggle({
+    Title = "顯示射線",
+    Desc = "第三人稱才可顯示",
+    Value = _G.MobESP_ShowTracers,
+    Callback = function(v)
+        _G.MobESP_ShowTracers = v
+        if not v then
+            for m, _ in pairs(trackedNPCs) do
+                removeMobTracer(m)
+            end
+        end
+    end
+})
+
+Tabs.ESP:Slider({
+    Title = "怪物 ESP 字體大小",
+    Value = {
+        Min = 10,
+        Max = 32,
+        Default = _G.MobESP_FontSize
+    },
+    Callback = function(v)
+        _G.MobESP_FontSize = v
     end
 })
 
