@@ -92,6 +92,9 @@ end)
 _G.ClockDisplay_ENABLED = false
 _G.ClockDisplay_Scale = 1
 
+-- 啟用第三人稱
+_G.ForceThirdPersonEnabled = false
+
 -- 二段跳
 _G.DoubleJumpEnabled = false
 
@@ -155,6 +158,7 @@ local ConfigDirty = false
 
 local ConfigKeys = {
 		"ClockDisplay_ENABLED", "ClockDisplay_Scale",
+		"ForceThirdPersonEnabled",
 		"DoubleJumpEnabled",
 		"InstantPrompts",
 		"NoclipEnabled",
@@ -458,6 +462,62 @@ end
 
 if _G.ClockDisplay_ENABLED then
     startClockDisplay()
+end
+
+--啟用第三人稱
+local thirdPersonConnection
+local thirdPersonOriginal
+local cameraModule
+
+local function getCameraController()
+    if cameraModule == nil then
+        local ok, m = pcall(function()
+            return require(ReplicatedStorage.Shared.Universe.Camera)
+        end)
+        cameraModule = ok and m or false
+    end
+    return cameraModule and cameraModule.Instance or nil
+end
+
+local function stopThirdPerson()
+    if thirdPersonConnection then
+        thirdPersonConnection:Disconnect()
+        thirdPersonConnection = nil
+    end
+
+    workspace:SetAttribute("IsThirdpersonAllowed", thirdPersonOriginal)
+
+    local c = getCameraController()
+    if c then
+        c:DoZoom(0, true)
+    end
+end
+
+local function startThirdPerson()
+    stopThirdPerson()
+
+    local c = getCameraController()
+    if not c then return false end
+
+    thirdPersonOriginal = workspace:GetAttribute("IsThirdpersonAllowed")
+
+    workspace:SetAttribute("IsThirdpersonAllowed", true)
+
+    if c.Zoom < c.MinZoom then
+        c:DoZoom(12, true)
+    end
+
+    thirdPersonConnection = RunService.Heartbeat:Connect(function()
+        if workspace:GetAttribute("IsThirdpersonAllowed") ~= true then
+            workspace:SetAttribute("IsThirdpersonAllowed", true)
+        end
+    end)
+
+    return true
+end
+
+if _G.ForceThirdPersonEnabled then
+    startThirdPerson()
 end
 
 --二段跳
@@ -1197,6 +1257,21 @@ Tabs.Info:Slider({
 })
 
 Tabs.Function:Section({ Title = "功能" })
+
+Tabs.Function:Toggle({
+    Title = "啟用第三人稱",
+    Value = _G.ForceThirdPersonEnabled,
+    Callback = function(v)
+        _G.ForceThirdPersonEnabled = v
+        if v then
+            if not startThirdPerson() then
+                WindUI:Notify({ Title = "第三人稱", Content = "找不到遊戲攝影機", Duration = 3 })
+            end
+        else
+            stopThirdPerson()
+        end
+    end,
+})
 
 Tabs.Function:Toggle({
     Title = "二段跳",
