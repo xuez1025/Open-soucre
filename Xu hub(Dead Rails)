@@ -14,7 +14,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
-local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 
@@ -83,6 +82,10 @@ local Window = WindUI:CreateWindow({
 
 --UI被關閉可重複執行
 Window:OnDestroy(function()
+    pcall(function() RunService:UnbindFromRenderStep("DaraHubAimbot") end)
+    if PlayerGui:FindFirstChild("DaraAimbotFOV") then
+        PlayerGui.DaraAimbotFOV:Destroy()
+    end
     getgenv().DeadRailsLoaded = nil
 end)
 
@@ -105,6 +108,9 @@ _G.InstantPrompts = false
 -- 穿牆
 _G.NoclipEnabled = false
 
+-- 傳送到馬匹
+_G.AutoTeleportHorse_ENABLED = false
+
 --飛行(Only Riding)
 _G.VehicleFlyEnabled = false
 _G.vflySpeed = 5
@@ -120,6 +126,15 @@ _G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
 
 -- 自動救隊友
 _G.AutoReviveEnabled = false
+
+-- 輔助自瞄
+_G.AimbotEnabled = false
+_G.AimbotPart = "Head"
+_G.AimbotSmoothness = 5
+_G.AimbotWallCheck = false
+_G.AimShowFov = false
+_G.AimFovRadius = 100
+_G.AimFovColor = Color3.fromRGB(255, 255, 255)
 
 --ESP Players
 _G.ESP_Master         = false
@@ -201,6 +216,8 @@ local ConfigKeys = {
 		"RemoveBandageCooldown_ENABLED",
 		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
     "AutoReviveEnabled",
+		"AimbotEnabled", "AimbotPart", "AimbotSmoothness", "AimbotWallCheck",
+		"AimShowFov", "AimFovRadius",
 		"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_FontSize",
 		"MobESP_Master", "MobESP_ShowName", "MobESP_ShowDistance", "MobESP_ShowHealth", "MobESP_ShowState", "MobESP_ShowTracers", "MobESP_FontSize",
 		"RemoveFogEnabled",
@@ -760,6 +777,65 @@ if _G.NoclipEnabled then
     SetNoclip(true)
 end
 
+--傳送到馬匹
+local function GetDirectModelHorse()
+	for _, child in ipairs(workspace:GetChildren()) do
+		if child.Name == "Model_Horse" and not child:IsA("Folder") then
+			return child
+		end
+	end
+	return nil
+end
+
+local function TeleportToModelHorse()
+	local target = GetDirectModelHorse()
+	if not target then
+		WindUI:Notify({
+			Title = "提示",
+			Content = "找不到馴服馬匹",
+			Duration = 3
+		})
+		return
+	end
+
+	local character = LocalPlayer.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		WindUI:Notify({
+			Title = "提示",
+			Content = "角色尚未載入完成",
+			Duration = 3
+		})
+		return
+	end
+
+	local targetCFrame
+	if target:IsA("Model") then
+		targetCFrame = target:GetPivot()
+	elseif target:IsA("BasePart") then
+		targetCFrame = target.CFrame
+	end
+
+	if targetCFrame then
+		hrp.CFrame = targetCFrame * CFrame.new(0, 3, 0)
+		WindUI:Notify({
+			Title = "成功",
+			Content = "傳送至馴服馬匹",
+			Duration = 3
+		})
+	else
+		WindUI:Notify({
+			Title = "提示",
+			Content = "無馴服馬匹",
+			Duration = 3
+		})
+	end
+end
+
+if _G.AutoTeleportHorse_ENABLED then
+	TeleportToModelHorse()
+end
+
 --飛行(Only Riding)
 local vflyConnection
 local vflyKeyDown
@@ -887,6 +963,135 @@ end)
 
 if LocalPlayer.Character then
     setupCharacter(LocalPlayer.Character)
+end
+
+-- 輔助自瞄
+local aimTracking = false
+local aimBound = false
+local fovGui, fovCircle, fovStroke
+
+local function updateFovCircle()
+    if not _G.AimShowFov then
+        if fovGui then fovGui.Enabled = false end
+        return
+    end
+    if not fovGui or not fovGui.Parent then
+        fovGui = Instance.new("ScreenGui")
+        fovGui.Name = "DaraAimbotFOV"
+        fovGui.ResetOnSpawn = false
+        fovGui.IgnoreGuiInset = true
+        fovGui.Parent = PlayerGui
+
+        fovCircle = Instance.new("Frame")
+        fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+        fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+        fovCircle.BackgroundTransparency = 1
+        fovCircle.BorderSizePixel = 0
+        fovCircle.Parent = fovGui
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = fovCircle
+        fovStroke = Instance.new("UIStroke")
+        fovStroke.Thickness = 2
+        fovStroke.Parent = fovCircle
+    end
+    fovGui.Enabled = true
+    fovCircle.Size = UDim2.fromOffset(_G.AimFovRadius * 2, _G.AimFovRadius * 2)
+    fovStroke.Color = _G.AimFovColor
+end
+
+local function syncAimbotTracking()
+    if _G.AimbotEnabled and not aimTracking then
+        aimTracking = true
+        startNPCTracking()
+    elseif not _G.AimbotEnabled and aimTracking then
+        aimTracking = false
+        stopNPCTracking()
+    end
+end
+
+local function selectAimPart(model)
+    if _G.AimbotPart == "Head" then
+        return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+    elseif _G.AimbotPart == "Legs" then
+        return model:FindFirstChild("LowerTorso") or model:FindFirstChild("Left Leg") or model:FindFirstChild("HumanoidRootPart")
+    end
+    return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
+end
+
+local function isAimVisible(cam, part, model)
+    if not _G.AimbotWallCheck then return true end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { model, Character }
+    local origin = cam.CFrame.Position
+    return workspace:Raycast(origin, part.Position - origin, params) == nil
+end
+
+local function evaluateAimTarget(cam, center, model, humanoid)
+    if not model.Parent or not humanoid or humanoid.Health <= 0 then return nil end
+    local part = selectAimPart(model)
+    if not part then return nil end
+    local screen, onScreen = cam:WorldToViewportPoint(part.Position)
+    if not onScreen then return nil end
+    local distance = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+    if distance > _G.AimFovRadius or not isAimVisible(cam, part, model) then return nil end
+    return part, distance
+end
+
+local function aimStep(dt)
+    if not _G.AimbotEnabled then return end
+    local controller = getCameraController()
+    local cam = workspace.CurrentCamera
+    if not controller or not cam or not controller.Rotations or not controller.Rotations.MouseLook then return end
+    if not Humanoid or Humanoid.Health <= 0 then return end
+
+    local center = cam.ViewportSize / 2
+    local bestPart, bestDistance
+    for model, humanoid in pairs(trackedNPCs) do
+        local part, distance = evaluateAimTarget(cam, center, model, humanoid)
+        if part and (not bestDistance or distance < bestDistance) then
+            bestPart, bestDistance = part, distance
+        end
+    end
+    if not bestPart then return end
+
+    local offset = bestPart.Position - controller:GetPositionCharacter()
+    if offset.Magnitude < 0.001 then return end
+    local direction = offset.Unit
+    local targetPitch = math.deg(math.asin(math.clamp(direction.Y, -1, 1)))
+    local targetYaw = math.deg(math.atan2(-direction.X, -direction.Z))
+    local current = controller.Rotations.MouseLook
+    local yawDelta = ((targetYaw - current.Y + 180) % 360) - 180
+    local pitchDelta = targetPitch - current.X
+    local factor = math.clamp(1 - (_G.AimbotSmoothness / 20), 0.001, 1)
+    local alpha = math.clamp(factor * math.min(dt * 60, 1), 0, 1)
+    controller.Rotations.MouseLook = Vector3.new(
+        math.clamp(current.X + pitchDelta * alpha, -80, 80),
+        current.Y + yawDelta * alpha,
+        current.Z
+    )
+end
+
+local function startAimbot()
+    if aimBound then return end
+    aimBound = true
+    RunService:BindToRenderStep("DaraHubAimbot", Enum.RenderPriority.Camera.Value - 2, aimStep)
+end
+
+local function stopAimbot()
+    if not aimBound then return end
+    aimBound = false
+    pcall(function() RunService:UnbindFromRenderStep("DaraHubAimbot") end)
+end
+
+if _G.AimbotEnabled then
+    startAimbot()
+    syncAimbotTracking()
+end
+if _G.AimShowFov then
+    updateFovCircle()
 end
 
 -- 移除繃帶冷卻
@@ -1495,7 +1700,6 @@ local function clearAllMobESP()
         removeMobTracer(m)
     end
     mobTextCache = {}
-    -- 徹底清除workspace中所有殘留的ESP物件，確保即開即關
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "ESP_Highlight" or obj.Name == "ESP_Billboard" then
             obj:Destroy()
@@ -2159,6 +2363,14 @@ _G.ToggleFogService = function(enable)
     end
 end
 
+task.spawn(function()
+    while task.wait() do
+        if _G.RemoveFogEnabled then
+            _G.ApplyRemoveFog()
+        end
+    end
+end)
+
 if _G.RemoveFogEnabled then
     _G.ToggleFogService(true)
 end
@@ -2221,6 +2433,7 @@ end
 local Tabs = {
     Info = Window:Tab({ Title = "資訊", Icon = "info" }),
 		Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
+		Aimbot = Window:Tab({ Title = "自瞄", Icon = "swords" }),
 		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
 		ESP = Window:Tab({ Title = "ESP", Icon = "eye" }),
 		Graphics = Window:Tab({ Title = "畫質", Icon = "tv"}),
@@ -2325,6 +2538,13 @@ Tabs.Function:Toggle({
 
 Tabs.Function:Divider()
 
+Tabs.Function:Button({
+	Title = "傳送最近馴服馬匹",
+	Callback = function(v)
+		TeleportToModelHorse()
+	end
+})
+
 Tabs.Function:Toggle({
     Title = "飛行(Only Riding)",
     Value = _G.VehicleFlyEnabled,
@@ -2348,7 +2568,62 @@ Tabs.Function:Slider({
     end,
 })
 
-Tabs.Function:Divider()
+Tabs.Aimbot:Section({ Title = "輔助自瞄" })
+
+local AimbotToggle = Tabs.Aimbot:Toggle({
+    Title = "啟用自瞄",
+    Value = _G.AimbotEnabled,
+    Callback = function(v)
+        if v and not getCameraController() then
+            WindUI:Notify({ Title = "自瞄", Content = "找不到遊戲攝影機", Duration = 3 })
+            AimbotToggle:Set(false)
+            return
+        end
+        _G.AimbotEnabled = v
+        if v then startAimbot() else stopAimbot() end
+        syncAimbotTracking()
+    end,
+})
+
+Tabs.Aimbot:Dropdown({
+    Title = "瞄準部位",
+    Values = { "Head", "Body", "Legs" },
+    Value = _G.AimbotPart,
+    Callback = function(v) _G.AimbotPart = v end,
+})
+
+Tabs.Aimbot:Slider({
+    Title = "平滑度",
+    Desc = "數值越高，轉向越平滑",
+    Step = 1,
+    Value = { Min = 1, Max = 15, Default = _G.AimbotSmoothness },
+    Callback = function(v) _G.AimbotSmoothness = tonumber(v) or 5 end,
+})
+
+Tabs.Aimbot:Toggle({
+    Title = "牆壁檢測",
+    Value = _G.AimbotWallCheck,
+    Callback = function(v) _G.AimbotWallCheck = v end,
+})
+
+Tabs.Aimbot:Toggle({
+    Title = "顯示視野圓圈",
+    Value = _G.AimShowFov,
+    Callback = function(v)
+        _G.AimShowFov = v
+        updateFovCircle()
+    end,
+})
+
+Tabs.Aimbot:Slider({
+    Title = "視野半徑",
+    Step = 1,
+    Value = { Min = 10, Max = 1000, Default = _G.AimFovRadius },
+    Callback = function(v)
+        _G.AimFovRadius = tonumber(v) or 100
+        updateFovCircle()
+    end,
+})
 
 Tabs.Heal:Section({ Title = "治療" })
 
