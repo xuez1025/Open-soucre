@@ -83,6 +83,7 @@ local Window = WindUI:CreateWindow({
 --UI被關閉可重複執行
 Window:OnDestroy(function()
     pcall(function() RunService:UnbindFromRenderStep("DaraHubAimbot") end)
+    pcall(function() RunService:UnbindFromRenderStep("DaraHubAutoPilot") end)
     if PlayerGui:FindFirstChild("DaraAimbotFOV") then
         PlayerGui.DaraAimbotFOV:Destroy()
     end
@@ -115,17 +116,8 @@ _G.AutoTeleportHorse_ENABLED = false
 _G.VehicleFlyEnabled = false
 _G.vflySpeed = 5
 
--- 移除繃帶冷卻
-_G.RemoveBandageCooldown_ENABLED = false
-
--- 自動治療
-_G.AutoHealEnabled = false
-_G.HealMinHealth = 50
-_G.HealDelay = 1
-_G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
-
--- 自動救隊友
-_G.AutoReviveEnabled = false
+--自動駕駛
+_G.AutoPilotEnabled = false
 
 -- 輔助自瞄
 _G.AimbotEnabled = false
@@ -138,6 +130,18 @@ _G.AimFovColor = Color3.fromRGB(255, 255, 255)
 
 --自動換彈
 _G.AutoReloadEnabled = false
+
+-- 移除繃帶冷卻
+_G.RemoveBandageCooldown_ENABLED = false
+
+-- 自動治療
+_G.AutoHealEnabled = false
+_G.HealMinHealth = 50
+_G.HealDelay = 1
+_G.HealSelected = { ["Bandage"] = true, ["Snake Oil"] = true }
+
+-- 自動救隊友
+_G.AutoReviveEnabled = false
 
 --ESP Players
 _G.ESP_Master         = false
@@ -196,6 +200,10 @@ local ScriptLoadstring = [[if isfile("DeadRails.file") then
     end
 end]]
 
+-- Anti AFK
+_G.AntiAFK_ENABLED = true
+_G.AntiAFK_Connection = nil
+
 --快捷鍵
 _G.CurrentKey = "G"
 _G.KeyDisabled = false
@@ -216,6 +224,7 @@ local ConfigKeys = {
 		"InstantPrompts",
 		"NoclipEnabled",
 		"VehicleFlyEnabled", "vflySpeed",
+		"AutoPilotEnabled",
 		"RemoveBandageCooldown_ENABLED",
 		"AutoHealEnabled", "HealMinHealth", "HealDelay", "HealSelected",
     "AutoReviveEnabled",
@@ -227,6 +236,7 @@ local ConfigKeys = {
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
+		"AntiAFK_ENABLED",
     "CurrentKey",
     "KeyDisabled"
 }
@@ -995,6 +1005,102 @@ end)
 
 if LocalPlayer.Character then
     setupCharacter(LocalPlayer.Character)
+end
+
+--自動駕駛
+local autopilotControls = nil
+local autopilotPatched = setmetatable({}, { __mode = "k" })
+
+local function isSitting()
+    return Humanoid ~= nil
+        and Humanoid.Health > 0
+        and Humanoid.Sit
+        and Humanoid.SeatPart ~= nil
+end
+
+local function patchAutopilotController(controller)
+    if not controller or autopilotPatched[controller] then return end
+    autopilotPatched[controller] = true
+
+    local originalGetMoveVector = controller.GetMoveVector
+    controller.GetMoveVector = function(self, ...)
+        local moveVector = originalGetMoveVector(self, ...)
+
+        if not _G.AutoPilotEnabled or not isSitting() then
+            return moveVector
+        end
+
+        if not self:IsMoveVectorCameraRelative() then
+            return moveVector
+        end
+
+        if moveVector.Magnitude > 0 then
+            return moveVector
+        end
+
+        return Vector3.new(0, 0, -1)
+    end
+end
+
+local function stopAutopilot()
+    _G.AutoPilotEnabled = false
+    pcall(function()
+        RunService:UnbindFromRenderStep("DaraHubAutoPilot")
+    end)
+end
+
+local function startAutopilot()
+    if not autopilotControls then
+        local ok, controls = pcall(function()
+            local playerModule = LocalPlayer:WaitForChild("PlayerScripts")
+                :WaitForChild("PlayerModule", 5)
+            return require(playerModule):GetControls()
+        end)
+
+        if not ok or not controls then
+            return false
+        end
+        autopilotControls = controls
+    end
+
+    pcall(function()
+        RunService:UnbindFromRenderStep("DaraHubAutoPilot")
+    end)
+
+    RunService:BindToRenderStep(
+        "DaraHubAutoPilot",
+        Enum.RenderPriority.Input.Value - 1,
+        function()
+            local ok, controller = pcall(function()
+                return autopilotControls:GetActiveController()
+            end)
+            if ok then
+                patchAutopilotController(controller)
+            end
+        end
+    )
+
+    _G.AutoPilotEnabled = true
+    return true
+end
+
+local function setAutopilot(state)
+    if state then
+        if not startAutopilot() then
+            _G.AutoPilotEnabled = false
+            WindUI:Notify({
+                Title = "自動駕駛",
+                Content = "無法載入控制模組",
+                Duration = 3
+            })
+        end
+    else
+        stopAutopilot()
+    end
+end
+
+if _G.AutoPilotEnabled then
+    setAutopilot(true)
 end
 
 -- 輔助自瞄
@@ -2534,6 +2640,36 @@ if _G.AutoExecute and queue_func then
     queue_func(ScriptLoadstring)
 end
 
+-- Anti AFK
+local function EnableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+
+    if getconnections then
+        for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
+            conn:Disable()
+        end
+    end
+
+    _G.AntiAFK_Connection = LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+
+local function DisableAntiAFK()
+    if _G.AntiAFK_Connection then
+        _G.AntiAFK_Connection:Disconnect()
+        _G.AntiAFK_Connection = nil
+    end
+end
+
+if _G.AntiAFK_ENABLED then
+    EnableAntiAFK()
+end
+
 --------------------------
 -- 分頁
 --------------------------
@@ -2643,7 +2779,7 @@ Tabs.Function:Toggle({
     end,
 })
 
-Tabs.Function:Divider()
+Tabs.Function:Section({ Title = "飛行" })
 
 Tabs.Function:Button({
 	Title = "傳送最近馴服馬匹",
@@ -2672,6 +2808,16 @@ Tabs.Function:Slider({
     Default = _G.vflySpeed,
     Callback = function(v)
         _G.vflySpeed = v
+    end,
+})
+
+Tabs.Function:Section({ Title = "自動駕駛" })
+
+Tabs.Function:Toggle({
+    Title = "自動駕駛",
+    Value = _G.AutoPilotEnabled,
+    Callback = function(v)
+        setAutopilot(v)
     end,
 })
 
@@ -3101,6 +3247,21 @@ Tabs.Settings:Toggle({
                 Duration = 3
             })
         end
+    end
+})
+
+Tabs.Settings:Divider()
+
+Tabs.Settings:Toggle({ 
+    Title    = "防掛機踢出", 
+    Value    = _G.AntiAFK_ENABLED,
+    Callback = function(v) 
+        _G.AntiAFK_ENABLED = v
+        if _G.AntiAFK_ENABLED then 
+            EnableAntiAFK() 
+        else 
+            DisableAntiAFK() 
+        end 
     end
 })
 
