@@ -119,6 +119,11 @@ _G.vflySpeed = 5
 --自動駕駛
 _G.AutoPilotEnabled = false
 
+-- 物品
+_G.ItemAuraEnabled = false
+_G.ItemAuraDelay = 0.1
+_G.ItemAuraSelected = {}
+
 -- 輔助自瞄
 _G.AimbotEnabled = false
 _G.AimbotPart = "Head"
@@ -237,6 +242,7 @@ local ConfigKeys = {
 		"LowCpuMode",
     "AutoExecute",
 		"AntiAFK_ENABLED",
+    "ItemAuraEnabled", "ItemAuraDelay", "ItemAuraSelected",
     "CurrentKey",
     "KeyDisabled"
 }
@@ -1103,6 +1109,222 @@ if _G.AutoPilotEnabled then
     setAutopilot(true)
 end
 
+local function normalizeName(n)
+    return (string.lower(n):gsub("[%s_]", ""))
+end
+
+-- 物品
+local ItemAuraAPI
+do
+local ItemAuraECS = nil
+local ItemAuraRunConnection = nil
+local ItemAuraBusy = false
+local ItemAuraNextRun = 0
+local ItemAuraTitleToId = {}
+local ItemAuraIdToTitle = {}
+
+local function LoadItemAuraECS()
+    local ok, result = pcall(function()
+        local universe = ReplicatedStorage.Shared.Universe
+        local value = {}
+        value.world = require(universe.ECS.world)
+        value.comps = require(universe.ECS.components)
+        value.replicator = require(ReplicatedStorage.Client.Universe.Replication.clientReplicator)
+        value.pickup = universe.Network.RemoteEvent.Pickup
+        return value
+    end)
+    if ok then
+        return result
+    end
+    return false
+end
+
+local function ItemAuraAllowed(objectId)
+    if next(_G.ItemAuraSelected) then
+        if _G.ItemAuraSelected[normalizeName(tostring(objectId))] then
+            return true
+        end
+        return false
+    end
+    return true
+end
+
+local function CollectItemAuraPass()
+    if not ItemAuraECS then
+        ItemAuraECS = LoadItemAuraECS()
+    end
+    if not ItemAuraECS then
+        return
+    end
+
+    local world = ItemAuraECS.world
+    local comps = ItemAuraECS.comps
+    local state = world:get_resource(comps.ClientStateResource)
+    local character = state and state.localCharacter
+    if not character then
+        return
+    end
+
+    local checked = 0
+    for entity in world:query(comps.Storable, comps.ObjectId) do
+        if not _G.ItemAuraEnabled then
+            return
+        end
+
+        local objectId = world:get(entity, comps.ObjectId)
+        if ItemAuraAllowed(objectId) and world:has(entity, comps.Pickupable) then
+            local serverEntity = ItemAuraECS.replicator:get_server_entity(entity)
+            if serverEntity and serverEntity ~= entity then
+                ItemAuraECS.pickup:FireServer(serverEntity)
+                if _G.ItemAuraDelay > 0 then
+                    task.wait(_G.ItemAuraDelay)
+                end
+            end
+        end
+
+        checked += 1
+        if checked % 20 == 0 then
+            task.wait()
+        end
+    end
+end
+
+local function EnableItemAura()
+    if ItemAuraRunConnection then
+        ItemAuraRunConnection:Disconnect()
+        ItemAuraRunConnection = nil
+    end
+    _G.ItemAuraEnabled = true
+    ItemAuraECS = LoadItemAuraECS()
+    if not ItemAuraECS then
+        _G.ItemAuraEnabled = false
+        WindUI:Notify({ Title = "物品", Content = "找不到遊戲物品模組", Duration = 3 })
+        return
+    end
+
+    ItemAuraRunConnection = RunService.Heartbeat:Connect(function()
+        if not ItemAuraRunConnection then
+            return
+        end
+        if _G.ItemAuraEnabled and not ItemAuraBusy and os.clock() >= ItemAuraNextRun then
+            ItemAuraBusy = true
+            ItemAuraNextRun = os.clock() + 0.25
+            task.spawn(function()
+                CollectItemAuraPass()
+                ItemAuraBusy = false
+            end)
+        end
+    end)
+end
+
+local function DisableItemAura()
+    _G.ItemAuraEnabled = false
+    if ItemAuraRunConnection then
+        ItemAuraRunConnection:Disconnect()
+        ItemAuraRunConnection = nil
+    end
+    ItemAuraBusy = false
+    ItemAuraNextRun = 0
+end
+
+local function GetItemAuraObjectFolder()
+    local ok, folder = pcall(function()
+        return ReplicatedStorage.Shared.Universe.Object.Objects
+    end)
+    if ok then
+        return folder
+    end
+    return false
+end
+
+local function BuildItemAuraComponentNames()
+    local names = {}
+    for key, value in pairs(ItemAuraECS.comps) do
+        names[value] = tostring(key)
+    end
+    return names
+end
+
+local function ReadItemAuraObject(module, names)
+    local loaded, data = pcall(require, module)
+    if not loaded or type(data) ~= "table" then
+        return false
+    end
+    if type(data.components) ~= "table" then
+        return false
+    end
+
+    local result = { id = module.Name, title = module.Name, pickupable = false }
+    for component, value in pairs(data.components) do
+        local name = names[component]
+        if name == "Pickupable" then
+            result.pickupable = true
+        elseif name == "Name" then
+            result.title = tostring(value)
+        end
+    end
+    if type(data.tags) == "table" then
+        for _, tag in pairs(data.tags) do
+            if names[tag] == "Pickupable" then
+                result.pickupable = true
+            end
+        end
+    end
+    return result
+end
+
+local function ScanItemAuraEntries()
+    local entries = {}
+    ItemAuraTitleToId = {}
+    ItemAuraIdToTitle = {}
+    if not ItemAuraECS then
+        ItemAuraECS = LoadItemAuraECS()
+    end
+    if not ItemAuraECS then
+        return entries
+    end
+
+    local folder = GetItemAuraObjectFolder()
+    if not folder then
+        return entries
+    end
+    local names = BuildItemAuraComponentNames()
+    for _, module in ipairs(folder:GetDescendants()) do
+        if module:IsA("ModuleScript") then
+            local item = ReadItemAuraObject(module, names)
+            if item and item.pickupable then
+                local title = item.title
+                if ItemAuraTitleToId[title] then
+                    title = title .. " (" .. item.id .. ")"
+                end
+                ItemAuraTitleToId[title] = item.id
+                ItemAuraIdToTitle[normalizeName(item.id)] = title
+                table.insert(entries, title)
+            end
+        end
+    end
+    table.sort(entries)
+    return entries
+end
+
+ItemAuraAPI = {
+    Enable = EnableItemAura,
+    Disable = DisableItemAura,
+    Scan = ScanItemAuraEntries,
+    GetTitleToId = function()
+        return ItemAuraTitleToId
+    end,
+    GetIdToTitle = function()
+        return ItemAuraIdToTitle
+    end,
+}
+
+if _G.ItemAuraEnabled then
+    ItemAuraAPI.Enable()
+end
+end
+
+
 -- 輔助自瞄
 local aimTracking = false
 local aimBound = false
@@ -1405,10 +1627,6 @@ local ITEM_RULES = {
     ["Snake Oil"] = { passTool = true,  equip = true  },
 }
 
-local function normalizeName(n)
-    return (string.lower(n):gsub("[%s_]", ""))
-end
-
 local function scanContainer(container, key)
     if not container then return nil end
     for _, ch in ipairs(container:GetChildren()) do
@@ -1596,6 +1814,8 @@ if _G.AutoReviveEnabled then
 end
 
 --ESP Players
+local PlayerESP = {}
+do
 ESP_TEXT_INTERVAL = 0.2
 espTextCache = {}
 Tracers = {}
@@ -1828,7 +2048,14 @@ if _G.ESP_Master then
     end
 end
 
+PlayerESP.createESP = createESP
+PlayerESP.removeESP = removeESP
+PlayerESP.removeTracer = removeTracer
+end
+
 --ESP Monsters
+local MobESP = {}
+do
 local trackedNPCs = {}
 local mobTracers = {}
 local mobWasActive = false
@@ -2123,7 +2350,16 @@ if _G.MobESP_Master then
     startNPCTracking()
 end
 
+MobESP.trackedNPCs = trackedNPCs
+MobESP.startNPCTracking = startNPCTracking
+MobESP.stopNPCTracking = stopNPCTracking
+MobESP.removeMobESP = removeMobESP
+MobESP.removeMobTracer = removeMobTracer
+end
+
 --ESP Items
+local ItemESP = {}
+do
 local itemCategoryColors = {}
 local function addItemCategory(color, names)
     for _, name in ipairs(names) do
@@ -2544,6 +2780,11 @@ if _G.ESP_ItemMaster then
     refreshItemESP()
 end
 
+ItemESP.itemTracers = itemTracers
+ItemESP.removeItemTracer = removeItemTracer
+ItemESP.refreshItemESP = refreshItemESP
+end
+
 --移除迷霧
 _G.ApplyRemoveFog = function()
     local layers = Lighting:FindFirstChild("LightingLayers")
@@ -2821,6 +3062,84 @@ Tabs.Function:Toggle({
     end,
 })
 
+Tabs.Function:Section({ Title = "物品" })
+
+local ItemAuraValues = ItemAuraAPI.Scan()
+local ItemAuraValue = {}
+for id in pairs(_G.ItemAuraSelected) do
+    local title = ItemAuraAPI.GetIdToTitle()[id]
+    if title then
+        table.insert(ItemAuraValue, title)
+    end
+end
+
+Tabs.Function:Toggle({
+    Title = "物品",
+    Desc = "撿起所有物品",
+    Value = _G.ItemAuraEnabled,
+    Callback = function(v)
+        _G.ItemAuraEnabled = v
+        if v then
+            ItemAuraAPI.Enable()
+        else
+            ItemAuraAPI.Disable()
+        end
+    end,
+})
+
+local ItemAuraDropdown = Tabs.Function:Dropdown({
+    Title = "物品篩選",
+    Desc = "空白=全部物品",
+    Values = ItemAuraValues,
+    Value = ItemAuraValue,
+    Multi = true,
+    AllowNone = true,
+    SearchBarEnabled = true,
+    Callback = function(v)
+        local selected = {}
+        for _, title in ipairs(v) do
+            local id = ItemAuraAPI.GetTitleToId()[title]
+            if id then
+                selected[normalizeName(id)] = true
+            end
+        end
+        _G.ItemAuraSelected = selected
+    end,
+})
+
+Tabs.Function:Button({
+    Title = "刷新物品清單",
+    Callback = function()
+        local values = ItemAuraAPI.Scan()
+        local selectedTitles = {}
+        for id in pairs(_G.ItemAuraSelected) do
+            local title = ItemAuraAPI.GetIdToTitle()[id]
+            if title then
+                table.insert(selectedTitles, title)
+            end
+        end
+        if ItemAuraDropdown and ItemAuraDropdown.Refresh then
+            ItemAuraDropdown:Refresh(values, selectedTitles)
+        end
+        WindUI:Notify({
+            Title = "物品",
+            Content = "已找到 " .. tostring(#values) .. " 個可拾取物品",
+            Duration = 3,
+        })
+    end,
+})
+
+Tabs.Function:Slider({
+    Title = "物品延遲",
+    Min = 0.1,
+    Max = 1,
+    Step = 0.1,
+    Value = _G.ItemAuraDelay,
+    Callback = function(v)
+        _G.ItemAuraDelay = tonumber(v)
+    end,
+})
+
 Tabs.Aimbot:Section({ Title = "輔助自瞄" })
 
 local AimbotToggle = Tabs.Aimbot:Toggle({
@@ -2976,7 +3295,7 @@ Tabs.ESP:Toggle({
     Callback = function(v)
         _G.ESP_Master = v
         for _, p in ipairs(Players:GetPlayers()) do
-            if v then createESP(p) else removeESP(p) end
+            if v then PlayerESP.createESP(p) else PlayerESP.removeESP(p) end
         end
     end
 })
@@ -3013,7 +3332,7 @@ Tabs.ESP:Toggle({
         _G.ESP_ShowTracers = v
         if not v then
             for _, p in ipairs(Players:GetPlayers()) do
-                removeTracer(p)
+                PlayerESP.removeTracer(p)
             end
         end
     end
@@ -3040,9 +3359,9 @@ Tabs.ESP:Toggle({
     Callback = function(v)
         _G.MobESP_Master = v
         if not v then
-            stopNPCTracking()
-            for m, _ in pairs(trackedNPCs) do
-                removeMobESP(m)
+            MobESP.stopNPCTracking()
+            for m, _ in pairs(MobESP.trackedNPCs) do
+                MobESP.removeMobESP(m)
             end
         end
     end
@@ -3087,8 +3406,8 @@ Tabs.ESP:Toggle({
     Callback = function(v)
         _G.MobESP_ShowTracers = v
         if not v then
-            for m, _ in pairs(trackedNPCs) do
-                removeMobTracer(m)
+            for m, _ in pairs(MobESP.trackedNPCs) do
+                MobESP.removeMobTracer(m)
             end
         end
     end
@@ -3114,7 +3433,7 @@ Tabs.ESP:Toggle({
     Value = _G.ESP_ItemMaster,
     Callback = function(v)
         _G.ESP_ItemMaster = v
-        refreshItemESP()
+        ItemESP.refreshItemESP()
     end
 })
 
@@ -3140,8 +3459,8 @@ Tabs.ESP:Toggle({
     Callback = function(v)
         _G.ESP_ItemShowTracers = v
         if not v then
-            for model in pairs(itemTracers) do
-                removeItemTracer(model)
+            for model in pairs(ItemESP.itemTracers) do
+                ItemESP.removeItemTracer(model)
             end
         end
     end
