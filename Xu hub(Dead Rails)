@@ -136,6 +136,9 @@ _G.AimShowFov = false
 _G.AimFovRadius = 100
 _G.AimFovColor = Color3.fromRGB(255, 255, 255)
 
+--自動換彈
+_G.AutoReloadEnabled = false
+
 --ESP Players
 _G.ESP_Master         = false
 _G.ESP_ShowName       = false
@@ -218,6 +221,7 @@ local ConfigKeys = {
     "AutoReviveEnabled",
 		"AimbotEnabled", "AimbotPart", "AimbotSmoothness", "AimbotWallCheck",
 		"AimShowFov", "AimFovRadius",
+		"AutoReloadEnabled",
 		"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_FontSize",
 		"MobESP_Master", "MobESP_ShowName", "MobESP_ShowDistance", "MobESP_ShowHealth", "MobESP_ShowState", "MobESP_ShowTracers", "MobESP_FontSize",
 		"RemoveFogEnabled",
@@ -778,62 +782,90 @@ if _G.NoclipEnabled then
 end
 
 --傳送到馬匹
-local function GetDirectModelHorse()
-	for _, child in ipairs(workspace:GetChildren()) do
-		if child.Name == "Model_Horse" and not child:IsA("Folder") then
-			return child
-		end
-	end
-	return nil
+local function GetNearestModelHorse()
+    local character = LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local playerPos = hrp.Position
+    local nearestTarget = nil
+    local shortestDistance = math.huge
+
+    for _, child in ipairs(workspace:GetDescendants()) do
+        if child.Name == "Model_Horse" and (child:IsA("Model") or child:IsA("BasePart")) then
+            local targetPos = nil
+            
+            if child:IsA("Model") then
+                local success, pivot = pcall(function()
+                    return child:GetPivot()
+                end)
+                if success and pivot then
+                    targetPos = pivot.Position
+                end
+            elseif child:IsA("BasePart") then
+                targetPos = child.Position
+            end
+
+            if targetPos then
+                local distance = (playerPos - targetPos).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    nearestTarget = child
+                end
+            end
+        end
+    end
+
+    return nearestTarget
 end
 
 local function TeleportToModelHorse()
-	local target = GetDirectModelHorse()
-	if not target then
-		WindUI:Notify({
-			Title = "提示",
-			Content = "找不到馴服馬匹",
-			Duration = 3
-		})
-		return
-	end
+    local character = LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        WindUI:Notify({
+            Title = "提示",
+            Content = "角色尚未載入完成",
+            Duration = 3
+        })
+        return
+    end
 
-	local character = LocalPlayer.Character
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		WindUI:Notify({
-			Title = "提示",
-			Content = "角色尚未載入完成",
-			Duration = 3
-		})
-		return
-	end
+    local target = GetNearestModelHorse()
+    if not target then
+        WindUI:Notify({
+            Title = "提示",
+            Content = "找不到馴服馬匹",
+            Duration = 3
+        })
+        return
+    end
 
-	local targetCFrame
-	if target:IsA("Model") then
-		targetCFrame = target:GetPivot()
-	elseif target:IsA("BasePart") then
-		targetCFrame = target.CFrame
-	end
+    local targetCFrame
+    if target:IsA("Model") then
+        targetCFrame = target:GetPivot()
+    elseif target:IsA("BasePart") then
+        targetCFrame = target.CFrame
+    end
 
-	if targetCFrame then
-		hrp.CFrame = targetCFrame * CFrame.new(0, 3, 0)
-		WindUI:Notify({
-			Title = "成功",
-			Content = "傳送至馴服馬匹",
-			Duration = 3
-		})
-	else
-		WindUI:Notify({
-			Title = "提示",
-			Content = "無馴服馬匹",
-			Duration = 3
-		})
-	end
+    if targetCFrame then
+        hrp.CFrame = targetCFrame * CFrame.new(0, 3, 0)
+        WindUI:Notify({
+            Title = "成功",
+            Content = "已傳送至最近的馴服馬匹",
+            Duration = 3
+        })
+    else
+        WindUI:Notify({
+            Title = "提示",
+            Content = "無效的馬匹座標",
+            Duration = 3
+        })
+    end
 end
 
 if _G.AutoTeleportHorse_ENABLED then
-	TeleportToModelHorse()
+    TeleportToModelHorse()
 end
 
 --飛行(Only Riding)
@@ -1092,6 +1124,81 @@ if _G.AimbotEnabled then
 end
 if _G.AimShowFov then
     updateFovCircle()
+end
+
+--自動換彈
+local reload = {
+    last = setmetatable({}, { __mode = "k" }),
+}
+
+local function getWeaponConfig(tool)
+    local cfg = tool:FindFirstChild("WeaponConfiguration")
+    local state = tool:FindFirstChild("ClientWeaponState")
+    if not cfg or not state then return nil end
+
+    return {
+        fireDelay = cfg:FindFirstChild("FireDelay"),
+        currentAmmo = state:FindFirstChild("CurrentAmmo"),
+        isReloading = state:FindFirstChild("IsReloading"),
+        bulletType = cfg:FindFirstChild("BulletType"),
+    }
+end
+
+local function hasAmmo(wc)
+    if not wc then return true end
+
+    local bt = wc.bulletType and wc.bulletType.Value
+    if not bt or bt == "" then return true end
+
+    local c = LocalPlayer:GetAttribute(bt .. "Ammo")
+    if c ~= nil then return c > 0 end
+
+    return true
+end
+
+local function triggerReload(tool)
+    local r = ReplicatedStorage:FindFirstChild("Remotes")
+    r = r and r:FindFirstChild("Weapon")
+    r = r and r:FindFirstChild("Reload")
+    if r then
+        r:FireServer(0, tool)
+    end
+end
+
+local function reloadStep()
+    if not Character then return end
+
+    for _, tool in ipairs(Character:GetChildren()) do
+        if tool:IsA("Tool") then
+            local wc = getWeaponConfig(tool)
+            if wc then
+                local ammo = wc.currentAmmo and wc.currentAmmo.Value
+                local reloading = wc.isReloading and wc.isReloading.Value
+
+                if ammo ~= nil
+                    and ammo <= 0
+                    and not reloading
+                    and hasAmmo(wc)
+                    and tick() - (reload.last[tool] or 0) >= 2
+                then
+                    reload.last[tool] = tick()
+                    triggerReload(tool)
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not game.Players.LocalPlayer or not game.Players.LocalPlayer:IsDescendantOf(game.Players) then break end
+        if _G.AutoReloadEnabled then
+            reloadStep()
+        end
+    end
+end)
+
+if _G.AutoReloadEnabled then
 end
 
 -- 移除繃帶冷卻
@@ -2606,8 +2713,10 @@ Tabs.Aimbot:Toggle({
     Callback = function(v) _G.AimbotWallCheck = v end,
 })
 
+Tabs.Aimbot:Divider()
+
 Tabs.Aimbot:Toggle({
-    Title = "顯示視野圓圈",
+    Title = "顯示Fov",
     Value = _G.AimShowFov,
     Callback = function(v)
         _G.AimShowFov = v
@@ -2616,13 +2725,23 @@ Tabs.Aimbot:Toggle({
 })
 
 Tabs.Aimbot:Slider({
-    Title = "視野半徑",
+    Title = "Fov大小",
     Step = 1,
     Value = { Min = 10, Max = 1000, Default = _G.AimFovRadius },
     Callback = function(v)
         _G.AimFovRadius = tonumber(v) or 100
         updateFovCircle()
     end,
+})
+
+Tabs.Aimbot:Section({ Title = "彈藥" })
+
+Tabs.Aimbot:Toggle({
+    Title = "自動換彈",
+    Value = _G.AutoReloadEnabled,
+    Callback = function(v)
+        _G.AutoReloadEnabled = v
+    end
 })
 
 Tabs.Heal:Section({ Title = "治療" })
