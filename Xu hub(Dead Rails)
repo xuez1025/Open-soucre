@@ -1074,6 +1074,23 @@ if LocalPlayer.Character then
     setupCharacter(LocalPlayer.Character)
 end
 
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if _G.VehicleFlyEnabled then
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart and isSitting() then
+                    if not vflyConnection or not rootPart:FindFirstChild(vflyVelocityName) or not rootPart:FindFirstChild(vflyGyroName) then
+                        startVFly()
+                    end
+                end
+            end
+        end
+    end
+end)
+
 --自動駕駛
 local autopilotControls = nil
 local autopilotPatched = setmetatable({}, { __mode = "k" })
