@@ -13,6 +13,7 @@ local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
+local TweenService = game:GetService("TweenService")
 
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
@@ -182,6 +183,19 @@ _G.ESP_ItemTracerColor = Color3.fromRGB(255, 255, 255)
 _G.ESP_ItemHighlightColor = Color3.fromRGB(255, 255, 255)
 _G.ESP_ItemFontSize = 14
 
+--收集債券
+_G.AutoCollectBondEnabled = false
+
+-- 遊戲結束自動重進
+_G.EndDecisionEnabled = false
+
+--傳送到列車
+_G.TeleportTrainEnabled = false
+
+-- 尋找憲法堡
+_G.FortTeleportEnabled = false
+_G.FortTweenSpeed = 500
+
 -- 移除迷霧
 _G.RemoveFogEnabled = false
 _G.FogConnection = nil
@@ -238,6 +252,9 @@ local ConfigKeys = {
 		"AutoReloadEnabled",
 		"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_FontSize",
 		"MobESP_Master", "MobESP_ShowName", "MobESP_ShowDistance", "MobESP_ShowHealth", "MobESP_ShowState", "MobESP_ShowTracers", "MobESP_FontSize",
+		"AutoCollectBondEnabled",
+		"EndDecisionEnabled",
+		"FortTeleportEnabled", "FortTweenSpeed",
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
@@ -2785,6 +2802,222 @@ ItemESP.removeItemTracer = removeItemTracer
 ItemESP.refreshItemESP = refreshItemESP
 end
 
+--收集債券
+local Remote = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Universe"):WaitForChild("Network"):WaitForChild("RemoteEvent"):WaitForChild("Actionable")
+local ObjectModels = Workspace:WaitForChild("ObjectModels", 5)
+
+if _G.AutoCollectBondEnabled then
+end
+
+task.spawn(function()
+    while true do
+        if _G.AutoCollectBondEnabled then
+            pcall(function()
+                if ObjectModels then
+                    for _, obj in ipairs(ObjectModels:GetChildren()) do
+                        local objNameLower = string.lower(obj.Name)
+                        
+                        if string.find(objNameLower, "bond") then
+                            local entityServerVal = nil
+                            
+                            if obj:GetAttribute("entity_server") then
+                                entityServerVal = obj:GetAttribute("entity_server")
+                            elseif obj:FindFirstChild("entity_server") then
+                                local subVal = obj:FindFirstChild("entity_server")
+                                if subVal:IsA("IntValue") or subVal:IsA("NumberValue") or subVal:IsA("StringValue") then
+                                    entityServerVal = subVal.Value
+                                end
+                            end
+                            
+                            if entityServerVal then
+                                local finalArg = entityServerVal
+                                if tonumber(entityServerVal) ~= nil then
+                                    finalArg = tonumber(entityServerVal)
+                                end
+                                
+                                local args = {
+                                    finalArg
+                                }
+                                Remote:FireServer(unpack(args))
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+        task.wait()
+    end
+end)
+
+--遊戲結束自動重進
+local function RunEndDecision()
+    local success, err = pcall(function()
+        local args = { false }
+        ReplicatedStorage:WaitForChild("Shared", 5)
+            :WaitForChild("Universe", 5)
+            :WaitForChild("Network", 5)
+            :WaitForChild("RemoteEvent", 5)
+            :WaitForChild("EndDecision", 5)
+            :FireServer(unpack(args))
+    end)
+    
+    if not success then
+        warn("自動重進發送失敗: ", err)
+    end
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if _G.EndDecisionEnabled then
+            RunEndDecision()
+        end
+    end
+end)
+
+if _G.EndDecisionEnabled then
+    RunEndDecision()
+end
+
+--傳送到列車
+_G.TeleportToTrain = function()
+    if not Humanoid or not Humanoid.Parent then return end
+
+    local target
+    for _, seat in ipairs(workspace:GetDescendants()) do
+        if seat:IsA("VehicleSeat")
+            and seat.Name == "VehicleSeat"
+            and seat.Occupant == nil
+            and string.find(seat:GetFullName(), "RequiredComponents.Controls.ConductorSeat", 1, true)
+        then
+            target = seat
+            break
+        end
+    end
+
+    if not target then return end
+
+    target:Sit(Humanoid)
+end
+
+if _G.TeleportTrainEnabled then
+    _G.TeleportToTrain()
+end
+
+--尋找憲法堡
+local function findSeat()
+    local fort   = workspace:FindFirstChild("FortConstitution")
+    local cannon = fort and fort:FindFirstChild("Cannon")
+    local seat   = cannon and cannon:FindFirstChild("VehicleSeat")
+    if seat and seat:IsA("VehicleSeat") then
+        return seat
+    end
+    return nil
+end
+
+local function tweenTo(hrp, targetCFrame)
+    local distance = (targetCFrame.Position - hrp.Position).Magnitude
+    local speed = math.max(tonumber(_G.FortTweenSpeed) or 5000, 1)
+    local duration = math.max(distance / speed, 0.01)
+
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        { CFrame = targetCFrame }
+    )
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function saveCharacterState(hrp, humanoid)
+    return {
+        hrp        = hrp,
+        humanoid   = humanoid,
+        walkSpeed  = humanoid.WalkSpeed,
+        jumpPower  = humanoid.JumpPower,
+        jumpHeight = humanoid.JumpHeight,
+        autoRotate = humanoid.AutoRotate,
+        anchored   = hrp.Anchored,
+    }
+end
+
+local function restoreCharacterState(saved)
+    if not saved then return end
+    local hrp      = saved.hrp
+    local humanoid = saved.humanoid
+    if hrp and hrp.Parent then
+        hrp.Anchored = saved.anchored
+    end
+    if humanoid and humanoid.Parent then
+        humanoid.WalkSpeed  = saved.walkSpeed
+        humanoid.JumpPower  = saved.jumpPower
+        humanoid.JumpHeight = saved.jumpHeight
+        humanoid.AutoRotate = saved.autoRotate
+    end
+end
+
+local function startFortTeleport()
+    task.spawn(function()
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:WaitForChild("HumanoidRootPart")
+        local humanoid = character:WaitForChild("Humanoid")
+
+        if not hrp or not humanoid then return end
+
+        local savedState = saveCharacterState(hrp, humanoid)
+        humanoid.WalkSpeed  = 0
+        humanoid.JumpPower  = 0
+        humanoid.JumpHeight = 0
+        humanoid.AutoRotate = false
+        hrp.Anchored        = true
+
+        local direction = Vector3.new(0, 0, -1)
+
+        while _G.FortTeleportEnabled do
+            if not character.Parent or not hrp.Parent then
+                break
+            end
+
+            local seat = findSeat()
+            if seat then
+                tweenTo(hrp, seat.CFrame * CFrame.new(0, 2, 0))
+                restoreCharacterState(savedState)
+                _G.FortTeleportEnabled = false
+                task.wait()
+                seat:Sit(humanoid)
+                break
+            end
+
+            local rotation = hrp.CFrame.Rotation
+            local target   = CFrame.new(hrp.Position + direction * 50) * rotation
+            local distance = (target.Position - hrp.Position).Magnitude
+            local speed = math.max(tonumber(_G.FortTweenSpeed) or 5000, 1)
+            local duration = math.max(distance / speed, 0.01)
+
+            local tween = TweenService:Create(
+                hrp,
+                TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                { CFrame = target }
+            )
+            tween:Play()
+
+            while tween.PlaybackState == Enum.PlaybackState.Playing and _G.FortTeleportEnabled do
+                task.wait(0.05)
+            end
+
+            if not _G.FortTeleportEnabled then
+                tween:Cancel()
+                break
+            end
+        end
+
+        restoreCharacterState(savedState)
+    end)
+end
+
+if _G.FortTeleportEnabled then
+    startFortTeleport()
+end
+
 --移除迷霧
 _G.ApplyRemoveFog = function()
     local layers = Lighting:FindFirstChild("LightingLayers")
@@ -2920,6 +3153,8 @@ local Tabs = {
 		Aimbot = Window:Tab({ Title = "自瞄", Icon = "swords" }),
 		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
 		ESP = Window:Tab({ Title = "ESP", Icon = "eye" }),
+		Farm = Window:Tab({ Title = "農場", Icon = "mouse" }),
+		Teleport = Window:Tab({ Title = "傳送", Icon = "map-pin" }),
 		Graphics = Window:Tab({ Title = "畫質", Icon = "tv"}),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
@@ -3476,6 +3711,56 @@ Tabs.ESP:Slider({
     Callback = function(v)
         _G.ESP_ItemFontSize = v
     end
+})
+
+Tabs.Farm:Section({ Title = "農場" })
+
+Tabs.Farm:Toggle({
+    Title = "收集債券",
+    Value = _G.AutoCollectBondEnabled,
+    Callback = function(v)
+        _G.AutoCollectBondEnabled = v
+    end
+})
+
+Tabs.Farm:Toggle({
+    Title = "遊戲結束自動重進",
+		Desc = "僅死亡後重進",
+    Value = _G.EndDecisionEnabled,
+    Callback = function(v)
+        _G.EndDecisionEnabled = v
+    end
+})
+
+Tabs.Teleport:Section({ Title = "傳送" })
+
+Tabs.Teleport:Button({
+    Title = "傳送到列車",
+    Callback = function()
+        _G.TeleportToTrain()
+    end
+})
+
+Tabs.Teleport:Toggle({
+    Title = "尋找憲法堡",
+    Value = _G.FortTeleportEnabled,
+    Callback = function(v)
+        _G.FortTeleportEnabled = v
+        if v then
+            startFortTeleport()
+        end
+    end
+})
+
+Tabs.Teleport:Slider({
+    Title = "Tween 速度",
+    Min = 100,
+    Max = 1000,
+    Step = 100,
+    Value = _G.FortTweenSpeed,
+    Callback = function(v)
+        _G.FortTweenSpeed = math.max(tonumber(v) or 5000, 1)
+    end,
 })
 
 Tabs.Graphics:Section({ Title = "畫質" })
