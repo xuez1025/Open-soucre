@@ -221,6 +221,7 @@ _G.VampireCastleTeleportEnabled = false
 _G.BoxingGymTeleportEnabled = false
 _G.TeslaLabTeleportEnabled = false
 _G.OilRefineryTeleportEnabled = false
+_G.EndpointTeleportEnabled = false
 
 -- 移除迷霧
 _G.RemoveFogEnabled = false
@@ -281,15 +282,7 @@ local ConfigKeys = {
 		"ESP_ItemMaster", "ESP_ItemShowName", "ESP_ItemShowDistance", "ESP_ItemShowTracers", "ESP_ItemShowHighlights", "ESP_ItemFontSize",
 		"AutoCollectBondEnabled",
 		"EndDecisionEnabled",
-		"FortTeleportEnabled", "TweenSpeed",
-		"TownTeleportEnabled",
-		"SafeZoneTeleportEnabled",
-		"OutlawCampTeleportEnabled", "OutlawCampIndex",
-		"RandomFarmTeleportEnabled", "RandomFarmIndex",
-		"EvilChurchTeleportEnabled", "EvilChurchIndex",
-		"StillwaterPrisonTeleportEnabled", "SterlingTownTeleportEnabled",
-		"SterlingMountainTeleportEnabled", "VampireCastleTeleportEnabled",
-		"BoxingGymTeleportEnabled", "TeslaLabTeleportEnabled", "OilRefineryTeleportEnabled",
+		"TweenSpeed",
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
@@ -1094,13 +1087,6 @@ end)
 --自動駕駛
 local autopilotControls = nil
 local autopilotPatched = setmetatable({}, { __mode = "k" })
-
-local function isSitting()
-    return Humanoid ~= nil
-        and Humanoid.Health > 0
-        and Humanoid.Sit
-        and Humanoid.SeatPart ~= nil
-end
 
 local function patchAutopilotController(controller)
     if not controller or autopilotPatched[controller] then return end
@@ -3009,9 +2995,23 @@ local function getTweenSpeed()
     return math.max(tonumber(_G.TweenSpeed) or 500, 1)
 end
 
+-- 所有搜尋／傳送移動都必須在載具座位上進行；傳送到火車不使用此函式，因此維持例外。
+local function waitForSitting(shouldContinue)
+    while not isSitting() do
+        if shouldContinue and not shouldContinue() then
+            return false
+        end
+        task.wait(0.1)
+    end
+    return true
+end
+
 local function moveWithLiveTweenSpeed(hrp, targetCFrame, shouldContinue, setActiveTween)
     while true do
         if shouldContinue and not shouldContinue() then
+            return false
+        end
+        if not isSitting() then
             return false
         end
 
@@ -3035,6 +3035,11 @@ local function moveWithLiveTweenSpeed(hrp, targetCFrame, shouldContinue, setActi
 
         while tween.PlaybackState == Enum.PlaybackState.Playing do
             if shouldContinue and not shouldContinue() then
+                tween:Cancel()
+                if setActiveTween then setActiveTween(nil) end
+                return false
+            end
+            if not isSitting() then
                 tween:Cancel()
                 if setActiveTween then setActiveTween(nil) end
                 return false
@@ -3109,6 +3114,15 @@ local function tweenBackToStartingZone()
         return false, "找不到角色"
     end
 
+    if not isSitting() then
+        WindUI:Notify({
+            Title = "傳送",
+            Content = "請先坐在載具座位上，再使用此功能",
+            Duration = 3,
+        })
+        return false, "必須坐在載具座位上才能傳送"
+    end
+
     local recorded, message = recordStartingZone()
     if not recorded then
         return false, message
@@ -3181,6 +3195,8 @@ end
 local townRunId = 0
 local townActiveTween = nil
 local townActiveState = nil
+local townCurrentIndex = nil
+local townCurrentReached = false
 
 local function findTown(index)
     local towns = workspace:FindFirstChild("Towns")
@@ -3238,6 +3254,10 @@ local function startTownTeleport()
         local humanoid = character:WaitForChild("Humanoid")
         if not hrp or not humanoid then return end
 
+        if not waitForSitting(function()
+            return _G.TownTeleportEnabled and runId == townRunId
+        end) then return end
+
         local savedState = saveCharacterState(hrp, humanoid)
         townActiveState = savedState
         humanoid.WalkSpeed = 0
@@ -3257,6 +3277,8 @@ local function startTownTeleport()
             if townCFrame then
                 local arrived = tweenTownTo(hrp, townCFrame * CFrame.new(0, 5, 0), runId)
                 if not arrived then break end
+                townCurrentIndex = targetIndex
+                townCurrentReached = true
                 restoreCharacterState(savedState)
                 break
             end
@@ -3286,7 +3308,23 @@ if _G.TownTeleportEnabled then
 end
 
 local function skipToNextTown()
-    _G.TownIndex = math.max(math.floor(tonumber(_G.TownIndex) or 1), 1) + 1
+    local currentIndex = townCurrentIndex or math.max(
+        math.floor(tonumber(_G.TownIndex) or 1),
+        1
+    )
+
+    if not townCurrentReached or townCurrentIndex ~= currentIndex then
+        WindUI:Notify({
+            Title = "小鎮",
+            Content = "請先前往並成功抵達當前小鎮，才能前往下一座",
+            Duration = 3,
+        })
+        return false
+    end
+
+    _G.TownIndex = currentIndex + 1
+    townCurrentIndex = _G.TownIndex
+    townCurrentReached = false
 
     townRunId = townRunId + 1
     if _G.TownTeleportEnabled then
@@ -3298,6 +3336,7 @@ local function skipToNextTown()
         Content = "立即前往 town_" .. tostring(_G.TownIndex),
         Duration = 2,
     })
+    return true
 end
 
 -- 尋找安全區
@@ -3426,6 +3465,11 @@ local function startSafeZoneTeleport(indexOverride)
         local humanoid = character:WaitForChild("Humanoid")
         if not hrp or not humanoid then return end
 
+        if not waitForSitting(function()
+            return (forcedIndex ~= nil or _G.SafeZoneTeleportEnabled)
+                and runId == safeZoneRunId
+        end) then return end
+
         local savedState = saveCharacterState(hrp, humanoid)
         safeZoneActiveState = savedState
         humanoid.WalkSpeed = 0
@@ -3512,14 +3556,7 @@ local function teleportToSelectedLocation()
 
     if selected == "初始區" then
         task.spawn(function()
-            local ok, message = tweenBackToStartingZone()
-            if not ok then
-                WindUI:Notify({
-                    Title = "返回失敗",
-                    Content = message,
-                    Duration = 3,
-                })
-            end
+            tweenBackToStartingZone()
         end)
         WindUI:Notify({ Title = "座標", Content = "前往初始區", Duration = 2 })
         return
@@ -3623,6 +3660,8 @@ local function createRandomBuildingTeleportController(options)
         RunId = 0,
         ActiveTween = nil,
         ActiveCharacterState = nil,
+        CurrentIndex = nil,
+        CurrentReached = false,
     }
 
     local function isEnabled()
@@ -3658,6 +3697,10 @@ local function createRandomBuildingTeleportController(options)
             local humanoid = character:WaitForChild("Humanoid")
             if not hrp or not humanoid then return end
 
+            if not waitForSitting(function()
+                return isEnabled() and runId == state.RunId
+            end) then return end
+
             local savedState = saveCharacterState(hrp, humanoid)
             state.ActiveCharacterState = savedState
             humanoid.WalkSpeed = 0
@@ -3691,6 +3734,9 @@ local function createRandomBuildingTeleportController(options)
                     )
                     if not arrived then break end
 
+                    state.CurrentIndex = targetIndex
+                    state.CurrentReached = true
+
                     restoreCharacterState(savedState)
                     state.ActiveCharacterState = nil
                     break
@@ -3717,10 +3763,23 @@ local function createRandomBuildingTeleportController(options)
     end
 
     local function skip()
-        _G[options.IndexKey] = math.max(
+        local currentIndex = state.CurrentIndex or math.max(
             math.floor(tonumber(_G[options.IndexKey]) or 1),
             1
-        ) + 1
+        )
+
+        if not state.CurrentReached or state.CurrentIndex ~= currentIndex then
+            WindUI:Notify({
+                Title = options.Title,
+                Content = "請先前往並成功抵達當前目標，才能前往下一個",
+                Duration = 3,
+            })
+            return false
+        end
+
+        _G[options.IndexKey] = currentIndex + 1
+        state.CurrentIndex = _G[options.IndexKey]
+        state.CurrentReached = false
 
         state.RunId = state.RunId + 1
         if isEnabled() then
@@ -3732,6 +3791,7 @@ local function createRandomBuildingTeleportController(options)
             Content = "跳過目前目標，尋找第 " .. tostring(_G[options.IndexKey]) .. " 個",
             Duration = 2,
         })
+        return true
     end
 
     return {
@@ -3833,6 +3893,10 @@ do
                 local humanoid = character:WaitForChild("Humanoid")
                 if not hrp or not humanoid then return end
 
+                if not waitForSitting(function()
+                    return isEnabled() and runId == state.RunId
+                end) then return end
+
                 local savedState = saveCharacterState(hrp, humanoid)
                 state.ActiveCharacterState = savedState
                 humanoid.WalkSpeed = 0
@@ -3886,6 +3950,118 @@ do
         return { Start = start, Stop = stop }
     end
 
+    -- 終點在不同模式可能位於不同 Baseplate，或位於 SafeZones.bandit_outpost_8。
+    -- 不依賴 Baseplate 編號；只接受名稱為 EnemyBase 的目標，以及編號固定為 8 的 outpost。
+    local function findEndpointCFrame()
+        local safeZones = workspace:FindFirstChild("SafeZones")
+        local outpost = safeZones and safeZones:FindFirstChild("bandit_outpost_8")
+        local outpostCFrame = getTargetCFrame(outpost)
+        if outpostCFrame then
+            return outpostCFrame
+        end
+
+        for _, instance in ipairs(workspace:GetDescendants()) do
+            if instance.Name == "EnemyBase" then
+                local endpointCFrame = getTargetCFrame(instance)
+                if endpointCFrame then
+                    return endpointCFrame
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function createEndpointController()
+        local state = {
+            RunId = 0,
+            ActiveTween = nil,
+            ActiveCharacterState = nil,
+        }
+
+        local function stop()
+            state.RunId = state.RunId + 1
+            if state.ActiveTween then
+                pcall(function()
+                    if state.ActiveTween.PlaybackState == Enum.PlaybackState.Playing then
+                        state.ActiveTween:Cancel()
+                    end
+                end)
+                state.ActiveTween = nil
+            end
+            if state.ActiveCharacterState then
+                restoreCharacterState(state.ActiveCharacterState)
+                state.ActiveCharacterState = nil
+            end
+        end
+
+        local function start()
+            stop()
+            state.RunId = state.RunId + 1
+            local runId = state.RunId
+
+            task.spawn(function()
+                local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                local hrp = character:WaitForChild("HumanoidRootPart")
+                local humanoid = character:WaitForChild("Humanoid")
+                if not hrp or not humanoid then return end
+
+                if not waitForSitting(function()
+                    return _G.EndpointTeleportEnabled and runId == state.RunId
+                end) then return end
+
+                local savedState = saveCharacterState(hrp, humanoid)
+                state.ActiveCharacterState = savedState
+                humanoid.WalkSpeed = 0
+                humanoid.JumpPower = 0
+                humanoid.JumpHeight = 0
+                humanoid.AutoRotate = false
+                hrp.Anchored = true
+
+                local direction = Vector3.new(0, 0, -1)
+                while _G.EndpointTeleportEnabled and runId == state.RunId do
+                    if not character.Parent or not hrp.Parent then break end
+
+                    local targetCFrame = findEndpointCFrame()
+                    if targetCFrame then
+                        local arrived = moveWithLiveTweenSpeed(
+                            hrp,
+                            targetCFrame * CFrame.new(0, 5, 0),
+                            function()
+                                return _G.EndpointTeleportEnabled and runId == state.RunId
+                            end,
+                            function(tween)
+                                state.ActiveTween = tween
+                            end
+                        )
+                        if not arrived then break end
+                        restoreCharacterState(savedState)
+                        state.ActiveCharacterState = nil
+                        break
+                    end
+
+                    local searchTarget = CFrame.new(hrp.Position + direction * 50) * hrp.CFrame.Rotation
+                    if not moveWithLiveTweenSpeed(hrp, searchTarget, function()
+                        return _G.EndpointTeleportEnabled and runId == state.RunId
+                    end, function(tween)
+                        state.ActiveTween = tween
+                    end) then
+                        break
+                    end
+                end
+
+                if runId == state.RunId then
+                    restoreCharacterState(savedState)
+                    if state.ActiveCharacterState == savedState then
+                        state.ActiveCharacterState = nil
+                    end
+                end
+            end)
+        end
+
+        return { Start = start, Stop = stop }
+    end
+
     controllers.FortConstitution = createSingleTargetController(
         "FortTeleportEnabled", { "FortConstitution" }
     )
@@ -3896,7 +4072,7 @@ do
         "SterlingTownTeleportEnabled", { "Sterling", "Town" }
     )
     controllers.SterlingMountain = createSingleTargetController(
-        "SterlingMountainTeleportEnabled", { "Sterling", "Mountain" }
+        "SterlingMountainTeleportEnabled", { "Sterling", "Mountain", "TabletPodium" }
     )
     controllers.VampireCastle = createSingleTargetController(
         "VampireCastleTeleportEnabled", { "VampireCastle" }
@@ -3910,6 +4086,7 @@ do
     controllers.OilRefinery = createSingleTargetController(
         "OilRefineryTeleportEnabled", { "OilRefinery" }
     )
+    controllers.Endpoint = createEndpointController()
 
     _G.ToggleX7Teleport = {
         Start = function(name) controllers[name]:Start() end,
@@ -3926,6 +4103,7 @@ do
             BoxingGym = "BoxingGymTeleportEnabled",
             TeslaLab = "TeslaLabTeleportEnabled",
             OilRefinery = "OilRefineryTeleportEnabled",
+            Endpoint = "EndpointTeleportEnabled",
         })[name]
         if _G[enabledKey] then controller.Start() end
     end
@@ -4202,7 +4380,7 @@ do
     local historyFixedLocations = {
         { "監獄", { "StillwaterPrison" } },
         { "Sterling", { "Sterling", "Town" } },
-        { "礦井", { "Sterling", "Mountain" } },
+        { "礦井", { "Sterling", "Mountain", "TabletPodium" } },
         { "古堡", { "VampireCastle" } },
         { "健身館", { "BoxingGym" } },
         { "實驗室", { "TeslaLab" } },
@@ -4989,7 +5167,7 @@ Tabs.Searching:Slider({
     end,
 })
 
-Tabs.Searching:Section({ Title = "安全區" })
+Tabs.Searching:Section({ Title = "安全區(需要馬)" })
 
 SafeZoneDropdown = Tabs.Searching:Dropdown({
     Title = "初始區／安全區",
@@ -5048,7 +5226,7 @@ Tabs.Searching:Button({
     end,
 })
 
-Tabs.Searching:Section({ Title = "尋找" })
+Tabs.Searching:Section({ Title = "尋找(需要馬)" })
 
 Tabs.Searching:Toggle({
     Title = "尋找小鎮",
@@ -5137,7 +5315,7 @@ Tabs.Searching:Button({
     end,
 })
 
-Tabs.Searching:Section({ Title = "指定地點" })
+Tabs.Searching:Section({ Title = "指定地點(需要馬)" })
 
 Tabs.Searching:Toggle({
     Title = "尋找監獄",
@@ -5216,6 +5394,17 @@ Tabs.Searching:Toggle({
         _G.OilRefineryTeleportEnabled = v
         if v then _G.ToggleX7Teleport.Start("OilRefinery")
         else _G.ToggleX7Teleport.Stop("OilRefinery") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找終點",
+		Icon  = "log-in",
+    Value = _G.EndpointTeleportEnabled,
+    Callback = function(v)
+        _G.EndpointTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("Endpoint")
+        else _G.ToggleX7Teleport.Stop("Endpoint") end
     end,
 })
 
