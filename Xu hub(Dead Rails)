@@ -214,6 +214,15 @@ _G.RandomFarmIndex = 1
 _G.EvilChurchTeleportEnabled = false
 _G.EvilChurchIndex = 1
 
+-- 尋找指定地點（每個地點全局最多一個元件）
+_G.StillwaterPrisonTeleportEnabled = false
+_G.SterlingTownTeleportEnabled = false
+_G.SterlingMountainTeleportEnabled = false
+_G.VampireCastleTeleportEnabled = false
+_G.BoxingGymTeleportEnabled = false
+_G.TeslaLabTeleportEnabled = false
+_G.OilRefineryTeleportEnabled = false
+
 -- 移除迷霧
 _G.RemoveFogEnabled = false
 _G.FogConnection = nil
@@ -279,6 +288,9 @@ local ConfigKeys = {
 		"OutlawCampTeleportEnabled", "OutlawCampIndex",
 		"RandomFarmTeleportEnabled", "RandomFarmIndex",
 		"EvilChurchTeleportEnabled", "EvilChurchIndex",
+		"StillwaterPrisonTeleportEnabled", "SterlingTownTeleportEnabled",
+		"SterlingMountainTeleportEnabled", "VampireCastleTeleportEnabled",
+		"BoxingGymTeleportEnabled", "TeslaLabTeleportEnabled", "OilRefineryTeleportEnabled",
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
@@ -1380,132 +1392,171 @@ end
 
 
 -- 輔助自瞄
-local aimTracking = false
-local aimBound = false
-local fovGui, fovCircle, fovStroke
+-- 將區塊封裝，避免所有暫存 local 累積在主 chunk；UI 只持有這個公開介面。
+local Aimbot = {}
+do
+    local state = {
+        tracking = false,
+        bound = false,
+        targets = {},
+        trackingConnection = nil,
+        fovGui = nil,
+        fovCircle = nil,
+        fovStroke = nil,
+    }
 
-local function updateFovCircle()
-    if not _G.AimShowFov then
-        if fovGui then fovGui.Enabled = false end
-        return
-    end
-    if not fovGui or not fovGui.Parent then
-        fovGui = Instance.new("ScreenGui")
-        fovGui.Name = "DaraAimbotFOV"
-        fovGui.ResetOnSpawn = false
-        fovGui.IgnoreGuiInset = true
-        fovGui.Parent = PlayerGui
-
-        fovCircle = Instance.new("Frame")
-        fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-        fovCircle.Position = UDim2.fromScale(0.5, 0.5)
-        fovCircle.BackgroundTransparency = 1
-        fovCircle.BorderSizePixel = 0
-        fovCircle.Parent = fovGui
-
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(1, 0)
-        corner.Parent = fovCircle
-        fovStroke = Instance.new("UIStroke")
-        fovStroke.Thickness = 2
-        fovStroke.Parent = fovCircle
-    end
-    fovGui.Enabled = true
-    fovCircle.Size = UDim2.fromOffset(_G.AimFovRadius * 2, _G.AimFovRadius * 2)
-    fovStroke.Color = _G.AimFovColor
-end
-
-local function syncAimbotTracking()
-    if _G.AimbotEnabled and not aimTracking then
-        aimTracking = true
-        startNPCTracking()
-    elseif not _G.AimbotEnabled and aimTracking then
-        aimTracking = false
-        stopNPCTracking()
-    end
-end
-
-local function selectAimPart(model)
-    if _G.AimbotPart == "Head" then
-        return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
-    elseif _G.AimbotPart == "Legs" then
-        return model:FindFirstChild("LowerTorso") or model:FindFirstChild("Left Leg") or model:FindFirstChild("HumanoidRootPart")
-    end
-    return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
-end
-
-local function isAimVisible(cam, part, model)
-    if not _G.AimbotWallCheck then return true end
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { model, Character }
-    local origin = cam.CFrame.Position
-    return workspace:Raycast(origin, part.Position - origin, params) == nil
-end
-
-local function evaluateAimTarget(cam, center, model, humanoid)
-    if not model.Parent or not humanoid or humanoid.Health <= 0 then return nil end
-    local part = selectAimPart(model)
-    if not part then return nil end
-    local screen, onScreen = cam:WorldToViewportPoint(part.Position)
-    if not onScreen then return nil end
-    local distance = (Vector2.new(screen.X, screen.Y) - center).Magnitude
-    if distance > _G.AimFovRadius or not isAimVisible(cam, part, model) then return nil end
-    return part, distance
-end
-
-local function aimStep(dt)
-    if not _G.AimbotEnabled then return end
-    local controller = getCameraController()
-    local cam = workspace.CurrentCamera
-    if not controller or not cam or not controller.Rotations or not controller.Rotations.MouseLook then return end
-    if not Humanoid or Humanoid.Health <= 0 then return end
-
-    local center = cam.ViewportSize / 2
-    local bestPart, bestDistance
-    for model, humanoid in pairs(trackedNPCs) do
-        local part, distance = evaluateAimTarget(cam, center, model, humanoid)
-        if part and (not bestDistance or distance < bestDistance) then
-            bestPart, bestDistance = part, distance
+    local function addTarget(obj)
+        if not obj:IsA("Humanoid") then return end
+        local model = obj.Parent
+        if model and model:IsA("Model") and model ~= Character
+            and not Players:GetPlayerFromCharacter(model) then
+            state.targets[model] = obj
         end
     end
-    if not bestPart then return end
 
-    local offset = bestPart.Position - controller:GetPositionCharacter()
-    if offset.Magnitude < 0.001 then return end
-    local direction = offset.Unit
-    local targetPitch = math.deg(math.asin(math.clamp(direction.Y, -1, 1)))
-    local targetYaw = math.deg(math.atan2(-direction.X, -direction.Z))
-    local current = controller.Rotations.MouseLook
-    local yawDelta = ((targetYaw - current.Y + 180) % 360) - 180
-    local pitchDelta = targetPitch - current.X
-    local factor = math.clamp(1 - (_G.AimbotSmoothness / 20), 0.001, 1)
-    local alpha = math.clamp(factor * math.min(dt * 60, 1), 0, 1)
-    controller.Rotations.MouseLook = Vector3.new(
-        math.clamp(current.X + pitchDelta * alpha, -80, 80),
-        current.Y + yawDelta * alpha,
-        current.Z
-    )
-end
+    local function stopTracking()
+        if state.trackingConnection then
+            state.trackingConnection:Disconnect()
+            state.trackingConnection = nil
+        end
+        table.clear(state.targets)
+    end
 
-local function startAimbot()
-    if aimBound then return end
-    aimBound = true
-    RunService:BindToRenderStep("DaraHubAimbot", Enum.RenderPriority.Camera.Value - 2, aimStep)
-end
+    local function startTracking()
+        if state.trackingConnection then return end
+        table.clear(state.targets)
+        for _, obj in ipairs(workspace:GetDescendants()) do addTarget(obj) end
+        state.trackingConnection = workspace.DescendantAdded:Connect(addTarget)
+    end
 
-local function stopAimbot()
-    if not aimBound then return end
-    aimBound = false
-    pcall(function() RunService:UnbindFromRenderStep("DaraHubAimbot") end)
-end
+    local function updateFov()
+        if not _G.AimShowFov then
+            if state.fovGui then state.fovGui.Enabled = false end
+            return
+        end
+        if not state.fovGui or not state.fovGui.Parent then
+            state.fovGui = Instance.new("ScreenGui")
+            state.fovGui.Name = "DaraAimbotFOV"
+            state.fovGui.ResetOnSpawn = false
+            state.fovGui.IgnoreGuiInset = true
+            state.fovGui.Parent = PlayerGui
+            state.fovCircle = Instance.new("Frame")
+            state.fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+            state.fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+            state.fovCircle.BackgroundTransparency = 1
+            state.fovCircle.BorderSizePixel = 0
+            state.fovCircle.Parent = state.fovGui
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = state.fovCircle
+            state.fovStroke = Instance.new("UIStroke")
+            state.fovStroke.Thickness = 2
+            state.fovStroke.Parent = state.fovCircle
+        end
+        state.fovGui.Enabled = true
+        state.fovCircle.Size = UDim2.fromOffset(_G.AimFovRadius * 2, _G.AimFovRadius * 2)
+        state.fovStroke.Color = _G.AimFovColor
+    end
 
-if _G.AimbotEnabled then
-    startAimbot()
-    syncAimbotTracking()
-end
-if _G.AimShowFov then
-    updateFovCircle()
+    local function selectPart(model)
+        if _G.AimbotPart == "Head" then
+            return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+        elseif _G.AimbotPart == "Legs" then
+            return model:FindFirstChild("LowerTorso") or model:FindFirstChild("Left Leg")
+                or model:FindFirstChild("HumanoidRootPart")
+        end
+        return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso")
+            or model:FindFirstChild("Torso")
+    end
+
+    local function visible(cam, part, model)
+        if not _G.AimbotWallCheck then return true end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { model, Character }
+        local origin = cam.CFrame.Position
+        return workspace:Raycast(origin, part.Position - origin, params) == nil
+    end
+
+    local function getTarget(cam, center, model, humanoid)
+        if not model.Parent or not humanoid.Parent or humanoid.Health <= 0 then return end
+        local part = selectPart(model)
+        if not part then return end
+        local screen, onScreen = cam:WorldToViewportPoint(part.Position)
+        if not onScreen then return end
+        local distance = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+        if distance <= _G.AimFovRadius and visible(cam, part, model) then
+            return part, distance
+        end
+    end
+
+    local function step(dt)
+        if not _G.AimbotEnabled then return end
+        local controller = getCameraController()
+        local cam = workspace.CurrentCamera
+        if not controller or not cam or not controller.Rotations then return end
+        local current = controller.Rotations.MouseLook
+        if typeof(current) ~= "Vector3" or not Humanoid or Humanoid.Health <= 0 then return end
+
+        local center = cam.ViewportSize / 2
+        local bestPart, bestDistance
+        for model, humanoid in pairs(state.targets) do
+            if not model.Parent or not humanoid.Parent or humanoid.Health <= 0 then
+                state.targets[model] = nil
+            else
+                local part, distance = getTarget(cam, center, model, humanoid)
+                if part and (not bestDistance or distance < bestDistance) then
+                    bestPart, bestDistance = part, distance
+                end
+            end
+        end
+        if not bestPart then return end
+
+        local origin = cam.CFrame.Position
+        local ok, characterPosition = pcall(controller.GetPositionCharacter, controller)
+        if ok and typeof(characterPosition) == "Vector3" then origin = characterPosition end
+        local offset = bestPart.Position - origin
+        if offset.Magnitude < 0.001 then return end
+        local direction = offset.Unit
+        local targetPitch = math.deg(math.asin(math.clamp(direction.Y, -1, 1)))
+        local targetYaw = math.deg(math.atan2(-direction.X, -direction.Z))
+        local yawDelta = ((targetYaw - current.Y + 180) % 360) - 180
+        local pitchDelta = targetPitch - current.X
+        local factor = math.clamp(1 - (tonumber(_G.AimbotSmoothness) or 5) / 20, 0.001, 1)
+        local alpha = math.clamp(factor * math.min((dt or 1 / 60) * 60, 1), 0, 1)
+        controller.Rotations.MouseLook = Vector3.new(
+            math.clamp(current.X + pitchDelta * alpha, -80, 80),
+            current.Y + yawDelta * alpha,
+            current.Z
+        )
+    end
+
+    function Aimbot.Sync()
+        if _G.AimbotEnabled and not state.tracking then
+            state.tracking = true
+            startTracking()
+        elseif not _G.AimbotEnabled and state.tracking then
+            state.tracking = false
+            stopTracking()
+        end
+    end
+
+    function Aimbot.Start()
+        if state.bound then return end
+        state.bound = true
+        -- 相機通常在 Camera priority 更新；放在後面，避免旋轉被覆蓋。
+        RunService:BindToRenderStep("DaraHubAimbot", Enum.RenderPriority.Camera.Value + 1, step)
+    end
+
+    function Aimbot.Stop()
+        if not state.bound then return end
+        state.bound = false
+        pcall(function() RunService:UnbindFromRenderStep("DaraHubAimbot") end)
+    end
+
+    Aimbot.UpdateFov = updateFov
+    if _G.AimbotEnabled then Aimbot.Start(); Aimbot.Sync() end
+    if _G.AimShowFov then updateFov() end
 end
 
 --自動換彈
@@ -3775,6 +3826,161 @@ if _G.OutlawCampTeleportEnabled then OutlawCampTeleport.Start() end
 if _G.RandomFarmTeleportEnabled then RandomFarmTeleport.Start() end
 if _G.EvilChurchTeleportEnabled then EvilChurchTeleport.Start() end
 
+-- 尋找指定地點（每個路徑只會有一個目標或找不到目標）
+do
+    local controllers = {}
+
+    local function getTargetCFrame(target)
+        if not target then return nil end
+        if target:IsA("Model") then
+            return target:GetPivot()
+        elseif target:IsA("BasePart") then
+            return target.CFrame
+        end
+        return nil
+    end
+
+    local function createSingleTargetController(enabledKey, path)
+        local state = {
+            RunId = 0,
+            ActiveTween = nil,
+            ActiveCharacterState = nil,
+        }
+
+        local function isEnabled()
+            return _G[enabledKey] == true
+        end
+
+        local function findTarget()
+            local target = workspace
+            for _, name in ipairs(path) do
+                target = target:FindFirstChild(name)
+                if not target then return nil end
+            end
+            return getTargetCFrame(target)
+        end
+
+        local function stop()
+            state.RunId = state.RunId + 1
+            if state.ActiveTween then
+                pcall(function()
+                    if state.ActiveTween.PlaybackState == Enum.PlaybackState.Playing then
+                        state.ActiveTween:Cancel()
+                    end
+                end)
+                state.ActiveTween = nil
+            end
+            if state.ActiveCharacterState then
+                restoreCharacterState(state.ActiveCharacterState)
+                state.ActiveCharacterState = nil
+            end
+        end
+
+        local function start()
+            stop()
+            state.RunId = state.RunId + 1
+            local runId = state.RunId
+
+            task.spawn(function()
+                local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                local hrp = character:WaitForChild("HumanoidRootPart")
+                local humanoid = character:WaitForChild("Humanoid")
+                if not hrp or not humanoid then return end
+
+                local savedState = saveCharacterState(hrp, humanoid)
+                state.ActiveCharacterState = savedState
+                humanoid.WalkSpeed = 0
+                humanoid.JumpPower = 0
+                humanoid.JumpHeight = 0
+                humanoid.AutoRotate = false
+                hrp.Anchored = true
+
+                local direction = Vector3.new(0, 0, -1)
+                while isEnabled() and runId == state.RunId do
+                    if not character.Parent or not hrp.Parent then break end
+
+                    local targetCFrame = findTarget()
+                    if targetCFrame then
+                        local arrived = moveWithLiveTweenSpeed(
+                            hrp,
+                            targetCFrame * CFrame.new(0, 5, 0),
+                            function()
+                                return isEnabled() and runId == state.RunId
+                            end,
+                            function(tween)
+                                state.ActiveTween = tween
+                            end
+                        )
+                        if not arrived then break end
+                        restoreCharacterState(savedState)
+                        state.ActiveCharacterState = nil
+                        break
+                    end
+
+                    local rotation = hrp.CFrame.Rotation
+                    local searchTarget = CFrame.new(hrp.Position + direction * 50) * rotation
+                    if not moveWithLiveTweenSpeed(hrp, searchTarget, function()
+                        return isEnabled() and runId == state.RunId
+                    end, function(tween)
+                        state.ActiveTween = tween
+                    end) then
+                        break
+                    end
+                end
+
+                if runId == state.RunId then
+                    restoreCharacterState(savedState)
+                    if state.ActiveCharacterState == savedState then
+                        state.ActiveCharacterState = nil
+                    end
+                end
+            end)
+        end
+
+        return { Start = start, Stop = stop }
+    end
+
+    controllers.StillwaterPrison = createSingleTargetController(
+        "StillwaterPrisonTeleportEnabled", { "StillwaterPrison" }
+    )
+    controllers.SterlingTown = createSingleTargetController(
+        "SterlingTownTeleportEnabled", { "Sterling", "Town" }
+    )
+    controllers.SterlingMountain = createSingleTargetController(
+        "SterlingMountainTeleportEnabled", { "Sterling", "Mountain" }
+    )
+    controllers.VampireCastle = createSingleTargetController(
+        "VampireCastleTeleportEnabled", { "VampireCastle" }
+    )
+    controllers.BoxingGym = createSingleTargetController(
+        "BoxingGymTeleportEnabled", { "BoxingGym" }
+    )
+    controllers.TeslaLab = createSingleTargetController(
+        "TeslaLabTeleportEnabled", { "TeslaLab" }
+    )
+    controllers.OilRefinery = createSingleTargetController(
+        "OilRefineryTeleportEnabled", { "OilRefinery" }
+    )
+
+    _G.ToggleX7Teleport = {
+        Start = function(name) controllers[name]:Start() end,
+        Stop = function(name) controllers[name]:Stop() end,
+    }
+
+    for name, controller in pairs(controllers) do
+        local enabledKey = ({
+            StillwaterPrison = "StillwaterPrisonTeleportEnabled",
+            SterlingTown = "SterlingTownTeleportEnabled",
+            SterlingMountain = "SterlingMountainTeleportEnabled",
+            VampireCastle = "VampireCastleTeleportEnabled",
+            BoxingGym = "BoxingGymTeleportEnabled",
+            TeslaLab = "TeslaLabTeleportEnabled",
+            OilRefinery = "OilRefineryTeleportEnabled",
+        })[name]
+        if _G[enabledKey] then controller.Start() end
+    end
+end
+
 --移除迷霧
 _G.ApplyRemoveFog = function()
     local layers = Lighting:FindFirstChild("LightingLayers")
@@ -4152,8 +4358,8 @@ local AimbotToggle = Tabs.Aimbot:Toggle({
             return
         end
         _G.AimbotEnabled = v
-        if v then startAimbot() else stopAimbot() end
-        syncAimbotTracking()
+        if v then Aimbot.Start() else Aimbot.Stop() end
+        Aimbot.Sync()
     end,
 })
 
@@ -4185,7 +4391,7 @@ Tabs.Aimbot:Toggle({
     Value = _G.AimShowFov,
     Callback = function(v)
         _G.AimShowFov = v
-        updateFovCircle()
+        Aimbot.UpdateFov()
     end,
 })
 
@@ -4195,7 +4401,7 @@ Tabs.Aimbot:Slider({
     Value = { Min = 10, Max = 1000, Default = _G.AimFovRadius },
     Callback = function(v)
         _G.AimFovRadius = tonumber(v) or 100
-        updateFovCircle()
+        Aimbot.UpdateFov()
     end,
 })
 
@@ -4667,6 +4873,80 @@ Tabs.TeleportHorse:Button({
         EvilChurchTeleport.Skip()
     end,
 })
+
+do
+    Tabs.TeleportHorse:Section({ Title = "指定地點" })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找監獄",
+        Value = _G.StillwaterPrisonTeleportEnabled,
+        Callback = function(v)
+            _G.StillwaterPrisonTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("StillwaterPrison")
+            else _G.ToggleX7Teleport.Stop("StillwaterPrison") end
+        end,
+    })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找 Sterling",
+        Value = _G.SterlingTownTeleportEnabled,
+        Callback = function(v)
+            _G.SterlingTownTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("SterlingTown")
+            else _G.ToggleX7Teleport.Stop("SterlingTown") end
+        end,
+    })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找礦井",
+        Value = _G.SterlingMountainTeleportEnabled,
+        Callback = function(v)
+            _G.SterlingMountainTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("SterlingMountain")
+            else _G.ToggleX7Teleport.Stop("SterlingMountain") end
+        end,
+    })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找古堡",
+        Value = _G.VampireCastleTeleportEnabled,
+        Callback = function(v)
+            _G.VampireCastleTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("VampireCastle")
+            else _G.ToggleX7Teleport.Stop("VampireCastle") end
+        end,
+    })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找健身館",
+        Value = _G.BoxingGymTeleportEnabled,
+        Callback = function(v)
+            _G.BoxingGymTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("BoxingGym")
+            else _G.ToggleX7Teleport.Stop("BoxingGym") end
+        end,
+    })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找實驗室",
+        Value = _G.TeslaLabTeleportEnabled,
+        Callback = function(v)
+            _G.TeslaLabTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("TeslaLab")
+            else _G.ToggleX7Teleport.Stop("TeslaLab") end
+        end,
+    })
+
+    Tabs.TeleportHorse:Toggle({
+        Title = "尋找煉油廠",
+        Value = _G.OilRefineryTeleportEnabled,
+        Callback = function(v)
+            _G.OilRefineryTeleportEnabled = v
+            if v then _G.ToggleX7Teleport.Start("OilRefinery")
+            else _G.ToggleX7Teleport.Stop("OilRefinery") end
+        end,
+    })
+end
 
 Tabs.TeleportSpeed:Section({ Title = "移動設定" })
 
