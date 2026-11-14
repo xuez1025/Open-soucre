@@ -4384,6 +4384,7 @@ do
         { "古堡", { "VampireCastle" } },
         { "健身館", { "BoxingGym" } },
         { "實驗室", { "TeslaLab" } },
+        { "憲法堡", { "FortConstitution" } },
         { "煉油廠", { "OilRefinery" } },
     }
 
@@ -4441,6 +4442,7 @@ do
                 or current.Name == "VampireCastle"
                 or current.Name == "BoxingGym"
                 or current.Name == "TeslaLab"
+                or current.Name == "FortConstitution"
                 or current.Name == "OilRefinery" then
                 scanHistoryFixedLocations()
                 break
