@@ -194,7 +194,6 @@ _G.TeleportTrainEnabled = false
 
 -- 尋找憲法堡
 _G.FortTeleportEnabled = false
-_G.FortTweenSpeed = 500
 _G.TweenSpeed = 500
 
 -- 尋找小鎮
@@ -214,7 +213,7 @@ _G.RandomFarmIndex = 1
 _G.EvilChurchTeleportEnabled = false
 _G.EvilChurchIndex = 1
 
--- 尋找指定地點（每個地點全局最多一個元件）
+-- 尋找指定地點
 _G.StillwaterPrisonTeleportEnabled = false
 _G.SterlingTownTeleportEnabled = false
 _G.SterlingMountainTeleportEnabled = false
@@ -282,7 +281,7 @@ local ConfigKeys = {
 		"ESP_ItemMaster", "ESP_ItemShowName", "ESP_ItemShowDistance", "ESP_ItemShowTracers", "ESP_ItemShowHighlights", "ESP_ItemFontSize",
 		"AutoCollectBondEnabled",
 		"EndDecisionEnabled",
-		"FortTeleportEnabled", "FortTweenSpeed", "TweenSpeed",
+		"FortTeleportEnabled", "TweenSpeed",
 		"TownTeleportEnabled",
 		"SafeZoneTeleportEnabled",
 		"OutlawCampTeleportEnabled", "OutlawCampIndex",
@@ -327,10 +326,6 @@ local function ApplyConfig(data)
         if data[key] ~= nil then
             _G[key] = CopyConfigValue(data[key])
         end
-    end
-    -- 舊設定只有 FortTweenSpeed 時，升級後沿用舊速度
-    if data.TweenSpeed == nil and data.FortTweenSpeed ~= nil then
-        _G.TweenSpeed = data.FortTweenSpeed
     end
 end
 
@@ -2993,17 +2988,6 @@ if _G.TeleportTrainEnabled then
     _G.TeleportToTrain()
 end
 
---尋找憲法堡
-local function findSeat()
-    local fort   = workspace:FindFirstChild("FortConstitution")
-    local cannon = fort and fort:FindFirstChild("Cannon")
-    local seat   = cannon and cannon:FindFirstChild("VehicleSeat")
-    if seat and seat:IsA("VehicleSeat") then
-        return seat
-    end
-    return nil
-end
-
 local function getTweenSpeed()
     return math.max(tonumber(_G.TweenSpeed) or 500, 1)
 end
@@ -3048,10 +3032,6 @@ local function moveWithLiveTweenSpeed(hrp, targetCFrame, shouldContinue, setActi
 
         if setActiveTween then setActiveTween(nil) end
     end
-end
-
-local function tweenTo(hrp, targetCFrame, shouldContinue)
-    return moveWithLiveTweenSpeed(hrp, targetCFrame, shouldContinue)
 end
 
 -- 初始區
@@ -3178,57 +3158,6 @@ restoreCharacterState = function(saved)
         humanoid.JumpHeight = saved.jumpHeight
         humanoid.AutoRotate = saved.autoRotate
     end
-end
-
-local function startFortTeleport()
-    task.spawn(function()
-        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local hrp = character:WaitForChild("HumanoidRootPart")
-        local humanoid = character:WaitForChild("Humanoid")
-
-        if not hrp or not humanoid then return end
-
-        local savedState = saveCharacterState(hrp, humanoid)
-        humanoid.WalkSpeed  = 0
-        humanoid.JumpPower  = 0
-        humanoid.JumpHeight = 0
-        humanoid.AutoRotate = false
-        hrp.Anchored        = true
-
-        local direction = Vector3.new(0, 0, -1)
-
-        while _G.FortTeleportEnabled do
-            if not character.Parent or not hrp.Parent then
-                break
-            end
-
-            local seat = findSeat()
-            if seat then
-                tweenTo(hrp, seat.CFrame * CFrame.new(0, 2, 0), function()
-                    return _G.FortTeleportEnabled
-                end)
-                restoreCharacterState(savedState)
-                _G.FortTeleportEnabled = false
-                task.wait()
-                seat:Sit(humanoid)
-                break
-            end
-
-            local rotation = hrp.CFrame.Rotation
-            local target   = CFrame.new(hrp.Position + direction * 50) * rotation
-            if not moveWithLiveTweenSpeed(hrp, target, function()
-                return _G.FortTeleportEnabled
-            end) then
-                break
-            end
-        end
-
-        restoreCharacterState(savedState)
-    end)
-end
-
-if _G.FortTeleportEnabled then
-    startFortTeleport()
 end
 
 --尋找小鎮
@@ -3940,6 +3869,9 @@ do
         return { Start = start, Stop = stop }
     end
 
+    controllers.FortConstitution = createSingleTargetController(
+        "FortTeleportEnabled", { "FortConstitution" }
+    )
     controllers.StillwaterPrison = createSingleTargetController(
         "StillwaterPrisonTeleportEnabled", { "StillwaterPrison" }
     )
@@ -3969,6 +3901,7 @@ do
 
     for name, controller in pairs(controllers) do
         local enabledKey = ({
+            FortConstitution = "FortTeleportEnabled",
             StillwaterPrison = "StillwaterPrisonTeleportEnabled",
             SterlingTown = "SterlingTownTeleportEnabled",
             SterlingMountain = "SterlingMountainTeleportEnabled",
@@ -4126,9 +4059,322 @@ Tabs.ESPPlayers = Tabs.ESP:SubTab({ Title = "ESP Players" })
 Tabs.ESPMonsters = Tabs.ESP:SubTab({ Title = "ESP Monsters" })
 Tabs.ESPItems = Tabs.ESP:SubTab({ Title = "ESP Items" })
 
-Tabs.TeleportNoHorse = Tabs.Teleport:SubTab({ Title = "不需要馬" })
-Tabs.TeleportHorse = Tabs.Teleport:SubTab({ Title = "需要馬" })
-Tabs.TeleportSpeed = Tabs.Teleport:SubTab({ Title = "移動速度" })
+Tabs.Searching = Tabs.Teleport:SubTab({ Title = "傳送&尋找" })
+Tabs.History = Tabs.Teleport:SubTab({ Title = "歷史紀錄" })
+
+-- 地點歷史紀錄與座標
+do
+    local HistoryDropdown
+    local historyEntries = {}
+    local historyByKey = {}
+    local historyByLabel = {}
+    local historySelected = nil
+    local historyRunId = 0
+    local historyActiveTween = nil
+    local historyActiveState = nil
+    local historyScanQueued = false
+
+    local function getHistoryCFrame(target)
+        if not target then return nil end
+
+        local ok, cframe = pcall(function()
+            if target:IsA("Model") then
+                return target:GetPivot()
+            elseif target:IsA("BasePart") then
+                return target.CFrame
+            end
+            return nil
+        end)
+
+        if ok and typeof(cframe) == "CFrame" then
+            return cframe
+        end
+        return nil
+    end
+
+    local function getHistoryValues()
+        local values = {}
+        for _, entry in ipairs(historyEntries) do
+            table.insert(values, entry.Label)
+        end
+        return values
+    end
+
+    local function refreshHistoryDropdown()
+        if not HistoryDropdown or not HistoryDropdown.Refresh then return end
+
+        if historySelected and not historyByLabel[historySelected] then
+            historySelected = nil
+        end
+
+        local selected = {}
+        if historySelected then
+            table.insert(selected, historySelected)
+        end
+
+        pcall(function()
+            HistoryDropdown:Refresh(getHistoryValues(), selected)
+        end)
+    end
+
+    local function recordHistoryLocation(category, target)
+        local cframe = getHistoryCFrame(target)
+        if not cframe then return end
+
+        local key = category .. "|" .. target:GetFullName()
+        local existing = historyByKey[key]
+        if existing then
+            existing.CFrame = cframe
+            return
+        end
+
+        local label = category .. " / " .. target.Name
+        if historyByLabel[label] then
+            local suffix = 2
+            local baseLabel = label
+            repeat
+                label = baseLabel .. " (" .. tostring(suffix) .. ")"
+                suffix = suffix + 1
+            until not historyByLabel[label]
+        end
+
+        local entry = {
+            Key = key,
+            Label = label,
+            CFrame = cframe,
+        }
+        historyByKey[key] = entry
+        historyByLabel[label] = entry
+        table.insert(historyEntries, entry)
+        refreshHistoryDropdown()
+    end
+
+    local function scanHistoryFolders()
+        local towns = workspace:FindFirstChild("Towns")
+        if towns then
+            for _, location in ipairs(towns:GetChildren()) do
+                if string.match(location.Name, "^town_%d+$") then
+                    recordHistoryLocation("小鎮", location)
+                end
+            end
+        end
+
+        local safeZones = workspace:FindFirstChild("SafeZones")
+        if safeZones then
+            for _, location in ipairs(safeZones:GetChildren()) do
+                if string.match(location.Name, "^safezone_%d+$") then
+                    recordHistoryLocation("安全區", location)
+                end
+            end
+        end
+
+        local randomBuildings = workspace:FindFirstChild("RandomBuildings")
+        if randomBuildings then
+            for _, location in ipairs(randomBuildings:GetChildren()) do
+                if hasNamePart(location, "OutlawCamp") then
+                    recordHistoryLocation("法外營地", location)
+                elseif hasNamePart(location, "Farm") then
+                    recordHistoryLocation("農場", location)
+                elseif hasNamePart(location, "EvilChurch") then
+                    recordHistoryLocation("教堂", location)
+                end
+            end
+        end
+    end
+
+    local historyFixedLocations = {
+        { "監獄", { "StillwaterPrison" } },
+        { "Sterling", { "Sterling", "Town" } },
+        { "礦井", { "Sterling", "Mountain" } },
+        { "古堡", { "VampireCastle" } },
+        { "健身館", { "BoxingGym" } },
+        { "實驗室", { "TeslaLab" } },
+        { "煉油廠", { "OilRefinery" } },
+    }
+
+    local function scanHistoryFixedLocations()
+        for _, definition in ipairs(historyFixedLocations) do
+            local target = workspace
+            for _, name in ipairs(definition[2]) do
+                target = target:FindFirstChild(name)
+                if not target then break end
+            end
+            if target then
+                recordHistoryLocation(definition[1], target)
+            end
+        end
+    end
+
+    local function scanHistoryLocations()
+        scanHistoryFolders()
+        scanHistoryFixedLocations()
+    end
+
+    local function inspectHistoryAddedInstance(instance)
+        if not instance then return end
+
+        local current = instance
+        while current and current ~= workspace do
+            local parent = current.Parent
+            if not parent then break end
+
+            if parent.Name == "Towns"
+                and string.match(current.Name, "^town_%d+$") then
+                recordHistoryLocation("小鎮", current)
+            elseif parent.Name == "SafeZones"
+                and string.match(current.Name, "^safezone_%d+$") then
+                recordHistoryLocation("安全區", current)
+            elseif parent.Name == "RandomBuildings" then
+                if hasNamePart(current, "OutlawCamp") then
+                    recordHistoryLocation("法外營地", current)
+                elseif hasNamePart(current, "Farm") then
+                    recordHistoryLocation("農場", current)
+                elseif hasNamePart(current, "EvilChurch") then
+                    recordHistoryLocation("教堂", current)
+                end
+            end
+
+            current = parent
+        end
+
+        current = instance
+        while current and current ~= workspace do
+            if current.Name == "StillwaterPrison"
+                or current.Name == "Sterling"
+                or current.Name == "Town"
+                or current.Name == "Mountain"
+                or current.Name == "VampireCastle"
+                or current.Name == "BoxingGym"
+                or current.Name == "TeslaLab"
+                or current.Name == "OilRefinery" then
+                scanHistoryFixedLocations()
+                break
+            end
+            current = current.Parent
+        end
+    end
+
+    local function queueHistoryScan()
+        if historyScanQueued then return end
+        historyScanQueued = true
+        task.defer(function()
+            historyScanQueued = false
+            scanHistoryLocations()
+        end)
+    end
+
+    local function stopHistoryTeleport()
+        historyRunId = historyRunId + 1
+
+        if historyActiveTween then
+            pcall(function()
+                if historyActiveTween.PlaybackState == Enum.PlaybackState.Playing then
+                    historyActiveTween:Cancel()
+                end
+            end)
+            historyActiveTween = nil
+        end
+
+        if historyActiveState then
+            restoreCharacterState(historyActiveState)
+            historyActiveState = nil
+        end
+    end
+
+    local function startHistoryTeleport(entry)
+        if not entry or typeof(entry.CFrame) ~= "CFrame" then
+            WindUI:Notify({
+                Title = "歷史紀錄",
+                Content = "請先選擇有效的地點",
+                Duration = 2,
+            })
+            return
+        end
+
+        stopHistoryTeleport()
+        historyRunId = historyRunId + 1
+        local runId = historyRunId
+
+        task.spawn(function()
+            local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local hrp = character:WaitForChild("HumanoidRootPart")
+            local humanoid = character:WaitForChild("Humanoid")
+            if not hrp or not humanoid then return end
+
+            local savedState = saveCharacterState(hrp, humanoid)
+            historyActiveState = savedState
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.JumpHeight = 0
+            humanoid.AutoRotate = false
+            hrp.Anchored = true
+
+            moveWithLiveTweenSpeed(
+                hrp,
+                entry.CFrame * CFrame.new(0, 5, 0),
+                function()
+                    return runId == historyRunId
+                end,
+                function(tween)
+                    if runId == historyRunId then
+                        historyActiveTween = tween
+                    end
+                end
+            )
+
+            if runId == historyRunId then
+                historyActiveTween = nil
+                restoreCharacterState(savedState)
+                if historyActiveState == savedState then
+                    historyActiveState = nil
+                end
+            end
+        end)
+
+        WindUI:Notify({
+            Title = "歷史紀錄",
+            Content = "前往 " .. entry.Label,
+            Duration = 2,
+        })
+    end
+
+    scanHistoryLocations()
+    workspace.DescendantAdded:Connect(function(instance)
+        inspectHistoryAddedInstance(instance)
+        queueHistoryScan()
+    end)
+    task.spawn(function()
+        while task.wait(1) do
+            scanHistoryLocations()
+        end
+    end)
+
+    Tabs.History:Section({ Title = "歷史" })
+
+    HistoryDropdown = Tabs.History:Dropdown({
+        Title = "地點",
+        Desc = "自動記錄遊戲中遇到的地點",
+        Values = getHistoryValues(),
+        Value = historySelected,
+        AllowNone = true,
+        SearchBarEnabled = true,
+        Callback = function(value)
+            if type(value) == "table" then
+                value = value[1]
+            end
+            local selected = value and tostring(value) or nil
+            historySelected = selected ~= "" and selected or nil
+        end,
+    })
+
+    Tabs.History:Button({
+        Title = "前往選取地點",
+        Callback = function()
+            local entry = historySelected and historyByLabel[historySelected]
+            startHistoryTeleport(entry)
+        end,
+    })
+end
 
 --------------------------
 -- 元件
@@ -4704,31 +4950,31 @@ Tabs.Farm:Toggle({
     end
 })
 
-Tabs.TeleportNoHorse:Section({ Title = "快速傳送" })
+Tabs.Searching:Section({ Title = "傳送" })
 
-Tabs.TeleportNoHorse:Button({
+Tabs.Searching:Button({
     Title = "傳送到火車",
     Callback = function()
         _G.TeleportToTrain()
     end
 })
 
-Tabs.TeleportNoHorse:Divider()
+Tabs.Searching:Section({ Title = "移動設定" })
 
-Tabs.TeleportNoHorse:Toggle({
-    Title = "尋找憲法堡",
-    Value = _G.FortTeleportEnabled,
+Tabs.Searching:Slider({
+    Title = "移動速度",
+    Min = 100,
+    Max = 1000,
+    Step = 100,
+    Value = _G.TweenSpeed,
     Callback = function(v)
-        _G.FortTeleportEnabled = v
-        if v then
-            startFortTeleport()
-        end
-    end
+        _G.TweenSpeed = math.max(tonumber(v) or 500, 1)
+    end,
 })
 
-Tabs.TeleportHorse:Section({ Title = "安全區" })
+Tabs.Searching:Section({ Title = "安全區" })
 
-SafeZoneDropdown = Tabs.TeleportHorse:Dropdown({
+SafeZoneDropdown = Tabs.Searching:Dropdown({
     Title = "初始區／安全區",
     Values = scanTeleportLocations(),
     Value = _G.SafeZoneSelected,
@@ -4758,14 +5004,14 @@ SafeZoneDropdown = Tabs.TeleportHorse:Dropdown({
     end,
 })
 
-Tabs.TeleportHorse:Button({
+Tabs.Searching:Button({
     Title = "前往選取安全區",
     Callback = function()
         teleportToSelectedLocation()
     end,
 })
 
-Tabs.TeleportHorse:Toggle({
+Tabs.Searching:Toggle({
     Title = "自動前往安全區",
     Value = _G.SafeZoneTeleportEnabled,
     Callback = function(v)
@@ -4778,16 +5024,16 @@ Tabs.TeleportHorse:Toggle({
     end,
 })
 
-Tabs.TeleportHorse:Button({
+Tabs.Searching:Button({
     Title = "前往下一座安全區",
     Callback = function()
         skipToNextSafeZone()
     end,
 })
 
-Tabs.TeleportHorse:Section({ Title = "尋找" })
+Tabs.Searching:Section({ Title = "尋找" })
 
-Tabs.TeleportHorse:Toggle({
+Tabs.Searching:Toggle({
     Title = "尋找小鎮",
     Value = _G.TownTeleportEnabled,
     Callback = function(v)
@@ -4801,16 +5047,16 @@ Tabs.TeleportHorse:Toggle({
     end,
 })
 
-Tabs.TeleportHorse:Button({
+Tabs.Searching:Button({
     Title = "前往下一座小鎮",
     Callback = function()
         skipToNextTown()
     end,
 })
 
-Tabs.TeleportHorse:Divider()
+Tabs.Searching:Divider()
 
-Tabs.TeleportHorse:Toggle({
+Tabs.Searching:Toggle({
     Title = "尋找法外營地",
     Value = _G.OutlawCampTeleportEnabled,
     Callback = function(v)
@@ -4823,16 +5069,16 @@ Tabs.TeleportHorse:Toggle({
     end,
 })
 
-Tabs.TeleportHorse:Button({
+Tabs.Searching:Button({
     Title = "前往下一座法外營地",
     Callback = function()
         OutlawCampTeleport.Skip()
     end,
 })
 
-Tabs.TeleportHorse:Divider()
+Tabs.Searching:Divider()
 
-Tabs.TeleportHorse:Toggle({
+Tabs.Searching:Toggle({
     Title = "尋找農場",
     Value = _G.RandomFarmTeleportEnabled,
     Callback = function(v)
@@ -4845,16 +5091,16 @@ Tabs.TeleportHorse:Toggle({
     end,
 })
 
-Tabs.TeleportHorse:Button({
+Tabs.Searching:Button({
     Title = "前往下一座農場",
     Callback = function()
         RandomFarmTeleport.Skip()
     end,
 })
 
-Tabs.TeleportHorse:Divider()
+Tabs.Searching:Divider()
 
-Tabs.TeleportHorse:Toggle({
+Tabs.Searching:Toggle({
     Title = "尋找教堂",
     Value = _G.EvilChurchTeleportEnabled,
     Callback = function(v)
@@ -4867,98 +5113,92 @@ Tabs.TeleportHorse:Toggle({
     end,
 })
 
-Tabs.TeleportHorse:Button({
+Tabs.Searching:Button({
     Title = "前往下一座教堂",
     Callback = function()
         EvilChurchTeleport.Skip()
     end,
 })
 
-do
-    Tabs.TeleportHorse:Section({ Title = "指定地點" })
+Tabs.Searching:Section({ Title = "指定地點" })
 
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找監獄",
-        Value = _G.StillwaterPrisonTeleportEnabled,
-        Callback = function(v)
-            _G.StillwaterPrisonTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("StillwaterPrison")
-            else _G.ToggleX7Teleport.Stop("StillwaterPrison") end
-        end,
-    })
-
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找 Sterling",
-        Value = _G.SterlingTownTeleportEnabled,
-        Callback = function(v)
-            _G.SterlingTownTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("SterlingTown")
-            else _G.ToggleX7Teleport.Stop("SterlingTown") end
-        end,
-    })
-
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找礦井",
-        Value = _G.SterlingMountainTeleportEnabled,
-        Callback = function(v)
-            _G.SterlingMountainTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("SterlingMountain")
-            else _G.ToggleX7Teleport.Stop("SterlingMountain") end
-        end,
-    })
-
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找古堡",
-        Value = _G.VampireCastleTeleportEnabled,
-        Callback = function(v)
-            _G.VampireCastleTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("VampireCastle")
-            else _G.ToggleX7Teleport.Stop("VampireCastle") end
-        end,
-    })
-
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找健身館",
-        Value = _G.BoxingGymTeleportEnabled,
-        Callback = function(v)
-            _G.BoxingGymTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("BoxingGym")
-            else _G.ToggleX7Teleport.Stop("BoxingGym") end
-        end,
-    })
-
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找實驗室",
-        Value = _G.TeslaLabTeleportEnabled,
-        Callback = function(v)
-            _G.TeslaLabTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("TeslaLab")
-            else _G.ToggleX7Teleport.Stop("TeslaLab") end
-        end,
-    })
-
-    Tabs.TeleportHorse:Toggle({
-        Title = "尋找煉油廠",
-        Value = _G.OilRefineryTeleportEnabled,
-        Callback = function(v)
-            _G.OilRefineryTeleportEnabled = v
-            if v then _G.ToggleX7Teleport.Start("OilRefinery")
-            else _G.ToggleX7Teleport.Stop("OilRefinery") end
-        end,
-    })
-end
-
-Tabs.TeleportSpeed:Section({ Title = "移動設定" })
-
-Tabs.TeleportSpeed:Slider({
-    Title = "移動速度",
-    Min = 100,
-    Max = 1000,
-    Step = 100,
-    Value = _G.TweenSpeed,
+Tabs.Searching:Toggle({
+    Title = "尋找監獄",
+    Value = _G.StillwaterPrisonTeleportEnabled,
     Callback = function(v)
-        _G.TweenSpeed = math.max(tonumber(v) or 500, 1)
-        _G.FortTweenSpeed = _G.TweenSpeed
+        _G.StillwaterPrisonTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("StillwaterPrison")
+        else _G.ToggleX7Teleport.Stop("StillwaterPrison") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找 Sterling",
+    Value = _G.SterlingTownTeleportEnabled,
+    Callback = function(v)
+        _G.SterlingTownTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("SterlingTown")
+        else _G.ToggleX7Teleport.Stop("SterlingTown") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找礦井",
+    Value = _G.SterlingMountainTeleportEnabled,
+    Callback = function(v)
+        _G.SterlingMountainTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("SterlingMountain")
+        else _G.ToggleX7Teleport.Stop("SterlingMountain") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找古堡",
+    Value = _G.VampireCastleTeleportEnabled,
+    Callback = function(v)
+        _G.VampireCastleTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("VampireCastle")
+        else _G.ToggleX7Teleport.Stop("VampireCastle") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找健身館",
+    Value = _G.BoxingGymTeleportEnabled,
+    Callback = function(v)
+        _G.BoxingGymTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("BoxingGym")
+        else _G.ToggleX7Teleport.Stop("BoxingGym") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找實驗室",
+    Value = _G.TeslaLabTeleportEnabled,
+    Callback = function(v)
+        _G.TeslaLabTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("TeslaLab")
+        else _G.ToggleX7Teleport.Stop("TeslaLab") end
+    end,
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找憲法堡",
+    Value = _G.FortTeleportEnabled,
+    Callback = function(v)
+        _G.FortTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("FortConstitution")
+        else _G.ToggleX7Teleport.Stop("FortConstitution") end
+    end
+})
+
+Tabs.Searching:Toggle({
+    Title = "尋找煉油廠",
+    Value = _G.OilRefineryTeleportEnabled,
+    Callback = function(v)
+        _G.OilRefineryTeleportEnabled = v
+        if v then _G.ToggleX7Teleport.Start("OilRefinery")
+        else _G.ToggleX7Teleport.Stop("OilRefinery") end
     end,
 })
 
