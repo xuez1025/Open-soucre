@@ -201,6 +201,11 @@ _G.TweenSpeed = 500
 _G.TownTeleportEnabled = false
 _G.TownIndex = 1
 
+-- 尋找安全區
+_G.SafeZoneTeleportEnabled = false
+_G.SafeZoneIndex = 1
+_G.SafeZoneSelected = "初始區"
+
 -- 尋找法外營地 / 農場 / 教堂
 _G.OutlawCampTeleportEnabled = false
 _G.OutlawCampIndex = 1
@@ -270,6 +275,7 @@ local ConfigKeys = {
 		"EndDecisionEnabled",
 		"FortTeleportEnabled", "FortTweenSpeed", "TweenSpeed",
 		"TownTeleportEnabled",
+		"SafeZoneTeleportEnabled",
 		"OutlawCampTeleportEnabled", "OutlawCampIndex",
 		"RandomFarmTeleportEnabled", "RandomFarmIndex",
 		"EvilChurchTeleportEnabled", "EvilChurchIndex",
@@ -348,8 +354,9 @@ end
 
 local InitialConfig = CollectConfig()
 LoadConfig()
--- 每次重新執行腳本都從 town_1 開始，不沿用上次跳過後的編號
 _G.TownIndex = 1
+_G.SafeZoneIndex = 1
+_G.SafeZoneSelected = "初始區"
 _G.OutlawCampIndex = 1
 _G.RandomFarmIndex = 1
 _G.EvilChurchIndex = 1
@@ -374,6 +381,7 @@ end)
 ----------------------------------------
 -- FPS / Ping 標籤
 ----------------------------------------
+do
 local FPSTag = Window:Tag({
     Title = "FPS: 0",
     Color = Color3.fromRGB(100, 150, 255),
@@ -438,6 +446,8 @@ end)
 --------------------------
 -- 功能核心邏輯
 --------------------------
+end
+
 -- 伺服器運行時間
 local function convertToDetailedTime(S)
     local h = math.floor(S / 3600)
@@ -1499,6 +1509,7 @@ if _G.AimShowFov then
 end
 
 --自動換彈
+do
 local reload = {
     last = setmetatable({}, { __mode = "k" }),
 }
@@ -1571,6 +1582,7 @@ task.spawn(function()
 end)
 
 if _G.AutoReloadEnabled then
+end
 end
 
 -- 移除繃帶冷卻
@@ -1860,10 +1872,10 @@ end
 --ESP Players
 local PlayerESP = {}
 do
-ESP_TEXT_INTERVAL = 0.2
-espTextCache = {}
-Tracers = {}
-espWasActive = false
+local ESP_TEXT_INTERVAL = 0.2
+local espTextCache = {}
+local Tracers = {}
+local espWasActive = false
 
 local function removeTracer(p)
     if Tracers[p] then
@@ -3291,7 +3303,270 @@ local function skipToNextTown()
     })
 end
 
--- 尋找 RandomBuildings
+-- 尋找安全區
+local safeZoneRunId = 0
+local safeZoneActiveTween = nil
+local safeZoneActiveState = nil
+local safeZoneSavedLocations = {}
+local safeZoneCurrentIndex = nil
+local safeZoneCurrentSaved = false
+local SafeZoneDropdown
+
+local function getSafeZoneCFrame(safeZone)
+    if not safeZone then return nil end
+
+    if safeZone:IsA("Model") then
+        return safeZone:GetPivot()
+    elseif safeZone:IsA("BasePart") then
+        return safeZone.CFrame
+    end
+
+    return nil
+end
+
+local function findSafeZone(index)
+    local safeZones = workspace:FindFirstChild("SafeZones")
+    local safeZone = safeZones and safeZones:FindFirstChild("safezone_" .. tostring(index))
+    return getSafeZoneCFrame(safeZone)
+end
+
+local function scanSafeZones()
+    local values = {}
+    local safeZones = workspace:FindFirstChild("SafeZones")
+    if not safeZones then return values end
+
+    local indexed = {}
+    for _, safeZone in ipairs(safeZones:GetChildren()) do
+        local index = tonumber(string.match(safeZone.Name, "^safezone_(%d+)$"))
+        if index and getSafeZoneCFrame(safeZone) then
+            indexed[index] = safeZone.Name
+        end
+    end
+
+    for index = 1, math.huge do
+        local name = indexed[index]
+        if not name then break end
+        table.insert(values, name)
+    end
+
+    return values
+end
+
+local function scanTeleportLocations()
+    local values = { "初始區" }
+    local included = { ["初始區"] = true }
+    for _, safeZoneName in ipairs(scanSafeZones()) do
+        table.insert(values, safeZoneName)
+        included[safeZoneName] = true
+    end
+
+    for index in pairs(safeZoneSavedLocations) do
+        local safeZoneName = "safezone_" .. tostring(index)
+        if not included[safeZoneName] then
+            table.insert(values, safeZoneName)
+        end
+    end
+
+    table.sort(values, function(a, b)
+        if a == "初始區" then return true end
+        if b == "初始區" then return false end
+        return (tonumber(string.match(a, "^safezone_(%d+)$")) or math.huge)
+            < (tonumber(string.match(b, "^safezone_(%d+)$")) or math.huge)
+    end)
+    return values
+end
+
+local function refreshSafeZoneDropdown()
+    if not SafeZoneDropdown or not SafeZoneDropdown.Refresh then return end
+
+    pcall(function()
+        SafeZoneDropdown:Refresh(
+            scanTeleportLocations(),
+            { tostring(_G.SafeZoneSelected or "初始區") }
+        )
+    end)
+end
+
+local function saveCurrentSafeZone(index, cframe)
+    if not index or not cframe then return false end
+
+    safeZoneSavedLocations[index] = cframe
+    safeZoneCurrentIndex = index
+    safeZoneCurrentSaved = true
+    _G.SafeZoneIndex = index
+    _G.SafeZoneSelected = "safezone_" .. tostring(index)
+    refreshSafeZoneDropdown()
+    return true
+end
+
+local function stopSafeZoneTeleport()
+    safeZoneRunId = safeZoneRunId + 1
+
+    if safeZoneActiveTween then
+        pcall(function()
+            if safeZoneActiveTween.PlaybackState == Enum.PlaybackState.Playing then
+                safeZoneActiveTween:Cancel()
+            end
+        end)
+        safeZoneActiveTween = nil
+    end
+
+    if safeZoneActiveState then
+        restoreCharacterState(safeZoneActiveState)
+        safeZoneActiveState = nil
+    end
+end
+
+local function startSafeZoneTeleport(indexOverride)
+    stopSafeZoneTeleport()
+    safeZoneRunId = safeZoneRunId + 1
+    local runId = safeZoneRunId
+    local forcedIndex = indexOverride
+
+    task.spawn(function()
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:WaitForChild("HumanoidRootPart")
+        local humanoid = character:WaitForChild("Humanoid")
+        if not hrp or not humanoid then return end
+
+        local savedState = saveCharacterState(hrp, humanoid)
+        safeZoneActiveState = savedState
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+        humanoid.JumpHeight = 0
+        humanoid.AutoRotate = false
+        hrp.Anchored = true
+
+        local direction = Vector3.new(0, 0, -1)
+        while (forcedIndex ~= nil or _G.SafeZoneTeleportEnabled) and runId == safeZoneRunId do
+            if not character.Parent or not hrp.Parent then break end
+
+            local targetIndex = math.max(
+                math.floor(tonumber(forcedIndex or _G.SafeZoneIndex) or 1),
+                1
+            )
+            local safeZoneCFrame = findSafeZone(targetIndex)
+
+            if safeZoneCFrame then
+                local arrived = moveWithLiveTweenSpeed(
+                    hrp,
+                    safeZoneCFrame * CFrame.new(0, 5, 0),
+                    function()
+                        return (forcedIndex ~= nil or _G.SafeZoneTeleportEnabled)
+                            and runId == safeZoneRunId
+                    end,
+                    function(tween)
+                        safeZoneActiveTween = tween
+                    end
+                )
+                if not arrived then break end
+                -- 只有實際抵達後，才把當前安全區座標寫入 Dropdown 可用的快取
+                saveCurrentSafeZone(targetIndex, safeZoneCFrame)
+                restoreCharacterState(savedState)
+                break
+            end
+
+            local rotation = hrp.CFrame.Rotation
+            local target = CFrame.new(hrp.Position + direction * 50) * rotation
+            if not moveWithLiveTweenSpeed(hrp, target, function()
+                return (forcedIndex ~= nil or _G.SafeZoneTeleportEnabled)
+                    and runId == safeZoneRunId
+            end, function(tween)
+                safeZoneActiveTween = tween
+            end) then
+                break
+            end
+        end
+
+        if runId == safeZoneRunId then
+            restoreCharacterState(savedState)
+            if safeZoneActiveState == savedState then
+                safeZoneActiveState = nil
+            end
+        end
+    end)
+end
+
+if _G.SafeZoneTeleportEnabled then
+    startSafeZoneTeleport()
+end
+
+local function teleportToSelectedSafeZone()
+    local selected = tostring(_G.SafeZoneSelected or "")
+    local index = tonumber(string.match(selected, "^safezone_(%d+)$"))
+    if not index then
+        WindUI:Notify({ Title = "安全區", Content = "請先選擇有效的安全區", Duration = 2 })
+        return
+    end
+
+    _G.SafeZoneIndex = index
+    safeZoneCurrentIndex = index
+    safeZoneCurrentSaved = safeZoneSavedLocations[index] ~= nil
+    startSafeZoneTeleport(index)
+    WindUI:Notify({
+        Title = "安全區",
+        Content = "前往 " .. selected,
+        Duration = 2,
+    })
+end
+
+local function teleportToSelectedLocation()
+    local selected = tostring(_G.SafeZoneSelected or "初始區")
+
+    if selected == "初始區" then
+        task.spawn(function()
+            local ok, message = tweenBackToStartingZone()
+            if not ok then
+                WindUI:Notify({
+                    Title = "返回失敗",
+                    Content = message,
+                    Duration = 3,
+                })
+            end
+        end)
+        WindUI:Notify({ Title = "座標", Content = "前往初始區", Duration = 2 })
+        return
+    end
+
+    teleportToSelectedSafeZone()
+end
+
+local function skipToNextSafeZone()
+    local currentIndex = safeZoneCurrentIndex or tonumber(string.match(
+        tostring(_G.SafeZoneSelected or ""),
+        "^safezone_(%d+)$"
+    ))
+
+    if not currentIndex or not safeZoneCurrentSaved
+        or not safeZoneSavedLocations[currentIndex] then
+        WindUI:Notify({
+            Title = "安全區",
+            Content = "請先前往並成功取得當前安全區座標，才能前往下一座",
+            Duration = 3,
+        })
+        return false
+    end
+
+    _G.SafeZoneIndex = math.max(math.floor(tonumber(currentIndex) or 1), 1) + 1
+    _G.SafeZoneSelected = "safezone_" .. tostring(_G.SafeZoneIndex)
+    safeZoneCurrentIndex = _G.SafeZoneIndex
+    safeZoneCurrentSaved = safeZoneSavedLocations[_G.SafeZoneIndex] ~= nil
+    refreshSafeZoneDropdown()
+
+    safeZoneRunId = safeZoneRunId + 1
+    if _G.SafeZoneTeleportEnabled then
+        startSafeZoneTeleport()
+    end
+
+    WindUI:Notify({
+        Title = "安全區",
+        Content = "立即前往 safezone_" .. tostring(_G.SafeZoneIndex),
+        Duration = 2,
+    })
+    return true
+end
+
+-- 尋找法外營地&農場&教堂
 local function getBuildingCFrame(building)
     if building:IsA("Model") then
         return building:GetPivot()
@@ -3640,6 +3915,14 @@ local Tabs = {
 		Graphics = Window:Tab({ Title = "畫質", Icon = "tv"}),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
+
+Tabs.ESPPlayers = Tabs.ESP:SubTab({ Title = "ESP Players" })
+Tabs.ESPMonsters = Tabs.ESP:SubTab({ Title = "ESP Monsters" })
+Tabs.ESPItems = Tabs.ESP:SubTab({ Title = "ESP Items" })
+
+Tabs.TeleportNoHorse = Tabs.Teleport:SubTab({ Title = "不需要馬" })
+Tabs.TeleportHorse = Tabs.Teleport:SubTab({ Title = "需要馬" })
+Tabs.TeleportSpeed = Tabs.Teleport:SubTab({ Title = "移動速度" })
 
 --------------------------
 -- 元件
@@ -4003,9 +4286,9 @@ Tabs.Heal:Toggle({
     end,
 })
 
-Tabs.ESP:Section({ Title = "ESP Players" })
+Tabs.ESPPlayers:Section({ Title = "ESP Players" })
 
-Tabs.ESP:Toggle({
+Tabs.ESPPlayers:Toggle({
     Title = "ESP 玩家主開關",
     Type = "Checkbox",
     Value = _G.ESP_Master,
@@ -4017,7 +4300,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPPlayers:Toggle({
     Title = "顯示名稱",
     Value = _G.ESP_ShowName,
     Callback = function(v)
@@ -4025,7 +4308,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPPlayers:Toggle({
     Title = "顯示血量和血條",
     Value = _G.ESP_ShowHealth,
     Callback = function(v)
@@ -4033,7 +4316,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPPlayers:Toggle({
     Title = "顯示距離",
     Value = _G.ESP_ShowDistance,
     Callback = function(v)
@@ -4041,7 +4324,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPPlayers:Toggle({
     Title = "顯示射線",
     Desc = "第三人稱才可顯示",
     Value = _G.ESP_ShowTracers,
@@ -4055,7 +4338,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Slider({
+Tabs.ESPPlayers:Slider({
     Title = "ESP 字體大小",
     Value = {
         Min = 10,
@@ -4067,9 +4350,9 @@ Tabs.ESP:Slider({
     end
 })
 
-Tabs.ESP:Section({ Title = "ESP Monsters" })
+Tabs.ESPMonsters:Section({ Title = "ESP Monsters" })
 
-Tabs.ESP:Toggle({
+Tabs.ESPMonsters:Toggle({
     Title = "ESP 怪物主開關",
     Type = "Checkbox",
     Value = _G.MobESP_Master,
@@ -4084,7 +4367,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPMonsters:Toggle({
     Title = "顯示名稱",
     Value = _G.MobESP_ShowName,
     Callback = function(v)
@@ -4092,7 +4375,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPMonsters:Toggle({
     Title = "顯示血量和血條",
     Value = _G.MobESP_ShowHealth,
     Callback = function(v)
@@ -4100,7 +4383,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPMonsters:Toggle({
     Title = "顯示距離",
     Value = _G.MobESP_ShowDistance,
     Callback = function(v)
@@ -4108,7 +4391,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPMonsters:Toggle({
     Title = "顯示狀態",
     Value = _G.MobESP_ShowState,
     Callback = function(v)
@@ -4116,7 +4399,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
+Tabs.ESPMonsters:Toggle({
     Title = "顯示射線",
     Desc = "第三人稱才可顯示",
     Value = _G.MobESP_ShowTracers,
@@ -4130,8 +4413,8 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Slider({
-    Title = "怪物 ESP 字體大小",
+Tabs.ESPMonsters:Slider({
+    Title = "ESP 字體大小",
     Value = {
         Min = 10,
         Max = 32,
@@ -4142,9 +4425,9 @@ Tabs.ESP:Slider({
     end
 })
 
-Tabs.ESP:Section({ Title = "ESP Items" })
+Tabs.ESPItems:Section({ Title = "ESP Items" })
 
-Tabs.ESP:Toggle({
+Tabs.ESPItems:Toggle({
     Title = "物品 ESP 主開關",
     Type = "Checkbox",
     Value = _G.ESP_ItemMaster,
@@ -4154,24 +4437,25 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Toggle({
-    Title = "物品名稱",
+Tabs.ESPItems:Toggle({
+    Title = "顯示名稱",
     Value = _G.ESP_ItemShowName,
     Callback = function(v)
         _G.ESP_ItemShowName = v
     end
 })
 
-Tabs.ESP:Toggle({
-    Title = "物品距離",
+Tabs.ESPItems:Toggle({
+    Title = "顯示距離",
     Value = _G.ESP_ItemShowDistance,
     Callback = function(v)
         _G.ESP_ItemShowDistance = v
     end
 })
 
-Tabs.ESP:Toggle({
-    Title = "物品射線",
+Tabs.ESPItems:Toggle({
+    Title = "顯示射線",
+		Desc  = "第三人稱才可顯示",
     Value = _G.ESP_ItemShowTracers,
     Callback = function(v)
         _G.ESP_ItemShowTracers = v
@@ -4183,7 +4467,7 @@ Tabs.ESP:Toggle({
     end
 })
 
-Tabs.ESP:Slider({
+Tabs.ESPItems:Slider({
     Title = "ESP 字體大小",
     Value = {
         Min = 10,
@@ -4214,48 +4498,18 @@ Tabs.Farm:Toggle({
     end
 })
 
-Tabs.Teleport:Section({ Title = "傳送" })
+Tabs.TeleportNoHorse:Section({ Title = "快速傳送" })
 
-Tabs.Teleport:Button({
-    Title = "回到初始區",
-    Callback = function()
-        task.spawn(function()
-            local ok, message = tweenBackToStartingZone()
-            if not ok then
-                WindUI:Notify({
-                    Title = "返回失敗",
-                    Content = message,
-                    Duration = 3,
-                })
-            end
-        end)
-    end,
-})
-
-Tabs.Teleport:Button({
+Tabs.TeleportNoHorse:Button({
     Title = "傳送到火車",
     Callback = function()
         _G.TeleportToTrain()
     end
 })
 
-Tabs.Teleport:Section({ Title = "速度" })
+Tabs.TeleportNoHorse:Divider()
 
-Tabs.Teleport:Slider({
-    Title = "移動速度",
-    Min = 100,
-    Max = 1000,
-    Step = 100,
-    Value = _G.TweenSpeed,
-    Callback = function(v)
-        _G.TweenSpeed = math.max(tonumber(v) or 500, 1)
-        _G.FortTweenSpeed = _G.TweenSpeed
-    end,
-})
-
-Tabs.Teleport:Section({ Title = "移動(不需馬)" })
-
-Tabs.Teleport:Toggle({
+Tabs.TeleportNoHorse:Toggle({
     Title = "尋找憲法堡",
     Value = _G.FortTeleportEnabled,
     Callback = function(v)
@@ -4266,9 +4520,68 @@ Tabs.Teleport:Toggle({
     end
 })
 
-Tabs.Teleport:Section({ Title = "移動(需要馬)" })
+Tabs.TeleportHorse:Section({ Title = "安全區" })
 
-Tabs.Teleport:Toggle({
+SafeZoneDropdown = Tabs.TeleportHorse:Dropdown({
+    Title = "初始區／安全區",
+    Values = scanTeleportLocations(),
+    Value = _G.SafeZoneSelected,
+    AllowNone = false,
+    SearchBarEnabled = true,
+    Callback = function(v)
+        if type(v) == "table" then
+            v = v[1]
+        end
+
+        if v then
+            _G.SafeZoneSelected = tostring(v)
+
+            local index = tonumber(
+                string.match(_G.SafeZoneSelected, "^safezone_(%d+)$")
+            )
+
+            if index then
+                _G.SafeZoneIndex = index
+                safeZoneCurrentIndex = index
+                safeZoneCurrentSaved = safeZoneSavedLocations[index] ~= nil
+            else
+                safeZoneCurrentIndex = nil
+                safeZoneCurrentSaved = false
+            end
+        end
+    end,
+})
+
+Tabs.TeleportHorse:Button({
+    Title = "前往選取安全區",
+    Callback = function()
+        teleportToSelectedLocation()
+    end,
+})
+
+Tabs.TeleportHorse:Toggle({
+    Title = "自動前往安全區",
+    Value = _G.SafeZoneTeleportEnabled,
+    Callback = function(v)
+        _G.SafeZoneTeleportEnabled = v
+        if v then
+            startSafeZoneTeleport()
+        else
+            stopSafeZoneTeleport()
+        end
+    end,
+})
+
+Tabs.TeleportHorse:Button({
+    Title = "前往下一座安全區",
+    Callback = function()
+        skipToNextSafeZone()
+    end,
+})
+
+Tabs.TeleportHorse:Section({ Title = "尋找" })
+
+Tabs.TeleportHorse:Toggle({
     Title = "尋找小鎮",
     Value = _G.TownTeleportEnabled,
     Callback = function(v)
@@ -4282,16 +4595,16 @@ Tabs.Teleport:Toggle({
     end,
 })
 
-Tabs.Teleport:Button({
-    Title = "跳過當前小鎮 前往下一座",
+Tabs.TeleportHorse:Button({
+    Title = "前往下一座小鎮",
     Callback = function()
         skipToNextTown()
     end,
 })
 
-Tabs.Teleport:Section({ Title = "RandomBuildings" })
+Tabs.TeleportHorse:Divider()
 
-Tabs.Teleport:Toggle({
+Tabs.TeleportHorse:Toggle({
     Title = "尋找法外營地",
     Value = _G.OutlawCampTeleportEnabled,
     Callback = function(v)
@@ -4304,14 +4617,16 @@ Tabs.Teleport:Toggle({
     end,
 })
 
-Tabs.Teleport:Button({
-    Title = "跳過當前法外營地 前往下一個",
+Tabs.TeleportHorse:Button({
+    Title = "前往下一座法外營地",
     Callback = function()
         OutlawCampTeleport.Skip()
     end,
 })
 
-Tabs.Teleport:Toggle({
+Tabs.TeleportHorse:Divider()
+
+Tabs.TeleportHorse:Toggle({
     Title = "尋找農場",
     Value = _G.RandomFarmTeleportEnabled,
     Callback = function(v)
@@ -4324,14 +4639,16 @@ Tabs.Teleport:Toggle({
     end,
 })
 
-Tabs.Teleport:Button({
-    Title = "跳過當前農場 前往下一個",
+Tabs.TeleportHorse:Button({
+    Title = "前往下一座農場",
     Callback = function()
         RandomFarmTeleport.Skip()
     end,
 })
 
-Tabs.Teleport:Toggle({
+Tabs.TeleportHorse:Divider()
+
+Tabs.TeleportHorse:Toggle({
     Title = "尋找教堂",
     Value = _G.EvilChurchTeleportEnabled,
     Callback = function(v)
@@ -4344,10 +4661,24 @@ Tabs.Teleport:Toggle({
     end,
 })
 
-Tabs.Teleport:Button({
-    Title = "跳過當前教堂 前往下一個",
+Tabs.TeleportHorse:Button({
+    Title = "前往下一座教堂",
     Callback = function()
         EvilChurchTeleport.Skip()
+    end,
+})
+
+Tabs.TeleportSpeed:Section({ Title = "移動設定" })
+
+Tabs.TeleportSpeed:Slider({
+    Title = "移動速度",
+    Min = 100,
+    Max = 1000,
+    Step = 100,
+    Value = _G.TweenSpeed,
+    Callback = function(v)
+        _G.TweenSpeed = math.max(tonumber(v) or 500, 1)
+        _G.FortTweenSpeed = _G.TweenSpeed
     end,
 })
 
