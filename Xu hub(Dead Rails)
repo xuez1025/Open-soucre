@@ -252,6 +252,7 @@ local ConfigKeys = {
 		"AutoReloadEnabled",
 		"ESP_Master", "ESP_ShowName", "ESP_ShowHealth", "ESP_ShowDistance", "ESP_ShowTracers", "ESP_FontSize",
 		"MobESP_Master", "MobESP_ShowName", "MobESP_ShowDistance", "MobESP_ShowHealth", "MobESP_ShowState", "MobESP_ShowTracers", "MobESP_FontSize",
+		"ESP_ItemMaster", "ESP_ItemShowName", "ESP_ItemShowDistance", "ESP_ItemShowTracers", "ESP_ItemShowHighlights", "ESP_ItemFontSize",
 		"AutoCollectBondEnabled",
 		"EndDecisionEnabled",
 		"FortTeleportEnabled", "FortTweenSpeed",
