@@ -195,10 +195,19 @@ _G.TeleportTrainEnabled = false
 -- 尋找憲法堡
 _G.FortTeleportEnabled = false
 _G.FortTweenSpeed = 500
+_G.TweenSpeed = 500
 
 -- 尋找小鎮
 _G.TownTeleportEnabled = false
 _G.TownIndex = 1
+
+-- 尋找法外營地 / 農場 / 教堂
+_G.OutlawCampTeleportEnabled = false
+_G.OutlawCampIndex = 1
+_G.RandomFarmTeleportEnabled = false
+_G.RandomFarmIndex = 1
+_G.EvilChurchTeleportEnabled = false
+_G.EvilChurchIndex = 1
 
 -- 移除迷霧
 _G.RemoveFogEnabled = false
@@ -259,8 +268,11 @@ local ConfigKeys = {
 		"ESP_ItemMaster", "ESP_ItemShowName", "ESP_ItemShowDistance", "ESP_ItemShowTracers", "ESP_ItemShowHighlights", "ESP_ItemFontSize",
 		"AutoCollectBondEnabled",
 		"EndDecisionEnabled",
-		"FortTeleportEnabled", "FortTweenSpeed",
+		"FortTeleportEnabled", "FortTweenSpeed", "TweenSpeed",
 		"TownTeleportEnabled",
+		"OutlawCampTeleportEnabled", "OutlawCampIndex",
+		"RandomFarmTeleportEnabled", "RandomFarmIndex",
+		"EvilChurchTeleportEnabled", "EvilChurchIndex",
 		"RemoveFogEnabled",
 		"LowCpuMode",
     "AutoExecute",
@@ -338,6 +350,9 @@ local InitialConfig = CollectConfig()
 LoadConfig()
 -- 每次重新執行腳本都從 town_1 開始，不沿用上次跳過後的編號
 _G.TownIndex = 1
+_G.OutlawCampIndex = 1
+_G.RandomFarmIndex = 1
+_G.EvilChurchIndex = 1
 ConfigReady = true
 
 task.spawn(function()
@@ -2926,28 +2941,64 @@ local function findSeat()
     return nil
 end
 
-local function tweenTo(hrp, targetCFrame)
-    local distance = (targetCFrame.Position - hrp.Position).Magnitude
-    local speed = math.max(tonumber(_G.TweenSpeed) or 500, 1)
-    local duration = math.max(distance / speed, 0.01)
+local function getTweenSpeed()
+    return math.max(tonumber(_G.TweenSpeed) or 500, 1)
+end
 
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-        { CFrame = targetCFrame }
-    )
-    tween:Play()
-    tween.Completed:Wait()
+local function moveWithLiveTweenSpeed(hrp, targetCFrame, shouldContinue, setActiveTween)
+    while true do
+        if shouldContinue and not shouldContinue() then
+            return false
+        end
+
+        local distance = (targetCFrame.Position - hrp.Position).Magnitude
+        if distance <= 0.05 then
+            hrp.CFrame = targetCFrame
+            if setActiveTween then setActiveTween(nil) end
+            return true
+        end
+
+        local speed = getTweenSpeed()
+        local duration = math.max(math.min(distance / speed, 0.12), 0.01)
+        local tween = TweenService:Create(
+            hrp,
+            TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+            { CFrame = targetCFrame }
+        )
+
+        if setActiveTween then setActiveTween(tween) end
+        tween:Play()
+
+        while tween.PlaybackState == Enum.PlaybackState.Playing do
+            if shouldContinue and not shouldContinue() then
+                tween:Cancel()
+                if setActiveTween then setActiveTween(nil) end
+                return false
+            end
+
+            if math.abs(getTweenSpeed() - speed) > 0.001 then
+                tween:Cancel()
+                break
+            end
+            task.wait(0.03)
+        end
+
+        if setActiveTween then setActiveTween(nil) end
+    end
+end
+
+local function tweenTo(hrp, targetCFrame, shouldContinue)
+    return moveWithLiveTweenSpeed(hrp, targetCFrame, shouldContinue)
 end
 
 -- 初始區
 local savedStartingZoneCFrame = nil
 local startingZoneTween = nil
+local startingZoneRunId = 0
 local saveCharacterState
 local restoreCharacterState
 
 local function getStartingZoneCFrame()
-    -- 只接受 workspace.StartingZone，不能用玩家目前位置或其他物件代替
     local startingZone = workspace:FindFirstChild("StartingZone")
     if not startingZone then
         return nil, "找不到 workspace.StartingZone，無法儲存"
@@ -2974,12 +3025,10 @@ end
 local function recordStartingZone()
     local cframe, message = getStartingZoneCFrame()
     if cframe then
-        -- 找到目前的初始區時，更新已記錄的座標
         savedStartingZoneCFrame = cframe
         return true
     end
 
-    -- 當前找不到初始區時，優先使用之前已記錄的座標
     if typeof(savedStartingZoneCFrame) == "CFrame" then
         return true
     end
@@ -2987,7 +3036,6 @@ local function recordStartingZone()
     return false, message or "找不到 workspace.StartingZone，無法儲存"
 end
 
--- 腳本啟動時只記錄 workspace.StartingZone，不使用玩家當前位置代替
 task.spawn(function()
     recordStartingZone()
 end)
@@ -3001,12 +3049,14 @@ local function tweenBackToStartingZone()
         return false, "找不到角色"
     end
 
-    -- 每次傳送前都必須重新記錄 workspace.StartingZone
     local recorded, message = recordStartingZone()
     if not recorded then
         return false, message
     end
     local targetCFrame = savedStartingZoneCFrame
+
+    startingZoneRunId = startingZoneRunId + 1
+    local runId = startingZoneRunId
 
     if startingZoneTween then
         pcall(function()
@@ -3024,20 +3074,20 @@ local function tweenBackToStartingZone()
     humanoid.AutoRotate = false
     hrp.Anchored = true
 
-    local distance = (targetCFrame.Position - hrp.Position).Magnitude
-    local speed = math.max(tonumber(_G.TweenSpeed) or 500, 1)
-    local duration = math.max(distance / speed, 0.01)
-    startingZoneTween = TweenService:Create(
+    local arrived = moveWithLiveTweenSpeed(
         hrp,
-        TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-        { CFrame = targetCFrame * CFrame.new(0, 3, 0) }
+        targetCFrame * CFrame.new(0, 3, 0),
+        function()
+            return runId == startingZoneRunId
+        end,
+        function(tween)
+            startingZoneTween = tween
+        end
     )
-    startingZoneTween:Play()
-    startingZoneTween.Completed:Wait()
 
     startingZoneTween = nil
     restoreCharacterState(savedState)
-    return true
+    return arrived
 end
 
 saveCharacterState = function(hrp, humanoid)
@@ -3091,7 +3141,9 @@ local function startFortTeleport()
 
             local seat = findSeat()
             if seat then
-                tweenTo(hrp, seat.CFrame * CFrame.new(0, 2, 0))
+                tweenTo(hrp, seat.CFrame * CFrame.new(0, 2, 0), function()
+                    return _G.FortTeleportEnabled
+                end)
                 restoreCharacterState(savedState)
                 _G.FortTeleportEnabled = false
                 task.wait()
@@ -3101,23 +3153,9 @@ local function startFortTeleport()
 
             local rotation = hrp.CFrame.Rotation
             local target   = CFrame.new(hrp.Position + direction * 50) * rotation
-            local distance = (target.Position - hrp.Position).Magnitude
-            local speed = math.max(tonumber(_G.TweenSpeed) or 500, 1)
-            local duration = math.max(distance / speed, 0.01)
-
-            local tween = TweenService:Create(
-                hrp,
-                TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-                { CFrame = target }
-            )
-            tween:Play()
-
-            while tween.PlaybackState == Enum.PlaybackState.Playing and _G.FortTeleportEnabled do
-                task.wait(0.05)
-            end
-
-            if not _G.FortTeleportEnabled then
-                tween:Cancel()
+            if not moveWithLiveTweenSpeed(hrp, target, function()
+                return _G.FortTeleportEnabled
+            end) then
                 break
             end
         end
@@ -3168,31 +3206,16 @@ local function stopTownTeleport()
 end
 
 local function tweenTownTo(hrp, targetCFrame, runId)
-    local distance = (targetCFrame.Position - hrp.Position).Magnitude
-    local speed = math.max(tonumber(_G.TweenSpeed) or 500, 1)
-    local duration = math.max(distance / speed, 0.01)
-    local tween = TweenService:Create(
+    return moveWithLiveTweenSpeed(
         hrp,
-        TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-        { CFrame = targetCFrame }
+        targetCFrame,
+        function()
+            return _G.TownTeleportEnabled and runId == townRunId
+        end,
+        function(tween)
+            townActiveTween = tween
+        end
     )
-    townActiveTween = tween
-    tween:Play()
-
-    while tween.PlaybackState == Enum.PlaybackState.Playing
-        and _G.TownTeleportEnabled
-        and runId == townRunId do
-        task.wait(0.05)
-    end
-
-    if tween.PlaybackState == Enum.PlaybackState.Playing then
-        tween:Cancel()
-    end
-    if townActiveTween == tween then
-        townActiveTween = nil
-    end
-
-    return runId == townRunId and _G.TownTeleportEnabled
 end
 
 local function startTownTeleport()
@@ -3231,33 +3254,16 @@ local function startTownTeleport()
 
             local rotation = hrp.CFrame.Rotation
             local target = CFrame.new(hrp.Position + direction * 50) * rotation
-            local distance = (target.Position - hrp.Position).Magnitude
-            local speed = math.max(tonumber(_G.TweenSpeed) or 500, 1)
-            local duration = math.max(distance / speed, 0.01)
-            local tween = TweenService:Create(
-                hrp,
-                TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
-                { CFrame = target }
-            )
-            townActiveTween = tween
-            tween:Play()
-
-            while tween.PlaybackState == Enum.PlaybackState.Playing
-                and _G.TownTeleportEnabled
-                and runId == townRunId do
-                task.wait(0.05)
-            end
-
-            if tween.PlaybackState == Enum.PlaybackState.Playing then
-                tween:Cancel()
-            end
-            if townActiveTween == tween then
-                townActiveTween = nil
+            if not moveWithLiveTweenSpeed(hrp, target, function()
+                return _G.TownTeleportEnabled and runId == townRunId
+            end, function(tween)
+                townActiveTween = tween
+            end) then
+                break
             end
         end
 
         if runId == townRunId then
-        restoreCharacterState(savedState)
             restoreCharacterState(savedState)
             if townActiveState == savedState then
                 townActiveState = nil
@@ -3284,6 +3290,215 @@ local function skipToNextTown()
         Duration = 2,
     })
 end
+
+-- 尋找 RandomBuildings
+local function getBuildingCFrame(building)
+    if building:IsA("Model") then
+        return building:GetPivot()
+    elseif building:IsA("BasePart") then
+        return building.CFrame
+    end
+    return nil
+end
+
+local function isMovableBuilding(building)
+    return building:IsA("Model") or building:IsA("BasePart")
+end
+
+local function getRandomBuildingCandidates(filter)
+    local folder = workspace:FindFirstChild("RandomBuildings")
+    if not folder then return {} end
+
+    local character = LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    local origin = hrp and hrp.Position or Camera.CFrame.Position
+    local candidates = {}
+    for _, building in ipairs(folder:GetChildren()) do
+        if filter(building) then
+            local cframe = getBuildingCFrame(building)
+            if cframe then
+                table.insert(candidates, {
+                    Instance = building,
+                    CFrame = cframe,
+                    Distance = (cframe.Position - origin).Magnitude,
+                    SortKey = building:GetFullName(),
+                })
+            end
+        end
+    end
+
+    table.sort(candidates, function(a, b)
+        if a.Distance ~= b.Distance then
+            return a.Distance < b.Distance
+        end
+        return a.SortKey < b.SortKey
+    end)
+    return candidates
+end
+
+local function hasNamePart(building, namePart)
+    return string.find(string.lower(building.Name), string.lower(namePart), 1, true) ~= nil
+end
+
+local function isClassifiedRandomBuilding(building)
+    return hasNamePart(building, "OutlawCamp")
+        or hasNamePart(building, "Farm")
+        or hasNamePart(building, "EvilChurch")
+end
+
+local function createRandomBuildingTeleportController(options)
+    local state = {
+        RunId = 0,
+        ActiveTween = nil,
+        ActiveCharacterState = nil,
+    }
+
+    local function isEnabled()
+        return _G[options.EnabledKey] == true
+    end
+
+    local function stop()
+        state.RunId = state.RunId + 1
+
+        if state.ActiveTween then
+            pcall(function()
+                if state.ActiveTween.PlaybackState == Enum.PlaybackState.Playing then
+                    state.ActiveTween:Cancel()
+                end
+            end)
+            state.ActiveTween = nil
+        end
+
+        if state.ActiveCharacterState then
+            restoreCharacterState(state.ActiveCharacterState)
+            state.ActiveCharacterState = nil
+        end
+    end
+
+    local function start()
+        stop()
+        state.RunId = state.RunId + 1
+        local runId = state.RunId
+
+        task.spawn(function()
+            local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local hrp = character:WaitForChild("HumanoidRootPart")
+            local humanoid = character:WaitForChild("Humanoid")
+            if not hrp or not humanoid then return end
+
+            local savedState = saveCharacterState(hrp, humanoid)
+            state.ActiveCharacterState = savedState
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+            humanoid.JumpHeight = 0
+            humanoid.AutoRotate = false
+            hrp.Anchored = true
+
+            local direction = Vector3.new(0, 0, -1)
+
+            while isEnabled() and runId == state.RunId do
+                if not character.Parent or not hrp.Parent then break end
+
+                local candidates = getRandomBuildingCandidates(options.Filter)
+                local targetIndex = math.max(
+                    math.floor(tonumber(_G[options.IndexKey]) or 1),
+                    1
+                )
+                local target = candidates[targetIndex]
+
+                if target then
+                    local arrived = moveWithLiveTweenSpeed(
+                        hrp,
+                        target.CFrame * CFrame.new(0, 5, 0),
+                        function()
+                            return isEnabled() and runId == state.RunId
+                        end,
+                        function(tween)
+                            state.ActiveTween = tween
+                        end
+                    )
+                    if not arrived then break end
+
+                    restoreCharacterState(savedState)
+                    state.ActiveCharacterState = nil
+                    break
+                end
+
+                local rotation = hrp.CFrame.Rotation
+                local searchTarget = CFrame.new(hrp.Position + direction * 50) * rotation
+                if not moveWithLiveTweenSpeed(hrp, searchTarget, function()
+                    return isEnabled() and runId == state.RunId
+                end, function(tween)
+                    state.ActiveTween = tween
+                end) then
+                    break
+                end
+            end
+
+            if runId == state.RunId then
+                restoreCharacterState(savedState)
+                if state.ActiveCharacterState == savedState then
+                    state.ActiveCharacterState = nil
+                end
+            end
+        end)
+    end
+
+    local function skip()
+        _G[options.IndexKey] = math.max(
+            math.floor(tonumber(_G[options.IndexKey]) or 1),
+            1
+        ) + 1
+
+        state.RunId = state.RunId + 1
+        if isEnabled() then
+            start()
+        end
+
+        WindUI:Notify({
+            Title = options.Title,
+            Content = "跳過目前目標，尋找第 " .. tostring(_G[options.IndexKey]) .. " 個",
+            Duration = 2,
+        })
+    end
+
+    return {
+        Start = start,
+        Stop = stop,
+        Skip = skip,
+    }
+end
+
+local OutlawCampTeleport = createRandomBuildingTeleportController({
+    EnabledKey = "OutlawCampTeleportEnabled",
+    IndexKey = "OutlawCampIndex",
+    Title = "法外營地",
+    Filter = function(building)
+        return isMovableBuilding(building) and hasNamePart(building, "OutlawCamp")
+    end,
+})
+
+local RandomFarmTeleport = createRandomBuildingTeleportController({
+    EnabledKey = "RandomFarmTeleportEnabled",
+    IndexKey = "RandomFarmIndex",
+    Title = "農場",
+    Filter = function(building)
+        return isMovableBuilding(building) and hasNamePart(building, "Farm")
+    end,
+})
+
+local EvilChurchTeleport = createRandomBuildingTeleportController({
+    EnabledKey = "EvilChurchTeleportEnabled",
+    IndexKey = "EvilChurchIndex",
+    Title = "教堂",
+    Filter = function(building)
+        return isMovableBuilding(building) and hasNamePart(building, "EvilChurch")
+    end,
+})
+
+if _G.OutlawCampTeleportEnabled then OutlawCampTeleport.Start() end
+if _G.RandomFarmTeleportEnabled then RandomFarmTeleport.Start() end
+if _G.EvilChurchTeleportEnabled then EvilChurchTeleport.Start() end
 
 --移除迷霧
 _G.ApplyRemoveFog = function()
@@ -4071,6 +4286,68 @@ Tabs.Teleport:Button({
     Title = "跳過當前小鎮 前往下一座",
     Callback = function()
         skipToNextTown()
+    end,
+})
+
+Tabs.Teleport:Section({ Title = "RandomBuildings" })
+
+Tabs.Teleport:Toggle({
+    Title = "尋找法外營地",
+    Value = _G.OutlawCampTeleportEnabled,
+    Callback = function(v)
+        _G.OutlawCampTeleportEnabled = v
+        if v then
+            OutlawCampTeleport.Start()
+        else
+            OutlawCampTeleport.Stop()
+        end
+    end,
+})
+
+Tabs.Teleport:Button({
+    Title = "跳過當前法外營地 前往下一個",
+    Callback = function()
+        OutlawCampTeleport.Skip()
+    end,
+})
+
+Tabs.Teleport:Toggle({
+    Title = "尋找農場",
+    Value = _G.RandomFarmTeleportEnabled,
+    Callback = function(v)
+        _G.RandomFarmTeleportEnabled = v
+        if v then
+            RandomFarmTeleport.Start()
+        else
+            RandomFarmTeleport.Stop()
+        end
+    end,
+})
+
+Tabs.Teleport:Button({
+    Title = "跳過當前農場 前往下一個",
+    Callback = function()
+        RandomFarmTeleport.Skip()
+    end,
+})
+
+Tabs.Teleport:Toggle({
+    Title = "尋找教堂",
+    Value = _G.EvilChurchTeleportEnabled,
+    Callback = function(v)
+        _G.EvilChurchTeleportEnabled = v
+        if v then
+            EvilChurchTeleport.Start()
+        else
+            EvilChurchTeleport.Stop()
+        end
+    end,
+})
+
+Tabs.Teleport:Button({
+    Title = "跳過當前教堂 前往下一個",
+    Callback = function()
+        EvilChurchTeleport.Skip()
     end,
 })
 
