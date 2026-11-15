@@ -252,7 +252,7 @@ end
 
 local ScriptLoadstring = [[if isfile("DeadRails.file") then
     if readfile("DeadRails.file") == "true" then
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/WindUI"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20hub(Dead%20Rails)"))()
     end
 end]]
 
@@ -4153,7 +4153,6 @@ do
             return false, "seat_lost"
         end
 
-        _G.AutoFindBondEnabled = false
         -- 已完成一輪搜尋，下一次啟用時應從新的搜尋進度開始。
         autoFindBondStop(false)
         pcall(function()
