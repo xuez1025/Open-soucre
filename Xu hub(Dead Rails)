@@ -3265,15 +3265,13 @@ end
 do
     local autoFindBondRunId = 0
     local autoFindBondState = nil
-    -- 關閉 toggle 時保留搜尋進度，重新開啟後繼續使用同一份黑名單。
-    -- 只有抵達終點並 reset 時才會清除這些資料。
     local autoFindBondProgress = {
         Visited = {},
         SkippedBonds = {},
     }
     local AUTO_FIND_BOND_RADIUS = 250
     local AUTO_FIND_BOND_PAUSE_DURATION = 1.2
-    local AUTO_FIND_BOND_REFRESH_DURATION = 0.1
+    local AUTO_FIND_BOND_REFRESH_DURATION = 0.05
 
     local function autoFindBondCFrame(instance)
         if not instance then return nil end
@@ -3416,18 +3414,14 @@ do
 
             for _, townEntry in ipairs(townList) do
                 local townBuildings = townEntry.Instance:FindFirstChild("Buildings")
-                -- 小鎮銀行可能是正常狀態 Bank，或已被破壞後的 BankDestroyed。
-                local bank = townBuildings and (
-                    townBuildings:FindFirstChild("Bank")
-                    or townBuildings:FindFirstChild("BankDestroyed")
-                )
+                local bank = townBuildings and townBuildings:FindFirstChild("Bank")
                 if bank then
                     autoFindBondAddCandidate(
                         candidates,
                         visited,
                         bank,
                         autoFindBondCFrame(bank),
-                        "town_" .. tostring(townEntry.Index) .. "/Buildings/" .. bank.Name
+                        "town_" .. tostring(townEntry.Index) .. "/Buildings/Bank"
                     )
                 end
             end
