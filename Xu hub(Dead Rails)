@@ -3406,7 +3406,14 @@ do
             local token = movementToken
             local carrier = context.Carrier
             local startPivot = carrier:GetPivot()
-            local targetPivot = targetSeatCFrame * context.SeatOffset:Inverse()
+            -- Bond 導航只需要移動到目標位置，不需要把目標 CFrame 的
+            -- Rotation 套到馬匹上。保留目前載具朝向可避免每個目標點
+            -- 都重新轉向，降低畫面晃動；同時用座位偏移修正載具位置，
+            -- 讓座位仍會準確停在目標位置。
+            local targetSeatPosition = targetSeatCFrame.Position
+            local rotatedSeatOffset = startPivot.Rotation * context.SeatOffset.Position
+            local targetPivot = CFrame.new(targetSeatPosition - rotatedSeatOffset)
+                * startPivot.Rotation
             local distance = (targetPivot.Position - startPivot.Position).Magnitude
             local duration = math.max(distance / getBondTweenSpeed(), 0.05)
             local driver = Instance.new("CFrameValue")
@@ -4234,7 +4241,10 @@ do
                     local candidates = autoFindBondGetCandidates(state.Visited, origin)
                     local target = candidates[1]
                     if target then
-                        local targetSeatCFrame = target.CFrame * CFrame.new(0, -20, 0)
+                        -- 只取目標座標；不要把建築物的 Rotation 帶進導航。
+                        local targetSeatCFrame = CFrame.new(
+                            target.CFrame.Position + Vector3.new(0, -20, 0)
+                        )
                         local arrived, reason = AutoFindBondMovement.MoveTo(
                             state.Movement,
                             targetSeatCFrame,
@@ -4288,9 +4298,10 @@ do
                         if not seatCFrame then
                             state.Movement = nil
                         else
+                            -- 搜尋路線只沿目前朝向前進，MoveTo 會維持這個朝向。
                             local searchTarget = CFrame.new(
                                 seatCFrame.Position + direction * 50
-                            ) * seatCFrame.Rotation
+                            )
                             local arrived, reason = AutoFindBondMovement.MoveTo(
                                 state.Movement,
                                 searchTarget,
