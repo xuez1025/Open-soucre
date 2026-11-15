@@ -187,6 +187,15 @@ _G.ESP_ItemFontSize = 14
 _G.AutoCollectBondEnabled = false
 _G.AutoFindBondEnabled = false
 
+-- 自動尋找 Bond 的馬匹控制設定
+-- AutoFindBond 開啟後，會先自動尋找可用座位，再開始 Bond 路線。
+_G.HorseAutomationEnabled = true
+_G.AbilityCooldown = 2
+_G.TeleportInterval = 0.8
+_G.NextSeatDelay = 0.6
+_G.CheckInterval = 0.2
+_G.HorseTeleportMaxDistance = 1000
+
 -- 遊戲結束自動重進
 _G.EndDecisionEnabled = false
 
@@ -3271,7 +3280,466 @@ do
     }
     local AUTO_FIND_BOND_RADIUS = 250
     local AUTO_FIND_BOND_PAUSE_DURATION = 1.2
-    local AUTO_FIND_BOND_REFRESH_DURATION = 0.05
+    -- Bond 專用移動控制器。
+    --
+    -- 不直接 Tween HumanoidRootPart。角色坐在載具時，直接改 HRP 會讓
+    -- Seat weld 與載具不同步，造成角色和身體分離。這裡用 CFrameValue
+    -- 作為 TweenService 的唯一時間軸，再把 Tween 輸出套到整個載具
+    -- Model，讓角色、座位和載具維持同一個組件。
+    local AutoFindBondHorse = {}
+    local AutoFindBondMovement = {}
+    do
+        local movementToken = 0
+        local activeTween = nil
+        local activeDriver = nil
+        local activeConnection = nil
+
+        local function getBondTweenSpeed()
+            return math.max(tonumber(_G.TweenSpeed) or 500, 1)
+        end
+
+        local function clearActiveTween(cancelTween)
+            local tween = activeTween
+            local driver = activeDriver
+            local connection = activeConnection
+
+            activeTween = nil
+            activeDriver = nil
+            activeConnection = nil
+
+            if connection then
+                pcall(function() connection:Disconnect() end)
+            end
+
+            if cancelTween and tween then
+                pcall(function()
+                    if tween.PlaybackState == Enum.PlaybackState.Playing then
+                        tween:Cancel()
+                    end
+                end)
+            end
+
+            if driver then
+                pcall(function() driver:Destroy() end)
+            end
+        end
+
+        function AutoFindBondMovement.Capture(character, humanoid)
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local seat = humanoid and humanoid.SeatPart
+            if not root or not seat or not seat:IsA("BasePart") then
+                return nil
+            end
+
+            local carrier = seat:FindFirstAncestorOfClass("Model")
+            if not carrier or carrier == character then
+                return nil
+            end
+
+            local pivot = carrier:GetPivot()
+            return {
+                Character = character,
+                Humanoid = humanoid,
+                Root = root,
+                Seat = seat,
+                Carrier = carrier,
+                SeatOffset = pivot:ToObjectSpace(seat.CFrame),
+            }
+        end
+
+        function AutoFindBondMovement.IsValid(context)
+            return context ~= nil
+                and context.Character
+                and context.Character.Parent ~= nil
+                and context.Humanoid
+                and context.Humanoid.Parent ~= nil
+                and context.Root
+                and context.Root.Parent ~= nil
+                and context.Seat
+                and context.Seat.Parent ~= nil
+                and context.Carrier
+                and context.Carrier.Parent ~= nil
+                and context.Humanoid.SeatPart == context.Seat
+        end
+
+        function AutoFindBondMovement.GetPosition(context)
+            if not AutoFindBondMovement.IsValid(context) then
+                return nil
+            end
+            return context.Seat.Position
+        end
+
+        function AutoFindBondMovement.GetSeatCFrame(context)
+            if not AutoFindBondMovement.IsValid(context) then
+                return nil
+            end
+            return context.Seat.CFrame
+        end
+
+        function AutoFindBondMovement.Cancel()
+            movementToken = movementToken + 1
+            clearActiveTween(true)
+        end
+
+        function AutoFindBondMovement.MoveTo(context, targetSeatCFrame, shouldContinue, interruptCheck)
+            if typeof(targetSeatCFrame) ~= "CFrame" then
+                return false, "invalid_target"
+            end
+            if not AutoFindBondMovement.IsValid(context) then
+                return false, "seat_lost"
+            end
+            if AutoFindBondHorse.IsLowHealth
+                and AutoFindBondHorse.IsLowHealth(context)
+            then
+                return false, "horse_low_health"
+            end
+
+            clearActiveTween(true)
+            movementToken = movementToken + 1
+            local token = movementToken
+            local carrier = context.Carrier
+            local startPivot = carrier:GetPivot()
+            local targetPivot = targetSeatCFrame * context.SeatOffset:Inverse()
+            local distance = (targetPivot.Position - startPivot.Position).Magnitude
+            local duration = math.max(distance / getBondTweenSpeed(), 0.05)
+            local driver = Instance.new("CFrameValue")
+            driver.Value = startPivot
+
+            local ok, tween = pcall(function()
+                return TweenService:Create(
+                    driver,
+                    TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                    { Value = targetPivot }
+                )
+            end)
+            if not ok or not tween then
+                pcall(function() driver:Destroy() end)
+                return false, "tween_error"
+            end
+
+            local movementError = nil
+            local connection = driver:GetPropertyChangedSignal("Value"):Connect(function()
+                if token ~= movementToken then
+                    return
+                end
+                if not AutoFindBondMovement.IsValid(context) then
+                    movementError = "seat_lost"
+                    return
+                end
+
+                local applied = pcall(function()
+                    -- PivotTo 只套用 Tween 輸出的值，不是另一套移動方式。
+                    carrier:PivotTo(driver.Value)
+                end)
+                if not applied then
+                    movementError = "carrier_lost"
+                end
+            end)
+
+            activeTween = tween
+            activeDriver = driver
+            activeConnection = connection
+            tween:Play()
+
+            local function finish(success, reason)
+                if activeTween == tween then
+                    clearActiveTween(not success)
+                end
+                return success, reason
+            end
+
+            while tween.PlaybackState == Enum.PlaybackState.Playing do
+                if token ~= movementToken then
+                    return finish(false, "cancelled")
+                end
+                if shouldContinue and not shouldContinue() then
+                    return finish(false, "stopped")
+                end
+                if movementError then
+                    return finish(false, movementError)
+                end
+                if not AutoFindBondMovement.IsValid(context) then
+                    return finish(false, "seat_lost")
+                end
+                if AutoFindBondHorse.IsLowHealth
+                    and AutoFindBondHorse.IsLowHealth(context)
+                then
+                    return finish(false, "horse_low_health")
+                end
+                if interruptCheck and interruptCheck() then
+                    return finish(false, "interrupt")
+                end
+                task.wait()
+            end
+
+            if movementError then
+                return finish(false, movementError)
+            end
+            if tween.PlaybackState ~= Enum.PlaybackState.Completed then
+                return finish(false, "cancelled")
+            end
+            return finish(true)
+        end
+    end
+
+    -- 自動找座位 / 馬匹低血量換馬。
+    -- 這一層只負責載具取得與切換，取得座位後才交給下方 Bond 路線。
+    do
+        local HorseAbilityRemote = ReplicatedStorage
+            :WaitForChild("Shared")
+            :WaitForChild("Universe")
+            :WaitForChild("Network")
+            :WaitForChild("RemoteEvent")
+            :WaitForChild("ActivateMasteryAbility")
+        local abilityDirection = Vector3.new(
+            0.07542137801647186,
+            -0.3814314901828766,
+            -0.9213151931762695
+        )
+        local activeHorseTarget = nil
+        local visitedHorseSeats = setmetatable({}, { __mode = "k" })
+        local lastAbilityTime = 0
+        local lastTeleportTime = 0
+        local nextSeatTime = 0
+
+        local function activateHorseAbility()
+            local success, errorMessage = pcall(function()
+                HorseAbilityRemote:FireServer(abilityDirection)
+            end)
+            if not success then
+                warn("[Horse Automation] Ability Error:", errorMessage)
+            end
+            return success
+        end
+
+        local function getCharacterParts()
+            local character = LocalPlayer.Character
+            if not character then
+                return nil, nil, nil
+            end
+
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            local root = character:FindFirstChild("HumanoidRootPart")
+            if not humanoid or not root then
+                return nil, nil, nil
+            end
+            return character, humanoid, root
+        end
+
+        local function isSeatInTeleportRange(seat)
+            local _, _, root = getCharacterParts()
+            if not root or not seat or not seat.Parent then
+                return false
+            end
+
+            local maxDistance = math.max(
+                tonumber(_G.HorseTeleportMaxDistance) or 1000,
+                0
+            )
+            return (root.Position - seat.Position).Magnitude <= maxDistance
+        end
+
+        local function getHorseTargets()
+            local targets = {}
+            local hasHorse = false
+            local seenSeats = {}
+
+            for _, horse in ipairs(Workspace:GetChildren()) do
+                if horse.Name == "Model_Horse" then
+                    hasHorse = true
+                    local horseHumanoid = horse:FindFirstChildOfClass("Humanoid")
+
+                    for _, object in ipairs(horse:GetDescendants()) do
+                        if object:IsA("VehicleSeat") and not seenSeats[object] then
+                            seenSeats[object] = true
+                            table.insert(targets, {
+                                Horse = horse,
+                                HorseHumanoid = horseHumanoid,
+                                Seat = object,
+                            })
+                        end
+                    end
+                end
+            end
+
+            table.sort(targets, function(a, b)
+                return a.Seat:GetFullName() < b.Seat:GetFullName()
+            end)
+            return targets, hasHorse
+        end
+
+        local function jumpOutOfHorse()
+            local _, humanoid = getCharacterParts()
+            if not humanoid then
+                return
+            end
+            humanoid.Sit = false
+            humanoid.Jump = true
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+
+        local function teleportToSeat(seat)
+            local character, _, root = getCharacterParts()
+            if not character or not seat or not seat.Parent or not isSeatInTeleportRange(seat) then
+                return false
+            end
+            root.CFrame = seat.CFrame * CFrame.new(0, 2.5, 0)
+            lastTeleportTime = os.clock()
+            return true
+        end
+
+        local function isLowHealth(target)
+            local humanoid = target and target.HorseHumanoid
+            return humanoid
+                and humanoid.Parent
+                and humanoid.MaxHealth > 0
+                and humanoid.Health <= humanoid.MaxHealth * 0.5
+        end
+
+        local function markHorseSeats(horse)
+            if not horse then
+                return
+            end
+            for _, object in ipairs(horse:GetDescendants()) do
+                if object:IsA("VehicleSeat") then
+                    visitedHorseSeats[object] = true
+                end
+            end
+        end
+
+        local function selectNextHorse(targets)
+            if activeHorseTarget then
+                local seat = activeHorseTarget.Seat
+                if visitedHorseSeats[seat]
+                    or not seat
+                    or not seat:IsDescendantOf(Workspace)
+                    or not isSeatInTeleportRange(seat)
+                then
+                    activeHorseTarget = nil
+                end
+            end
+
+            if not activeHorseTarget then
+                for _, target in ipairs(targets) do
+                    if not visitedHorseSeats[target.Seat]
+                        and isSeatInTeleportRange(target.Seat)
+                    then
+                        activeHorseTarget = target
+                        break
+                    end
+                end
+            end
+            return activeHorseTarget
+        end
+
+        local function shouldContinue(continueCheck)
+            return _G.HorseAutomationEnabled ~= false
+                and (not continueCheck or continueCheck())
+        end
+
+        function AutoFindBondHorse.IsLowHealth(context)
+            if not context or not context.Seat then
+                return false
+            end
+
+            local horse = context.Seat:FindFirstAncestor("Model_Horse")
+            local humanoid = horse and horse:FindFirstChildOfClass("Humanoid")
+            return humanoid
+                and humanoid.Parent
+                and humanoid.MaxHealth > 0
+                and humanoid.Health <= humanoid.MaxHealth * 0.5
+        end
+
+        function AutoFindBondHorse.Reset()
+            activeHorseTarget = nil
+            visitedHorseSeats = setmetatable({}, { __mode = "k" })
+            lastAbilityTime = 0
+            lastTeleportTime = 0
+            nextSeatTime = 0
+        end
+
+        function AutoFindBondHorse.SwitchIfLowHealth(context)
+            if not AutoFindBondHorse.IsLowHealth(context) then
+                return false
+            end
+
+            local seat = context.Seat
+            if seat then
+                markHorseSeats(seat:FindFirstAncestor("Model_Horse"))
+                visitedHorseSeats[seat] = true
+                if activeHorseTarget and activeHorseTarget.Seat == seat then
+                    activeHorseTarget = nil
+                end
+            end
+
+            jumpOutOfHorse()
+            local now = os.clock()
+            nextSeatTime = now + (tonumber(_G.NextSeatDelay) or 0.6)
+            if now - lastAbilityTime >= (tonumber(_G.AbilityCooldown) or 2) then
+                activateHorseAbility()
+                lastAbilityTime = now
+            end
+            return true
+        end
+
+        function AutoFindBondHorse.WaitForSeat(runId, continueCheck)
+            while _G.AutoFindBondEnabled
+                and runId == autoFindBondRunId
+                and shouldContinue(continueCheck)
+            do
+                local now = os.clock()
+                local targets, hasHorse = getHorseTargets()
+
+                if not hasHorse then
+                    activeHorseTarget = nil
+                    if now - lastAbilityTime >= (tonumber(_G.AbilityCooldown) or 2) then
+                        activateHorseAbility()
+                        lastAbilityTime = now
+                    end
+                elseif #targets == 0 then
+                    activeHorseTarget = nil
+                else
+                    local target = selectNextHorse(targets)
+                    if not target then
+                        if now - lastAbilityTime >= (tonumber(_G.AbilityCooldown) or 2) then
+                            activateHorseAbility()
+                            lastAbilityTime = now
+                        end
+                    else
+                        if isLowHealth(target) then
+                            markHorseSeats(target.Horse)
+                            visitedHorseSeats[target.Seat] = true
+                            activeHorseTarget = nil
+                            jumpOutOfHorse()
+                            nextSeatTime = now + (tonumber(_G.NextSeatDelay) or 0.6)
+                            if now - lastAbilityTime >= (tonumber(_G.AbilityCooldown) or 2) then
+                                activateHorseAbility()
+                                lastAbilityTime = now
+                            end
+                        else
+                            local _, humanoid = getCharacterParts()
+                            local seat = target.Seat
+                            if humanoid and seat.Occupant == humanoid then
+                                return target
+                            elseif seat.Occupant ~= nil then
+                                visitedHorseSeats[seat] = true
+                                activeHorseTarget = nil
+                            elseif now >= nextSeatTime
+                                and now - lastTeleportTime >= (tonumber(_G.TeleportInterval) or 0.8)
+                            then
+                                teleportToSeat(seat)
+                            end
+                        end
+                    end
+                end
+
+                task.wait(tonumber(_G.CheckInterval) or 0.2)
+            end
+            return nil
+        end
+    end
+
+
 
     local function autoFindBondCFrame(instance)
         if not instance then return nil end
@@ -3414,21 +3882,24 @@ do
 
             for _, townEntry in ipairs(townList) do
                 local townBuildings = townEntry.Instance:FindFirstChild("Buildings")
-                local bank = townBuildings and townBuildings:FindFirstChild("Bank")
-                if bank then
-                    autoFindBondAddCandidate(
-                        candidates,
-                        visited,
-                        bank,
-                        autoFindBondCFrame(bank),
-                        "town_" .. tostring(townEntry.Index) .. "/Buildings/Bank"
-                    )
+                for _, bankName in ipairs({ "Bank", "BankDestroyed" }) do
+                    local bank = townBuildings and townBuildings:FindFirstChild(bankName)
+                    if bank then
+                        autoFindBondAddCandidate(
+                            candidates,
+                            visited,
+                            bank,
+                            autoFindBondCFrame(bank),
+                            "town_" .. tostring(townEntry.Index) .. "/Buildings/" .. bankName
+                        )
+                    end
                 end
             end
         end
 
         local fixedLocations = {
             { "Sterling/Town/Buildings/Bank", { "Sterling", "Town", "Buildings", "Bank" } },
+            { "Sterling/Town/Buildings/BankDestroyed", { "Sterling", "Town", "Buildings", "BankDestroyed" } },
             { "Sterling/Mountain/TabletPodium", { "Sterling", "Mountain", "TabletPodium" } },
             { "VampireCastle", { "VampireCastle" } },
             { "FortConstitution/SupplyDepot/StoreFront", { "FortConstitution", "SupplyDepot", "StoreFront" } },
@@ -3477,153 +3948,138 @@ do
 
     local function autoFindBondStop(keepProgress)
         autoFindBondRunId = autoFindBondRunId + 1
-        if autoFindBondState and autoFindBondState.ActiveTween then
-            pcall(function()
-                if autoFindBondState.ActiveTween.PlaybackState == Enum.PlaybackState.Playing then
-                    autoFindBondState.ActiveTween:Cancel()
-                end
-            end)
-            autoFindBondState.ActiveTween = nil
-        end
         if keepProgress ~= false then
             autoFindBondSaveProgress(autoFindBondState)
         end
-        if autoFindBondState and autoFindBondState.SavedState then
-            restoreCharacterState(autoFindBondState.SavedState)
-        end
+        -- 只取消 Bond 控制器自己的 Tween，不碰其他尋找功能。
+        AutoFindBondMovement.Cancel()
         autoFindBondState = nil
         if keepProgress == false then
             autoFindBondClearProgress()
         end
     end
 
-    local function autoFindBondGetSeatModel(humanoid, character)
-        local seatPart = humanoid and humanoid.SeatPart
-        if not seatPart then return nil end
-        local model = seatPart:FindFirstAncestorOfClass("Model")
-        if model and model ~= character then return model end
+    local function autoFindBondWaitForVehicle(character, humanoid, runId)
+        while _G.AutoFindBondEnabled and runId == autoFindBondRunId do
+            local target = AutoFindBondHorse.WaitForSeat(
+                runId,
+                function()
+                    return _G.AutoFindBondEnabled and runId == autoFindBondRunId
+                end
+            )
+            if not target then
+                return nil
+            end
+
+            character = LocalPlayer.Character or character
+            humanoid = character and character:FindFirstChildOfClass("Humanoid") or humanoid
+            local context = AutoFindBondMovement.Capture(character, humanoid)
+            if context then
+                return context
+            end
+            task.wait(0.1)
+        end
         return nil
     end
 
-    local function autoFindBondPauseAtLocation(
-        state,
-        character,
-        hrp,
-        humanoid,
-        runId,
-        refreshCFrame,
-        pauseDuration,
-        whilePaused
-    )
-        local arrivedCFrame = refreshCFrame or hrp.CFrame
+    local function autoFindBondSwitchHorseIfNeeded(state)
+        if not state or not state.Movement then
+            return false
+        end
+        if not AutoFindBondHorse.IsLowHealth(state.Movement) then
+            return false
+        end
+
+        AutoFindBondMovement.Cancel()
+        AutoFindBondHorse.SwitchIfLowHealth(state.Movement)
+        state.Movement = nil
+        return true
+    end
+
+    local function autoFindBondPauseAtLocation(state, runId, pauseDuration, whilePaused)
         local duration = math.max(
             tonumber(pauseDuration) or AUTO_FIND_BOND_PAUSE_DURATION,
             0
         )
         state.Paused = true
-
-        if state.ActiveTween then
-            pcall(function()
-                if state.ActiveTween.PlaybackState == Enum.PlaybackState.Playing then
-                    state.ActiveTween:Cancel()
-                end
-            end)
-            state.ActiveTween = nil
-        end
-
-        restoreCharacterState(state.SavedState)
-        hrp.Anchored = false
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
         local deadline = os.clock() + duration
-        local remaining
-        repeat
-            if whilePaused
-                and _G.AutoFindBondEnabled
-                and runId == autoFindBondRunId
-            then
+
+        while true do
+            if not _G.AutoFindBondEnabled or runId ~= autoFindBondRunId then
+                state.Paused = false
+                return false, "stopped"
+            end
+            if not AutoFindBondMovement.IsValid(state.Movement) then
+                state.Paused = false
+                return false, "seat_lost"
+            end
+            if AutoFindBondHorse.IsLowHealth(state.Movement) then
+                state.Paused = false
+                return false, "horse_low_health"
+            end
+
+            if whilePaused then
                 pcall(whilePaused)
             end
 
-            remaining = deadline - os.clock()
-            if remaining > 0 then
-                task.wait(math.min(0.1, remaining))
+            local remaining = deadline - os.clock()
+            if remaining <= 0 then
+                break
             end
-        until remaining <= 0
-
-        if not _G.AutoFindBondEnabled or runId ~= autoFindBondRunId then
-            state.Paused = false
-            return false
+            task.wait(math.min(0.1, remaining))
         end
 
-        humanoid.WalkSpeed = 0
-        humanoid.JumpPower = 0
-        humanoid.JumpHeight = 0
-        humanoid.AutoRotate = false
-        hrp.Anchored = true
         state.Paused = false
-        if state.RefreshClock then
-            state.RefreshClock.LastCheckpoint = os.clock()
-        end
         return true
     end
 
-    local function autoFindBondRefreshPosition(state, character, hrp, humanoid, currentCFrame, runId)
-        return autoFindBondPauseAtLocation(
-            state,
-            character,
-            hrp,
-            humanoid,
-            runId,
-            currentCFrame,
-            AUTO_FIND_BOND_REFRESH_DURATION
-        )
-    end
+    local function autoFindBondMoveToBond(state, runId, searchOrigin)
+        if not AutoFindBondMovement.IsValid(state.Movement) then
+            return false, "seat_lost"
+        end
 
-    local function autoFindBondMoveToBond(state, character, hrp, humanoid, runId)
-        local bond = autoFindBondGetBond(state.SkippedBonds)
-        if not bond then return false end
+        local origin = searchOrigin or AutoFindBondMovement.GetPosition(state.Movement)
+        local bond = autoFindBondGetBond(state.SkippedBonds, origin)
+        if not bond then
+            return true, "no_bond"
+        end
+
         local bondCFrame = autoFindBondCFrame(bond)
-        if not bondCFrame then return false end
+        if not bondCFrame then
+            return true, "no_bond"
+        end
 
-        local arrived, reason = moveWithLiveTweenSpeed(
-            hrp,
+        local arrived, reason = AutoFindBondMovement.MoveTo(
+            state.Movement,
             bondCFrame,
             function()
                 return _G.AutoFindBondEnabled and runId == autoFindBondRunId
             end,
-            function(tween)
-                state.ActiveTween = tween
-            end,
             function()
-                local newerBond = autoFindBondGetBond(state.SkippedBonds)
-                return newerBond ~= nil and newerBond ~= bond
-            end,
-            function(currentCFrame)
-                return autoFindBondRefreshPosition(
-                    state, character, hrp, humanoid, currentCFrame, runId
+                local newerBond = autoFindBondGetBond(
+                    state.SkippedBonds,
+                    searchOrigin or AutoFindBondMovement.GetPosition(state.Movement)
                 )
-            end,
-            nil,
-            state.RefreshClock
+                return newerBond ~= nil and newerBond ~= bond
+            end
         )
-        if not arrived then return reason == "interrupt" end
+        if not arrived then
+            -- 新 Bond 出現時只中斷目前 Tween，下一輪會重新選最近目標。
+            return reason == "interrupt", reason
+        end
 
-        if not autoFindBondPauseAtLocation(
+        local paused, pauseReason = autoFindBondPauseAtLocation(
             state,
-            character,
-            hrp,
-            humanoid,
             runId,
-            nil,
             AUTO_FIND_BOND_PAUSE_DURATION,
             function()
                 if bond.Parent then
-                    pcall(function() autoFindBondCollect(bond) end)
+                    autoFindBondCollect(bond)
                 end
             end
-        ) then
-            return false
+        )
+        if not paused then
+            return false, pauseReason
         end
 
         if bond.Parent then
@@ -3632,44 +4088,80 @@ do
         return true
     end
 
-    local function autoFindBondHandleEndpoint(state, character, hrp, humanoid, runId)
-        if not autoFindBondPauseAtLocation(
+    local function autoFindBondHandleEndpoint(state, runId)
+        local endpointPaused, endpointPauseReason = autoFindBondPauseAtLocation(
             state,
-            character,
-            hrp,
-            humanoid,
             runId,
-            nil,
             AUTO_FIND_BOND_PAUSE_DURATION
-        ) then
-            return false
+        )
+        if not endpointPaused then
+            return false, endpointPauseReason
         end
 
-        while _G.AutoFindBondEnabled and runId == autoFindBondRunId do
-            if not autoFindBondGetBond(state.SkippedBonds) then
-                break
-            end
+        local endpointPosition = AutoFindBondMovement.GetPosition(state.Movement)
+        if not endpointPosition then
+            return false, "seat_lost"
+        end
 
-            if not autoFindBondMoveToBond(state, character, hrp, humanoid, runId) then
-                break
+        -- 固定以終點為中心檢查，避免移動去收集第一個 Bond 後，
+        -- 目前位置改變而漏掉終點另一側、但仍在 250 studs 內的 Bond。
+        local emptyChecks = 0
+        while _G.AutoFindBondEnabled and runId == autoFindBondRunId do
+            local endpointBond = autoFindBondGetBond(
+                state.SkippedBonds,
+                endpointPosition
+            )
+
+            if endpointBond then
+                emptyChecks = 0
+                local moved, reason = autoFindBondMoveToBond(
+                    state,
+                    runId,
+                    endpointPosition
+                )
+                if not moved then
+                    if reason == "seat_lost" or reason == "horse_low_health" then
+                        return false, reason
+                    end
+                    break
+                end
+            else
+                -- 給剛生成或尚未完成複製的 Bond 一點時間，連續確認三次。
+                emptyChecks = emptyChecks + 1
+                if emptyChecks >= 3 then
+                    -- 這是進入死亡前的最後一次即時檢查。
+                    local finalBond = autoFindBondGetBond(
+                        state.SkippedBonds,
+                        endpointPosition
+                    )
+                    if not finalBond then
+                        break
+                    end
+                    emptyChecks = 0
+                end
+                task.wait(0.25)
             end
         end
 
         if not _G.AutoFindBondEnabled or runId ~= autoFindBondRunId then
-            return false
+            return false, "stopped"
+        end
+        if AutoFindBondHorse.IsLowHealth(state.Movement) then
+            return false, "horse_low_health"
+        end
+        if not AutoFindBondMovement.IsValid(state.Movement) then
+            return false, "seat_lost"
         end
 
         _G.AutoFindBondEnabled = false
         -- 已完成一輪搜尋，下一次啟用時應從新的搜尋進度開始。
         autoFindBondStop(false)
         pcall(function()
-            if humanoid and humanoid.Parent and humanoid.Health > 0 then
-                humanoid.Health = 0
-            end
-        end)
-        pcall(function()
-            if character and character.Parent then
-                character:BreakJoints()
+            if state.Movement.Humanoid
+                and state.Movement.Humanoid.Parent
+                and state.Movement.Humanoid.Health > 0
+            then
+                state.Movement.Humanoid.Health = 0
             end
         end)
         WindUI:Notify({
@@ -3683,117 +4175,138 @@ do
     local function autoFindBondStart()
         -- 停用再啟用時不要清除 Visited / SkippedBonds。
         autoFindBondStop(true)
+        AutoFindBondHorse.Reset()
         autoFindBondRunId = autoFindBondRunId + 1
         local runId = autoFindBondRunId
+
         task.spawn(function()
             local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-            local hrp = character:WaitForChild("HumanoidRootPart")
             local humanoid = character:WaitForChild("Humanoid")
-            if not hrp or not humanoid then return end
-            if not waitForSitting(function()
-                return _G.AutoFindBondEnabled and runId == autoFindBondRunId
-            end) then return end
+            if not character or not humanoid then
+                return
+            end
 
-            local savedState = saveCharacterState(hrp, humanoid)
+            local movement = autoFindBondWaitForVehicle(character, humanoid, runId)
+            if not movement then
+                return
+            end
+
             local state = {
-                SavedState = savedState,
-                ActiveTween = nil,
+                Movement = movement,
                 Visited = autoFindBondProgress.Visited,
                 SkippedBonds = autoFindBondProgress.SkippedBonds,
-                RefreshClock = {},
             }
             autoFindBondState = state
-            humanoid.WalkSpeed = 0
-            humanoid.JumpPower = 0
-            humanoid.JumpHeight = 0
-            humanoid.AutoRotate = false
-            hrp.Anchored = true
 
             local direction = Vector3.new(0, 0, -1)
             while _G.AutoFindBondEnabled and runId == autoFindBondRunId do
-                if not character.Parent or not hrp.Parent then break end
+                if not AutoFindBondMovement.IsValid(state.Movement) then
+                    state.Movement = autoFindBondWaitForVehicle(character, humanoid, runId)
+                    if not state.Movement then
+                        break
+                    end
+                elseif autoFindBondSwitchHorseIfNeeded(state) then
+                    state.Movement = autoFindBondWaitForVehicle(character, humanoid, runId)
+                    if not state.Movement then
+                        break
+                    end
+                end
 
-                if autoFindBondGetBond(state.SkippedBonds) then
-                    autoFindBondMoveToBond(state, character, hrp, humanoid, runId)
+                local origin = AutoFindBondMovement.GetPosition(state.Movement)
+                if autoFindBondGetBond(state.SkippedBonds, origin) then
+                    local moved, reason = autoFindBondMoveToBond(state, runId)
+                    if not moved and reason ~= "interrupt" then
+                        if reason == "seat_lost" then
+                            state.Movement = nil
+                        elseif reason == "horse_low_health" then
+                            autoFindBondSwitchHorseIfNeeded(state)
+                        else
+                            break
+                        end
+                    end
                 else
-                    local candidates = autoFindBondGetCandidates(state.Visited, hrp.Position)
+                    local candidates = autoFindBondGetCandidates(state.Visited, origin)
                     local target = candidates[1]
                     if target then
-                        local arrived, reason = moveWithLiveTweenSpeed(
-                            hrp,
-                            target.CFrame * CFrame.new(0, -20, 0),
+                        local targetSeatCFrame = target.CFrame * CFrame.new(0, -20, 0)
+                        local arrived, reason = AutoFindBondMovement.MoveTo(
+                            state.Movement,
+                            targetSeatCFrame,
                             function()
                                 return _G.AutoFindBondEnabled and runId == autoFindBondRunId
                             end,
-                            function(tween)
-                                state.ActiveTween = tween
-                            end,
                             function()
-                                return autoFindBondGetBond(state.SkippedBonds) ~= nil
-                            end,
-                            function(currentCFrame)
-                                return autoFindBondRefreshPosition(
-                                    state, character, hrp, humanoid, currentCFrame, runId
-                                )
-                            end,
-                            nil,
-                            state.RefreshClock
+                                return autoFindBondGetBond(
+                                    state.SkippedBonds,
+                                    AutoFindBondMovement.GetPosition(state.Movement)
+                                ) ~= nil
+                            end
                         )
                         if reason == "interrupt" then
-                            autoFindBondMoveToBond(state, character, hrp, humanoid, runId)
+                            autoFindBondMoveToBond(state, runId)
+                        elseif reason == "seat_lost" then
+                            state.Movement = nil
+                        elseif reason == "horse_low_health" then
+                            autoFindBondSwitchHorseIfNeeded(state)
                         elseif arrived then
                             if target.IsEndpoint then
-                                autoFindBondHandleEndpoint(
+                                local _, endpointReason = autoFindBondHandleEndpoint(state, runId)
+                                if endpointReason == "horse_low_health" then
+                                    autoFindBondSwitchHorseIfNeeded(state)
+                                else
+                                    break
+                                end
+                            else
+                                local paused, pauseReason = autoFindBondPauseAtLocation(
                                     state,
-                                    character,
-                                    hrp,
-                                    humanoid,
-                                    runId
+                                    runId,
+                                    AUTO_FIND_BOND_PAUSE_DURATION
                                 )
-                                break
+                                if not paused then
+                                    if pauseReason == "seat_lost" then
+                                        state.Movement = nil
+                                    elseif pauseReason == "horse_low_health" then
+                                        autoFindBondSwitchHorseIfNeeded(state)
+                                    else
+                                        break
+                                    end
+                                else
+                                    state.Visited[target.Key] = true
+                                end
                             end
-
-                            if not autoFindBondPauseAtLocation(
-                                state,
-                                character,
-                                hrp,
-                                humanoid,
-                                runId,
-                                nil,
-                                AUTO_FIND_BOND_PAUSE_DURATION
-                            ) then
-                                break
-                            end
-                            state.Visited[target.Key] = true
                         else
                             break
                         end
                     else
-                        local searchTarget = CFrame.new(hrp.Position + direction * 50) * hrp.CFrame.Rotation
-                        local arrived, reason = moveWithLiveTweenSpeed(
-                            hrp,
-                            searchTarget,
-                            function()
-                                return _G.AutoFindBondEnabled and runId == autoFindBondRunId
-                            end,
-                            function(tween)
-                                state.ActiveTween = tween
-                            end,
-                            function()
-                                return autoFindBondGetBond(state.SkippedBonds) ~= nil
-                            end,
-                            function(currentCFrame)
-                                return autoFindBondRefreshPosition(
-                                    state, character, hrp, humanoid, currentCFrame, runId
-                                )
-                            end,
-                            nil,
-                            state.RefreshClock
-                        )
-                        if reason == "interrupt" then
-                            autoFindBondMoveToBond(state, character, hrp, humanoid, runId)
-                        elseif not arrived then
-                            break
+                        local seatCFrame = AutoFindBondMovement.GetSeatCFrame(state.Movement)
+                        if not seatCFrame then
+                            state.Movement = nil
+                        else
+                            local searchTarget = CFrame.new(
+                                seatCFrame.Position + direction * 50
+                            ) * seatCFrame.Rotation
+                            local arrived, reason = AutoFindBondMovement.MoveTo(
+                                state.Movement,
+                                searchTarget,
+                                function()
+                                    return _G.AutoFindBondEnabled and runId == autoFindBondRunId
+                                end,
+                                function()
+                                    return autoFindBondGetBond(
+                                        state.SkippedBonds,
+                                        AutoFindBondMovement.GetPosition(state.Movement)
+                                    ) ~= nil
+                                end
+                            )
+                            if reason == "interrupt" then
+                                autoFindBondMoveToBond(state, runId)
+                            elseif reason == "seat_lost" then
+                                state.Movement = nil
+                            elseif reason == "horse_low_health" then
+                                autoFindBondSwitchHorseIfNeeded(state)
+                            elseif not arrived then
+                                break
+                            end
                         end
                     end
                 end
@@ -3802,8 +4315,10 @@ do
 
             if runId == autoFindBondRunId then
                 autoFindBondSaveProgress(state)
-                restoreCharacterState(savedState)
-                if autoFindBondState == state then autoFindBondState = nil end
+                AutoFindBondMovement.Cancel()
+                if autoFindBondState == state then
+                    autoFindBondState = nil
+                end
             end
         end)
     end
