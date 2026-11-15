@@ -1,4 +1,11 @@
 ----------------------------------------
+--等待加載
+----------------------------------------
+repeat
+    task.wait()
+until game:IsLoaded() and game:GetService("Players").LocalPlayer
+
+----------------------------------------
 --服務
 ----------------------------------------
 local HttpService = game:GetService("HttpService")
@@ -6181,7 +6188,7 @@ Tabs.ESPItems:Slider({
     end
 })
 
-Tabs.Farm:Section({ Title = "農場" })
+Tabs.Farm:Section({ Title = "農場(需要馬)" })
 
 Tabs.Farm:Toggle({
     Title = "收集債券",
