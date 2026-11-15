@@ -3027,7 +3027,7 @@ local function getTweenSpeed()
     return math.max(tonumber(_G.TweenSpeed) or 500, 1)
 end
 
--- 所有搜尋／傳送移動都必須在載具座位上進行；傳送到火車不使用此函式，因此維持例外。
+-- 所有自動尋找路徑都只使用 TweenService；前往火車是獨立的手動功能。
 local function waitForSitting(shouldContinue)
     while not isSitting() do
         if shouldContinue and not shouldContinue() then
@@ -3063,11 +3063,6 @@ local function moveWithLiveTweenSpeed(
         end
 
         local distance = (targetCFrame.Position - hrp.Position).Magnitude
-        if distance <= 0.05 then
-            hrp.CFrame = targetCFrame
-            if setActiveTween then setActiveTween(nil) end
-            return true
-        end
 
         local speed = getTweenSpeed()
         local duration = math.max(math.min(distance / speed, 0.12), 0.01)
@@ -3123,6 +3118,11 @@ local function moveWithLiveTweenSpeed(
         end
 
         if setActiveTween then setActiveTween(nil) end
+
+        -- Even a very short final adjustment must finish through TweenService.
+        if (targetCFrame.Position - hrp.Position).Magnitude <= 0.05 then
+            return true
+        end
     end
 end
 
@@ -3261,10 +3261,19 @@ restoreCharacterState = function(saved)
     end
 end
 
--- 自動尋找 Bond：沿用終點控制器的負 Z 軸持續搜尋邏輯，並在移動中優先處理 Bond。
+-- 自動尋找 Bond
 do
     local autoFindBondRunId = 0
     local autoFindBondState = nil
+    -- 關閉 toggle 時保留搜尋進度，重新開啟後繼續使用同一份黑名單。
+    -- 只有抵達終點並 reset 時才會清除這些資料。
+    local autoFindBondProgress = {
+        Visited = {},
+        SkippedBonds = {},
+    }
+    local AUTO_FIND_BOND_RADIUS = 250
+    local AUTO_FIND_BOND_PAUSE_DURATION = 1.2
+    local AUTO_FIND_BOND_REFRESH_DURATION = 0.1
 
     local function autoFindBondCFrame(instance)
         if not instance then return nil end
@@ -3283,12 +3292,13 @@ do
         return string.format("%.3f|%.3f|%.3f", p.X, p.Y, p.Z)
     end
 
-    local function autoFindBondGetBond(skipBonds)
+    local function autoFindBondGetBond(skipBonds, origin, maxDistance)
         if not ObjectModels then return nil end
         local nearest, nearestDistance = nil, math.huge
         local character = LocalPlayer.Character
         local hrp = character and character:FindFirstChild("HumanoidRootPart")
-        local origin = hrp and hrp.Position or Camera.CFrame.Position
+        origin = origin or (hrp and hrp.Position or Camera.CFrame.Position)
+        maxDistance = tonumber(maxDistance) or AUTO_FIND_BOND_RADIUS
 
         for _, object in ipairs(ObjectModels:GetChildren()) do
             if string.find(string.lower(object.Name), "bond", 1, true)
@@ -3296,7 +3306,7 @@ do
                 local cframe = autoFindBondCFrame(object)
                 if cframe then
                     local distance = (cframe.Position - origin).Magnitude
-                    if distance < nearestDistance then
+                    if distance <= maxDistance and distance < nearestDistance then
                         nearest = object
                         nearestDistance = distance
                     end
@@ -3336,15 +3346,36 @@ do
         return autoFindBondCFrame(target)
     end
 
-    local function autoFindBondAddCandidate(candidates, visited, instance, cframe, label)
+    local function autoFindBondEndpointCFrame()
+        local safeZones = workspace:FindFirstChild("SafeZones")
+        local outpost = safeZones and safeZones:FindFirstChild("bandit_outpost_8")
+        local outpostCFrame = autoFindBondCFrame(outpost)
+        if outpostCFrame then
+            return outpostCFrame
+        end
+
+        for _, instance in ipairs(workspace:GetDescendants()) do
+            if instance.Name == "EnemyBase" then
+                local endpointCFrame = autoFindBondCFrame(instance)
+                if endpointCFrame then
+                    return endpointCFrame
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function autoFindBondAddCandidate(candidates, visited, instance, cframe, label, isEndpoint)
         local key = autoFindBondCoordinateKey(cframe)
-        if key and not visited[key] then
+        if key and (isEndpoint or not visited[key]) then
             table.insert(candidates, {
                 Instance = instance,
                 CFrame = cframe,
                 Key = key,
                 Label = label,
                 Distance = 0,
+                IsEndpoint = isEndpoint == true,
             })
         end
     end
@@ -3352,33 +3383,53 @@ do
     local function autoFindBondGetCandidates(visited, origin)
         local candidates = {}
         local seenRandomBuildings = {}
-        for _, randomBuildings in ipairs(workspace:GetDescendants()) do
-            if randomBuildings.Name == "RandomBuildings"
-                and (randomBuildings:IsA("Folder") or randomBuildings:IsA("Model")) then
-                for _, building in ipairs(randomBuildings:GetDescendants()) do
-                    if not seenRandomBuildings[building]
-                        and string.match(string.lower(building.Name), "house$") then
-                        seenRandomBuildings[building] = true
-                        autoFindBondAddCandidate(
-                            candidates,
-                            visited,
-                            building,
-                            autoFindBondCFrame(building),
-                            randomBuildings:GetFullName() .. "/" .. building.Name
-                        )
-                    end
+        local randomBuildings = workspace:FindFirstChild("RandomBuildings")
+        if randomBuildings then
+            for _, building in ipairs(randomBuildings:GetChildren()) do
+                if not seenRandomBuildings[building]
+                    and not string.find(string.lower(building.Name), "outlawcamp", 1, true) then
+                    seenRandomBuildings[building] = true
+                    autoFindBondAddCandidate(
+                        candidates,
+                        visited,
+                        building,
+                        autoFindBondCFrame(building),
+                        randomBuildings:GetFullName() .. "/" .. building.Name
+                    )
                 end
             end
         end
 
-        local townBuildings = workspace:FindFirstChild("Towns")
-        townBuildings = townBuildings and townBuildings:FindFirstChild("town_1")
-        townBuildings = townBuildings and townBuildings:FindFirstChild("Buildings")
-        if townBuildings then
-            for _, building in ipairs(townBuildings:GetChildren()) do
-                autoFindBondAddCandidate(
-                    candidates, visited, building, autoFindBondCFrame(building), "town_1/Buildings/" .. building.Name
+        local towns = workspace:FindFirstChild("Towns")
+        if towns then
+            local townList = {}
+            for _, town in ipairs(towns:GetChildren()) do
+                local townIndex = tonumber(string.match(town.Name, "^town_(%d+)$"))
+                if townIndex then
+                    table.insert(townList, { Instance = town, Index = townIndex })
+                end
+            end
+
+            table.sort(townList, function(a, b)
+                return a.Index < b.Index
+            end)
+
+            for _, townEntry in ipairs(townList) do
+                local townBuildings = townEntry.Instance:FindFirstChild("Buildings")
+                -- 小鎮銀行可能是正常狀態 Bank，或已被破壞後的 BankDestroyed。
+                local bank = townBuildings and (
+                    townBuildings:FindFirstChild("Bank")
+                    or townBuildings:FindFirstChild("BankDestroyed")
                 )
+                if bank then
+                    autoFindBondAddCandidate(
+                        candidates,
+                        visited,
+                        bank,
+                        autoFindBondCFrame(bank),
+                        "town_" .. tostring(townEntry.Index) .. "/Buildings/" .. bank.Name
+                    )
+                end
             end
         end
 
@@ -3395,17 +3446,42 @@ do
             )
         end
 
+        autoFindBondAddCandidate(
+            candidates,
+            visited,
+            nil,
+            autoFindBondEndpointCFrame(),
+            "Endpoint",
+            true
+        )
+
         for _, candidate in ipairs(candidates) do
             candidate.Distance = (candidate.CFrame.Position - origin).Magnitude
         end
         table.sort(candidates, function(a, b)
+            if a.IsEndpoint ~= b.IsEndpoint then
+                return not a.IsEndpoint
+            end
             if a.Distance ~= b.Distance then return a.Distance < b.Distance end
             return a.Label < b.Label
         end)
         return candidates
     end
 
-    local function autoFindBondStop()
+    local function autoFindBondSaveProgress(state)
+        if not state then return end
+        autoFindBondProgress.Visited = state.Visited or autoFindBondProgress.Visited
+        autoFindBondProgress.SkippedBonds = state.SkippedBonds or autoFindBondProgress.SkippedBonds
+    end
+
+    local function autoFindBondClearProgress()
+        autoFindBondProgress = {
+            Visited = {},
+            SkippedBonds = {},
+        }
+    end
+
+    local function autoFindBondStop(keepProgress)
         autoFindBondRunId = autoFindBondRunId + 1
         if autoFindBondState and autoFindBondState.ActiveTween then
             pcall(function()
@@ -3415,10 +3491,16 @@ do
             end)
             autoFindBondState.ActiveTween = nil
         end
+        if keepProgress ~= false then
+            autoFindBondSaveProgress(autoFindBondState)
+        end
         if autoFindBondState and autoFindBondState.SavedState then
             restoreCharacterState(autoFindBondState.SavedState)
         end
         autoFindBondState = nil
+        if keepProgress == false then
+            autoFindBondClearProgress()
+        end
     end
 
     local function autoFindBondGetSeatModel(humanoid, character)
@@ -3427,23 +3509,6 @@ do
         local model = seatPart:FindFirstAncestorOfClass("Model")
         if model and model ~= character then return model end
         return nil
-    end
-
-    local function autoFindBondMovePhysicalBody(state, character, hrp, humanoid, targetCFrame)
-        local physicalRootCFrame = state.PhysicalRootCFrame or hrp.CFrame
-        local seatModel = autoFindBondGetSeatModel(humanoid, character)
-
-        -- HRP 被 Tween 移動時，馬和座位仍可能留在舊位置；先用相同位移同步整個載具。
-        if seatModel then
-            pcall(function()
-                local delta = targetCFrame * physicalRootCFrame:Inverse()
-                seatModel:PivotTo(delta * seatModel:GetPivot())
-            end)
-        end
-
-        character:PivotTo(targetCFrame)
-        hrp.CFrame = targetCFrame
-        state.PhysicalRootCFrame = targetCFrame
     end
 
     local function autoFindBondPauseAtLocation(
@@ -3456,9 +3521,11 @@ do
         pauseDuration,
         whilePaused
     )
-        -- 移動中刷新時由 Tween 傳入刷新前的位置；抵達 Bond 時則直接取目前位置。
         local arrivedCFrame = refreshCFrame or hrp.CFrame
-        local duration = math.max(tonumber(pauseDuration) or 0.5, 0)
+        local duration = math.max(
+            tonumber(pauseDuration) or AUTO_FIND_BOND_PAUSE_DURATION,
+            0
+        )
         state.Paused = true
 
         if state.ActiveTween then
@@ -3470,14 +3537,10 @@ do
             state.ActiveTween = nil
         end
 
-        -- 關閉移動邏輯：解除錨定、恢復實體狀態，再把整個角色同步到 Tween 後的位置。
         restoreCharacterState(state.SavedState)
         hrp.Anchored = false
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.AssemblyAngularVelocity = Vector3.zero
-        autoFindBondMovePhysicalBody(state, character, hrp, humanoid, arrivedCFrame)
-
-        -- 暫停期間不建立任何 Tween；Bond 重疊時也可在此期間重試收集。
         local deadline = os.clock() + duration
         local remaining
         repeat
@@ -3499,8 +3562,6 @@ do
             return false
         end
 
-        -- 等待完成後才重新啟用移動邏輯，並再次同步整個實體角色。
-        autoFindBondMovePhysicalBody(state, character, hrp, humanoid, arrivedCFrame)
         humanoid.WalkSpeed = 0
         humanoid.JumpPower = 0
         humanoid.JumpHeight = 0
@@ -3514,10 +3575,14 @@ do
     end
 
     local function autoFindBondRefreshPosition(state, character, hrp, humanoid, currentCFrame, runId)
-        -- 每秒刷新完全沿用 Bond 重疊時的停止流程，避免只移動 HRP
-        -- 而沒有同步真實角色／馬匹，造成靈魂出竅。
         return autoFindBondPauseAtLocation(
-            state, character, hrp, humanoid, runId, currentCFrame
+            state,
+            character,
+            hrp,
+            humanoid,
+            runId,
+            currentCFrame,
+            AUTO_FIND_BOND_REFRESH_DURATION
         )
     end
 
@@ -3550,8 +3615,6 @@ do
         )
         if not arrived then return reason == "interrupt" end
 
-        -- Bond 重疊後維持 1 秒的真正暫停；收集重試也在暫停期間執行，
-        -- 避免移動 Tween 覆寫角色、馬匹或座位的位置。
         if not autoFindBondPauseAtLocation(
             state,
             character,
@@ -3559,7 +3622,7 @@ do
             humanoid,
             runId,
             nil,
-            1,
+            AUTO_FIND_BOND_PAUSE_DURATION,
             function()
                 if bond.Parent then
                     pcall(function() autoFindBondCollect(bond) end)
@@ -3575,8 +3638,57 @@ do
         return true
     end
 
+    local function autoFindBondHandleEndpoint(state, character, hrp, humanoid, runId)
+        if not autoFindBondPauseAtLocation(
+            state,
+            character,
+            hrp,
+            humanoid,
+            runId,
+            nil,
+            AUTO_FIND_BOND_PAUSE_DURATION
+        ) then
+            return false
+        end
+
+        while _G.AutoFindBondEnabled and runId == autoFindBondRunId do
+            if not autoFindBondGetBond(state.SkippedBonds) then
+                break
+            end
+
+            if not autoFindBondMoveToBond(state, character, hrp, humanoid, runId) then
+                break
+            end
+        end
+
+        if not _G.AutoFindBondEnabled or runId ~= autoFindBondRunId then
+            return false
+        end
+
+        _G.AutoFindBondEnabled = false
+        -- 已完成一輪搜尋，下一次啟用時應從新的搜尋進度開始。
+        autoFindBondStop(false)
+        pcall(function()
+            if humanoid and humanoid.Parent and humanoid.Health > 0 then
+                humanoid.Health = 0
+            end
+        end)
+        pcall(function()
+            if character and character.Parent then
+                character:BreakJoints()
+            end
+        end)
+        WindUI:Notify({
+            Title = "自動尋找Bond",
+            Content = "終點 250 studs 內已沒有 Bond，正在 reset",
+            Duration = 3,
+        })
+        return false
+    end
+
     local function autoFindBondStart()
-        autoFindBondStop()
+        -- 停用再啟用時不要清除 Visited / SkippedBonds。
+        autoFindBondStop(true)
         autoFindBondRunId = autoFindBondRunId + 1
         local runId = autoFindBondRunId
         task.spawn(function()
@@ -3592,11 +3704,8 @@ do
             local state = {
                 SavedState = savedState,
                 ActiveTween = nil,
-                Visited = {},
-                SkippedBonds = {},
-                PhysicalRootCFrame = hrp.CFrame,
-                -- Shared by all movement segments so the 1-second refresh
-                -- interval is measured across the complete Bond search.
+                Visited = autoFindBondProgress.Visited,
+                SkippedBonds = autoFindBondProgress.SkippedBonds,
                 RefreshClock = {},
             }
             autoFindBondState = state
@@ -3618,7 +3727,7 @@ do
                     if target then
                         local arrived, reason = moveWithLiveTweenSpeed(
                             hrp,
-                            target.CFrame * CFrame.new(0, 5, 0),
+                            target.CFrame * CFrame.new(0, -20, 0),
                             function()
                                 return _G.AutoFindBondEnabled and runId == autoFindBondRunId
                             end,
@@ -3639,7 +3748,26 @@ do
                         if reason == "interrupt" then
                             autoFindBondMoveToBond(state, character, hrp, humanoid, runId)
                         elseif arrived then
-                            if not autoFindBondPauseAtLocation(state, character, hrp, humanoid, runId) then
+                            if target.IsEndpoint then
+                                autoFindBondHandleEndpoint(
+                                    state,
+                                    character,
+                                    hrp,
+                                    humanoid,
+                                    runId
+                                )
+                                break
+                            end
+
+                            if not autoFindBondPauseAtLocation(
+                                state,
+                                character,
+                                hrp,
+                                humanoid,
+                                runId,
+                                nil,
+                                AUTO_FIND_BOND_PAUSE_DURATION
+                            ) then
                                 break
                             end
                             state.Visited[target.Key] = true
@@ -3679,6 +3807,7 @@ do
             end
 
             if runId == autoFindBondRunId then
+                autoFindBondSaveProgress(state)
                 restoreCharacterState(savedState)
                 if autoFindBondState == state then autoFindBondState = nil end
             end
@@ -4456,28 +4585,6 @@ do
         return { Start = start, Stop = stop }
     end
 
-    -- 終點在不同模式可能位於不同 Baseplate，或位於 SafeZones.bandit_outpost_8。
-    -- 不依賴 Baseplate 編號；只接受名稱為 EnemyBase 的目標，以及編號固定為 8 的 outpost。
-    local function findEndpointCFrame()
-        local safeZones = workspace:FindFirstChild("SafeZones")
-        local outpost = safeZones and safeZones:FindFirstChild("bandit_outpost_8")
-        local outpostCFrame = getTargetCFrame(outpost)
-        if outpostCFrame then
-            return outpostCFrame
-        end
-
-        for _, instance in ipairs(workspace:GetDescendants()) do
-            if instance.Name == "EnemyBase" then
-                local endpointCFrame = getTargetCFrame(instance)
-                if endpointCFrame then
-                    return endpointCFrame
-                end
-            end
-        end
-
-        return nil
-    end
-
     controllers.FortConstitution = createSingleTargetController(
         "FortTeleportEnabled", { "FortConstitution" }
     )
@@ -4505,7 +4612,25 @@ do
     controllers.Endpoint = createSingleTargetController(
         "EndpointTeleportEnabled",
         nil,
-        findEndpointCFrame
+        function()
+            local safeZones = workspace:FindFirstChild("SafeZones")
+            local outpost = safeZones and safeZones:FindFirstChild("bandit_outpost_8")
+            local outpostCFrame = getTargetCFrame(outpost)
+            if outpostCFrame then
+                return outpostCFrame
+            end
+
+            for _, instance in ipairs(workspace:GetDescendants()) do
+                if instance.Name == "EnemyBase" then
+                    local endpointCFrame = getTargetCFrame(instance)
+                    if endpointCFrame then
+                        return endpointCFrame
+                    end
+                end
+            end
+
+            return nil
+        end
     )
 
     _G.ToggleX7Teleport = {
@@ -5560,7 +5685,6 @@ Tabs.Farm:Toggle({
 
 Tabs.Farm:Toggle({
     Title = "自動尋找Bond",
-    Desc = "騎馬依序搜尋房屋與指定地點，發現 Bond 時優先前往",
     Value = _G.AutoFindBondEnabled,
     Callback = function(v)
         if _G.ToggleAutoFindBond then
