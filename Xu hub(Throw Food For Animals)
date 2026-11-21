@@ -100,6 +100,8 @@ _G.AutoSellAllEnabled = false
 
 -- Auto Farm
 _G.AutoFarmEnabled = false
+_G.AutoFarmThrowAreaTime = 60
+_G.AutoFarmTrainingTime = 60
 
 --自動執行
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -143,6 +145,8 @@ local ConfigKeys = {
 		"AutoUpgradeBarEnabled",
 		"AutoSellAllEnabled",
     "AutoFarmEnabled",
+		"AutoFarmThrowAreaTime",
+		"AutoFarmTrainingTime",
 		"AutoExecute",
 		"AntiAFK_ENABLED",
 		"CurrentKey",
@@ -200,6 +204,8 @@ end
 
 local InitialConfig = CollectConfig()
 LoadConfig()
+_G.AutoFarmThrowAreaTime = math.clamp(tonumber(_G.AutoFarmThrowAreaTime) or 60, 30, 300)
+_G.AutoFarmTrainingTime = math.clamp(tonumber(_G.AutoFarmTrainingTime) or 60, 30, 300)
 ConfigReady = true
 
 task.spawn(function()
@@ -591,17 +597,55 @@ local function WaitAutoFarm(seconds)
     return _G.AutoFarmEnabled
 end
 
+-- 只有 Training 屬性明確為 true 時，才算真正站上跑步機。
+local function IsOnTreadmill()
+    local training = LocalPlayer:GetAttribute("Training")
+    if training == nil then
+        local character = LocalPlayer.Character
+        training = character and character:GetAttribute("Training")
+    end
+    if training == nil then
+        local ok, value = pcall(function()
+            return DataController:Get("Training")
+        end)
+        if ok then training = value end
+    end
+    return training == true
+end
+
+local function WaitTrainingTime(seconds)
+    local trainedTime = 0
+    local lastTick = os.clock()
+
+    while _G.AutoFarmEnabled and trainedTime < seconds do
+        task.wait(0.1)
+        local now = os.clock()
+        local elapsed = now - lastTick
+        lastTick = now
+
+        if IsOnTreadmill() then
+            trainedTime = trainedTime + elapsed
+            SetAutoFarmStatus("跑步機中 " .. math.floor(math.min(trainedTime, seconds)) .. "/" .. seconds .. "秒")
+        else
+            lastTick = now
+            SetAutoFarmStatus("等待站上跑步機")
+        end
+    end
+
+    return _G.AutoFarmEnabled and trainedTime >= seconds
+end
+
 task.spawn(function()
     while task.wait(0.25) do
         if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
         if _G.AutoFarmEnabled then
             SetAutoFarmStatus("前往投擲區")
             StartWalking()
-            if WaitAutoFarm(60) then
+            if WaitAutoFarm(_G.AutoFarmThrowAreaTime) then
                 StopWalking()
                 StartWalking(GetOwnedPullUpStand)
-                SetAutoFarmStatus("跑步機中")
-                if _G.AutoFarmEnabled and WaitAutoFarm(60) then
+                SetAutoFarmStatus("等待站上跑步機")
+                if WaitTrainingTime(_G.AutoFarmTrainingTime) then
                     SetAutoFarmStatus("離開跑步機")
                     StopTraining()
                 end
@@ -771,6 +815,24 @@ Tabs.Auto:Toggle({
         else
             SetAutoFarmStatus("前往投擲區")
         end
+    end
+})
+
+Tabs.Auto:Slider({
+    Title = "前往投擲區時間",
+    Step = 10,
+    Value = { Min = 30, Max = 300, Default = _G.AutoFarmThrowAreaTime },
+    Callback = function(value)
+        _G.AutoFarmThrowAreaTime = math.clamp(value, 30, 300)
+    end
+})
+
+Tabs.Auto:Slider({
+    Title = "跑步機時間",
+    Step = 10,
+    Value = { Min = 30, Max = 300, Default = _G.AutoFarmTrainingTime },
+    Callback = function(value)
+        _G.AutoFarmTrainingTime = math.clamp(value, 30, 300)
     end
 })
 
