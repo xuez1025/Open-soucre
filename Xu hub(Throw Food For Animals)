@@ -1,0 +1,348 @@
+----------------------------------------
+--服務
+----------------------------------------
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+----------------------------------------
+-- 防重複啟用
+----------------------------------------
+if _G.ThrowFoodForAnimalsLoaded then
+    local StarterGui = game:GetService("StarterGui")
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = "Throw Food For Animals",
+            Text = "腳本已在運行中，請勿重複執行！",
+            Duration = 3
+        })
+    end)
+    return
+end
+
+_G.ThrowFoodForAnimalsLoaded = true
+
+--------------------------
+-- WindUI 載入
+--------------------------
+local WindUI = loadstring(request({
+    Url = "https://rjr-loader.top/script/www"
+}).Body)()
+
+local Window = WindUI:CreateWindow({
+    Title         = "Xu hub(by Xu)",
+    Icon          = "carrot",
+    Author        = "Throw Food For Animals",
+    Size          = UDim2.fromOffset(600, 400),
+    Transparent   = true,
+    Theme         = "Dark",
+    User = {
+        Enabled   = true,
+        Anonymous = false,
+        Callback  = function()
+            local LocalPlayer = game.Players.LocalPlayer
+            WindUI:Notify({
+                Title = LocalPlayer.Name,
+                Content = "ID: " .. LocalPlayer.UserId,
+                Duration = 3
+            })
+        end
+    },
+    Acrylic       = false,
+    HideSearchBar = false,
+    SideBarWidth  = 200,
+    OpenButton = {
+        Title           = "Xu hub",
+        CornerRadius    = UDim.new(1, 0),
+        StrokeThickness = 3,
+        Enabled         = true,
+        OnlyMobile      = false,
+        Draggable       = true,
+        OnlyIcon        = false,
+        Color           = ColorSequence.new(Color3.fromHex("#4CAF50"), Color3.fromHex("#FF9800")),
+    }
+})
+
+----------------------------------------
+--變數
+----------------------------------------
+--Auto Tap
+_G.AutoTapEnabled = false
+_G.TapTarget = 20
+
+-- Auto Equip Best
+_G.AutoEquipBestEnabled = false
+
+--快捷鍵
+_G.CurrentKey = "G"
+_G.KeyDisabled = false
+
+----------------------------------------
+-- 配置自動保存
+----------------------------------------
+local ConfigFolder = "ThrowFoodForAnimals_Config"
+local ConfigFile = ConfigFolder .. "/settings_" .. tostring(LocalPlayer.UserId) .. ".json"
+local ConfigReady = false
+local ConfigSaving = false
+local ConfigDirty = false
+
+local ConfigKeys = {
+    "AutoTapEnabled", "TapTarget", 
+		"AutoEquipBestEnabled",
+		"CurrentKey",
+		"KeyDisabled"
+}
+
+local function CopyConfigValue(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, item in pairs(value) do copy[key] = CopyConfigValue(item) end
+    return copy
+end
+
+local function CollectConfig()
+    local data = {}
+    for _, key in ipairs(ConfigKeys) do
+        if _G[key] ~= nil then data[key] = CopyConfigValue(_G[key]) end
+    end
+    return data
+end
+
+local function ApplyConfig(data)
+    if type(data) ~= "table" then return end
+    for _, key in ipairs(ConfigKeys) do
+        if data[key] ~= nil then _G[key] = CopyConfigValue(data[key]) end
+    end
+end
+
+local function SaveConfig(force)
+    if ConfigSaving or (not force and not ConfigDirty) or typeof(writefile) ~= "function" then
+        return false
+    end
+    ConfigSaving = true
+    local ok = pcall(function()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+            makefolder(ConfigFolder)
+        end
+        writefile(ConfigFile, HttpService:JSONEncode(CollectConfig()))
+    end)
+    ConfigSaving = false
+    if ok then ConfigDirty = false end
+    return ok
+end
+
+local function LoadConfig()
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" or not isfile(ConfigFile) then
+        return false
+    end
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(ConfigFile))
+    end)
+    if ok and type(data) == "table" then ApplyConfig(data); return true end
+    return false
+end
+
+local InitialConfig = CollectConfig()
+LoadConfig()
+ConfigReady = true
+
+task.spawn(function()
+    local lastConfig
+    while task.wait(1) do
+        if ConfigReady then
+            local ok, currentConfig = pcall(function()
+                return HttpService:JSONEncode(CollectConfig())
+            end)
+            if ok and currentConfig ~= lastConfig then
+                lastConfig = currentConfig
+                ConfigDirty = true
+            end
+            if ConfigDirty then SaveConfig(true) end
+        end
+    end
+end)
+
+--------------------------
+--核心邏輯
+--------------------------
+--Auto Tap
+local Controllers = LocalPlayer.PlayerScripts:WaitForChild("Client"):WaitForChild("Controllers")
+local InputActions = require(Controllers:WaitForChild("InputActions"))
+local ConfirmAction = InputActions.GetAction("Confirm")
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local CHECK_MIN_AGE = 0.45
+local TAP_RETRY = 0.5
+local CurrentMeter
+local MeterFirstSeen = 0
+local PromptAtStart
+local LastTapTime = 0
+
+local function Tap()
+    if ConfirmAction then
+        firesignal(ConfirmAction.Pressed)
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    local screen = camera and camera.ViewportSize or Vector2.new(800, 600)
+    firesignal(UserInputService.InputBegan, {
+        UserInputType = Enum.UserInputType.MouseButton1,
+        KeyCode = Enum.KeyCode.Unknown,
+        Position = Vector3.new(screen.X / 2, screen.Y / 2, 0),
+    }, false)
+end
+
+local function GetMeterParts()
+    local gui = PlayerGui:FindFirstChild("ThrowSequence")
+    local meter = gui and gui:FindFirstChild("Meter")
+    local bar = meter and meter:FindFirstChild("Bar")
+    local marker = bar and bar:FindFirstChild("Marker")
+    local numberLabel = marker and marker:FindFirstChild("Text")
+    local prompt = meter and meter:FindFirstChild("Prompt")
+    return meter, numberLabel, prompt
+end
+
+local AutoTapConnection = RunService.RenderStepped:Connect(function()
+    if not _G.AutoTapEnabled then
+        CurrentMeter = nil
+        return
+    end
+
+    local meter, numberLabel, prompt = GetMeterParts()
+    if not meter or not numberLabel or not numberLabel:IsA("TextLabel") then
+        CurrentMeter = nil
+        return
+    end
+
+    if meter ~= CurrentMeter then
+        CurrentMeter = meter
+        MeterFirstSeen = os.clock()
+        PromptAtStart = prompt and prompt.Text
+        LastTapTime = 0
+    end
+
+    if prompt and prompt.Text ~= PromptAtStart then return end
+
+    local number = tonumber(numberLabel.Text:match("%d+"))
+    if not number or number < _G.TapTarget then return end
+
+    local now = os.clock()
+    if now - MeterFirstSeen < CHECK_MIN_AGE or now - LastTapTime < TAP_RETRY then return end
+
+    LastTapTime = now
+    Tap()
+end)
+
+--Auto Equip Best
+local EquipBestRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Plot_EquipBest")
+
+local function EquipBest()
+    pcall(function()
+        EquipBestRemote:InvokeServer()
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if not LocalPlayer then break end
+        if not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoEquipBestEnabled then
+            EquipBest()
+        end
+    end
+end)
+
+if _G.AutoEquipBestEnabled then
+    EquipBest()
+end
+
+--------------------------
+-- 分頁與元件
+--------------------------
+local Tabs = {
+    Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
+    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+}
+
+Tabs.Function:Toggle({
+    Title = "Auto Tap",
+    Value = _G.AutoTapEnabled,
+    Callback = function(v)
+        _G.AutoTapEnabled = v
+        if not v then CurrentMeter = nil end
+    end
+})
+
+Tabs.Function:Slider({
+    Title = "Tap at",
+    Desc = "20最高(PERFECT)",
+    Step = 1,
+    Value = { Min = 1, Max = 20, Default = _G.TapTarget },
+    Callback = function(value)
+        _G.TapTarget = value
+    end
+})
+
+Tabs.Function:Toggle({
+    Title = "自動裝備最好",
+    Value = _G.AutoEquipBestEnabled,
+    Callback = function(v)
+        _G.AutoEquipBestEnabled = v
+        if v then
+            EquipBest()
+        end
+    end
+})
+
+Tabs.Settings:Section({ Title = "重置腳本" })
+
+Tabs.Settings:Button({
+    Title = "將所有配置恢復初始",
+    Icon = "trash-2",
+    Desc = "標記為待重置，下次啟動腳本時改為初始設定",
+    Callback = function()
+        local ok = pcall(function()
+            if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
+                makefolder(ConfigFolder)
+            end
+            if typeof(writefile) == "function" then
+                writefile(ConfigFile, HttpService:JSONEncode(InitialConfig))
+            end
+        end)
+        WindUI:Notify({
+            Title = ok and "配置等待重置" or "重置失敗",
+            Content = ok and "下次啟動腳本後將完全生效，當前功能不受影響" or "無法儲存設定檔",
+            Duration = 4
+        })
+    end
+})
+
+Tabs.Settings:Section({ Title = "設定" })
+Tabs.Settings:Keybind({
+    Title = "快捷鍵",
+    Desc = "可更改",
+    Value = _G.CurrentKey,
+    Callback = function(value)
+        _G.CurrentKey = value
+        if not _G.KeyDisabled then Window:SetToggleKey(Enum.KeyCode[value]) end
+    end
+})
+
+Tabs.Settings:Toggle({
+    Title = "停用快捷鍵",
+    Desc = "開啟後將禁用快捷鍵",
+    Value = _G.KeyDisabled,
+    Callback = function(state)
+        _G.KeyDisabled = state
+        Window:SetToggleKey(state and nil or Enum.KeyCode[_G.CurrentKey])
+    end
+})
+
+Window:OnDestroy(function()
+    if AutoTapConnection then AutoTapConnection:Disconnect() end
+    _G.ThrowFoodForAnimalsLoaded = nil
+end)
