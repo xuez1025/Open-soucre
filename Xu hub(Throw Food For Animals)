@@ -69,12 +69,27 @@ local Window = WindUI:CreateWindow({
 ----------------------------------------
 --變數
 ----------------------------------------
+-- Auto Walk To Throw Area
+_G.AutoWalkToThrowAreaEnabled = false
+
 --Auto Tap
 _G.AutoTapEnabled = false
 _G.TapTarget = 20
 
 -- Auto Equip Best
 _G.AutoEquipBestEnabled = false
+
+-- Auto Buy Best Food
+_G.AutoBuyBestFoodEnabled = false
+
+-- Auto Upgrade Pet Capacity
+_G.AutoUpgradePetCapacityEnabled = false
+
+-- Auto Upgrade Bar
+_G.AutoUpgradeBarEnabled = false
+
+-- Auto Sell All
+_G.AutoSellAllEnabled = false
 
 --快捷鍵
 _G.CurrentKey = "G"
@@ -90,8 +105,13 @@ local ConfigSaving = false
 local ConfigDirty = false
 
 local ConfigKeys = {
+		"AutoWalkToThrowAreaEnabled",
     "AutoTapEnabled", "TapTarget", 
 		"AutoEquipBestEnabled",
+		"AutoBuyBestFoodEnabled",
+		"AutoUpgradePetCapacityEnabled",
+		"AutoUpgradeBarEnabled",
+		"AutoSellAllEnabled",
 		"CurrentKey",
 		"KeyDisabled"
 }
@@ -168,8 +188,137 @@ end)
 --------------------------
 --核心邏輯
 --------------------------
+-- Auto Walk To Throw Area
+local AutoWalkConnection
+local LastMoveToTime = 0
+local MOVE_TO_INTERVAL = 0.25
+
+local function GetTargetPosition(target)
+    if not target then return nil end
+    if target:IsA("BasePart") then
+        return target.Position
+    elseif target:IsA("Model") then
+        return target:GetPivot().Position
+    end
+    return nil
+end
+
+local function StopWalking()
+    if AutoWalkConnection then
+        AutoWalkConnection:Disconnect()
+        AutoWalkConnection = nil
+    end
+end
+
+local function StartWalking()
+    StopWalking()
+    LastMoveToTime = 0
+
+    AutoWalkConnection = RunService.Heartbeat:Connect(function()
+        if not _G.AutoWalkToThrowAreaEnabled then
+            StopWalking()
+            return
+        end
+
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local targetObject = workspace:FindFirstChild("StarterArea")
+
+        if humanoid and root and targetObject then
+            local targetPosition = GetTargetPosition(targetObject)
+            if targetPosition then
+                local destination = Vector3.new(targetPosition.X, root.Position.Y, targetPosition.Z)
+                if (destination - root.Position).Magnitude > 3 then
+                    local now = os.clock()
+                    if now - LastMoveToTime >= MOVE_TO_INTERVAL then
+                        LastMoveToTime = now
+                        -- 遊戲可能會暫停或取消 MoveTo，持續重發以便恢復後繼續移動
+                        humanoid:MoveTo(destination)
+                    end
+                else
+                    LastMoveToTime = 0
+                end
+            end
+        end
+    end)
+end
+
+if _G.AutoWalkToThrowAreaEnabled then
+    StartWalking()
+end
+
 --Auto Tap
 local Controllers = LocalPlayer.PlayerScripts:WaitForChild("Client"):WaitForChild("Controllers")
+
+-- Auto Buy Best Food
+local CHECK_EVERY = 3
+local RETRY_FAILED_AFTER = 30
+local DataController = require(Controllers:WaitForChild("DataController"))
+local FoodsConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("FoodsConfig"))
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local FailedFoodPurchases = {}
+
+local function IsFoodOwned(food)
+    return DataController:GetPath("OwnedFoods." .. food.Index) == true
+end
+
+local function TryBuyFood(slot)
+    local failedTime = FailedFoodPurchases[slot]
+    if failedTime and os.clock() - failedTime < RETRY_FAILED_AFTER then
+        return false
+    end
+
+    local ok, result = pcall(Remotes.Invoke, "Shop_Buy", slot)
+    if ok and type(result) == "table" and result.Ok then
+        FailedFoodPurchases[slot] = nil
+        return true
+    end
+
+    FailedFoodPurchases[slot] = os.clock()
+    return false
+end
+
+local function EquipFood(slot)
+    local ok, result = pcall(Remotes.Invoke, "Shop_Equip", slot)
+    return ok and type(result) == "table" and result.Ok == true
+end
+
+local function CheckBuyBestFood()
+    local money = DataController:Get("Money") or 0
+    local equipped = DataController:Get("EquippedFood")
+
+    for slot = FoodsConfig.CountAll(), 1, -1 do
+        local food = FoodsConfig.GetAny(slot)
+        if food and not FoodsConfig.IsLocked(food.Index) then
+            if IsFoodOwned(food) then
+                if equipped ~= food.Index then
+                    EquipFood(slot)
+                end
+                return
+            end
+
+            if food.Price <= money and TryBuyFood(slot) then
+                EquipFood(slot)
+                return
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(CHECK_EVERY) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoBuyBestFoodEnabled then
+            pcall(CheckBuyBestFood)
+        end
+    end
+end)
+
+if _G.AutoBuyBestFoodEnabled then
+    pcall(CheckBuyBestFood)
+end
+
 local InputActions = require(Controllers:WaitForChild("InputActions"))
 local ConfirmAction = InputActions.GetAction("Confirm")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -260,6 +409,75 @@ if _G.AutoEquipBestEnabled then
     EquipBest()
 end
 
+-- Auto Upgrade Pet Capacity
+local UpgradePetCapacityRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Plot_UpgradeFence")
+
+local function UpgradePetCapacity()
+    pcall(function()
+        UpgradePetCapacityRemote:InvokeServer()
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if not LocalPlayer then break end
+        if not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoUpgradePetCapacityEnabled then
+            UpgradePetCapacity()
+        end
+    end
+end)
+
+if _G.AutoUpgradePetCapacityEnabled then
+    UpgradePetCapacity()
+end
+
+-- Auto Upgrade Bar
+local UpgradeBarRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Stand_Upgrade")
+
+local function UpgradeBar()
+    pcall(function()
+        UpgradeBarRemote:InvokeServer()
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if not LocalPlayer then break end
+        if not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoUpgradeBarEnabled then
+            UpgradeBar()
+        end
+    end
+end)
+
+if _G.AutoUpgradeBarEnabled then
+    UpgradeBar()
+end
+
+-- Auto Sell All
+local SellAllRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Plot_SellAll")
+
+local function SellAll()
+    pcall(function()
+        SellAllRemote:InvokeServer()
+    end)
+end
+
+task.spawn(function()
+    while task.wait(60) do
+        if not LocalPlayer then break end
+        if not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoSellAllEnabled then
+            SellAll()
+        end
+    end
+end)
+
+if _G.AutoSellAllEnabled then
+    SellAll()
+end
+
 --------------------------
 -- 分頁與元件
 --------------------------
@@ -267,6 +485,21 @@ local Tabs = {
     Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
+
+Tabs.Function:Section({ Title = "自動投擲" })
+
+Tabs.Function:Toggle({
+    Title = "移動到投擲區",
+    Value = _G.AutoWalkToThrowAreaEnabled,
+    Callback = function(v)
+        _G.AutoWalkToThrowAreaEnabled = v
+        if v then
+            StartWalking()
+        else
+            StopWalking()
+        end
+    end
+})
 
 Tabs.Function:Toggle({
     Title = "Auto Tap",
@@ -287,6 +520,8 @@ Tabs.Function:Slider({
     end
 })
 
+Tabs.Function:Divider()
+
 Tabs.Function:Toggle({
     Title = "自動裝備最好",
     Value = _G.AutoEquipBestEnabled,
@@ -294,6 +529,52 @@ Tabs.Function:Toggle({
         _G.AutoEquipBestEnabled = v
         if v then
             EquipBest()
+        end
+    end
+})
+
+Tabs.Function:Toggle({
+    Title = "自動購買最好食物",
+    Value = _G.AutoBuyBestFoodEnabled,
+    Callback = function(v)
+        _G.AutoBuyBestFoodEnabled = v
+        if v then
+            pcall(CheckBuyBestFood)
+        end
+    end
+})
+
+Tabs.Function:Toggle({
+    Title = "自動升級寵物數量",
+    Value = _G.AutoUpgradePetCapacityEnabled,
+    Callback = function(v)
+        _G.AutoUpgradePetCapacityEnabled = v
+        if v then
+            UpgradePetCapacity()
+        end
+    end
+})
+
+Tabs.Function:Toggle({
+    Title = "自動升級Bar",
+    Value = _G.AutoUpgradeBarEnabled,
+    Callback = function(v)
+        _G.AutoUpgradeBarEnabled = v
+        if v then
+            UpgradeBar()
+        end
+    end
+})
+
+Tabs.Function:Divider()
+
+Tabs.Function:Toggle({
+    Title = "自動出售全部",
+    Value = _G.AutoSellAllEnabled,
+    Callback = function(v)
+        _G.AutoSellAllEnabled = v
+        if v then
+            SellAll()
         end
     end
 })
@@ -322,6 +603,7 @@ Tabs.Settings:Button({
 })
 
 Tabs.Settings:Section({ Title = "設定" })
+
 Tabs.Settings:Keybind({
     Title = "快捷鍵",
     Desc = "可更改",
@@ -344,5 +626,6 @@ Tabs.Settings:Toggle({
 
 Window:OnDestroy(function()
     if AutoTapConnection then AutoTapConnection:Disconnect() end
+    StopWalking()
     _G.ThrowFoodForAnimalsLoaded = nil
 end)
