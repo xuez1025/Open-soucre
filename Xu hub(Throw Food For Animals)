@@ -36,7 +36,7 @@ _G.ThrowFoodForAnimalsLoaded = true
 -- WindUI 載入
 --------------------------
 local WindUI = loadstring(request({
-    Url = "https://rjr-loader.top/script/www"
+    Url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 }).Body)()
 
 local Window = WindUI:CreateWindow({
@@ -236,6 +236,28 @@ local function GetTargetPosition(target)
     return nil
 end
 
+local function GetOwnedPullUpStand()
+    local plotsFolder = workspace:FindFirstChild("Plots")
+    if not plotsFolder then return nil end
+
+    for i = 1, 5 do
+        local plot = plotsFolder:FindFirstChild(tostring(i))
+        local ownerTag1 = plot and plot:FindFirstChild("OwnerTag")
+        local ownerTag2 = ownerTag1 and ownerTag1:FindFirstChild("OwnerTag")
+        local nameObj = ownerTag2 and ownerTag2:FindFirstChild("Name")
+
+        if nameObj and nameObj:IsA("TextLabel") then
+            local ownerText = nameObj.ContentText
+            if ownerText == LocalPlayer.Name or ownerText == LocalPlayer.DisplayName then
+                local serverFolder = plot:FindFirstChild("Server")
+                return serverFolder and serverFolder:FindFirstChild("PullUpStand")
+            end
+        end
+    end
+
+    return nil
+end
+
 local function StopWalking()
     if AutoWalkConnection then
         AutoWalkConnection:Disconnect()
@@ -243,7 +265,7 @@ local function StopWalking()
     end
 end
 
-local function StartWalking()
+local function StartWalking(targetResolver)
     StopWalking()
     LastMoveToTime = 0
 
@@ -256,7 +278,7 @@ local function StartWalking()
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
-        local targetObject = workspace:FindFirstChild("StarterArea")
+        local targetObject = targetResolver and targetResolver() or workspace:FindFirstChild("StarterArea")
 
         if humanoid and root and targetObject then
             local targetPosition = GetTargetPosition(targetObject)
@@ -510,57 +532,6 @@ if _G.AutoSellAllEnabled then
 end
 
 -- Auto Farm
-local function GetTargetCFrame(targetObj)
-    if not targetObj then return nil end
-    if targetObj:IsA("BasePart") then
-        return targetObj.CFrame * CFrame.new(0, targetObj.Size.Y * 0.5 + 3, 0)
-    elseif targetObj:IsA("Model") then
-        return targetObj:GetPivot() * CFrame.new(0, 3, 0)
-    end
-    return nil
-end
-
-local function TeleportToPullUpStand(plotIndex)
-    local plotsFolder = workspace:FindFirstChild("Plots")
-    local plot = plotsFolder and plotsFolder:FindFirstChild(tostring(plotIndex))
-    local serverFolder = plot and plot:FindFirstChild("Server")
-    local pullUpStand = serverFolder and serverFolder:FindFirstChild("PullUpStand")
-    local targetCFrame = GetTargetCFrame(pullUpStand)
-
-    if not targetCFrame then
-        warn(string.format("[AutoFarm] 找不到基地 [%d] 的 Server.PullUpStand", plotIndex))
-        return false
-    end
-
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return false end
-
-    rootPart.CFrame = targetCFrame
-    return true
-end
-
-local function CheckCurrentPlotAndTeleport()
-    local plotsFolder = workspace:FindFirstChild("Plots")
-    if not plotsFolder then return nil end
-
-    for i = 1, 5 do
-        local plot = plotsFolder:FindFirstChild(tostring(i))
-        local ownerTag1 = plot and plot:FindFirstChild("OwnerTag")
-        local ownerTag2 = ownerTag1 and ownerTag1:FindFirstChild("OwnerTag")
-        local nameObj = ownerTag2 and ownerTag2:FindFirstChild("Name")
-
-        if nameObj and nameObj:IsA("TextLabel") then
-            local ownerText = nameObj.ContentText
-            if ownerText == LocalPlayer.Name or ownerText == LocalPlayer.DisplayName then
-                if TeleportToPullUpStand(i) then return i end
-            end
-        end
-    end
-
-    return nil
-end
-
 local TrainingStopRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Training_Stop")
 
 local function StopTraining()
@@ -592,7 +563,7 @@ task.spawn(function()
             StartWalking()
             if WaitAutoFarm(60) then
                 StopWalking()
-                CheckCurrentPlotAndTeleport()
+                StartWalking(GetOwnedPullUpStand)
                 SetAutoFarmStatus("跑步機中")
                 if _G.AutoFarmEnabled and WaitAutoFarm(60) then
                     SetAutoFarmStatus("離開跑步機")
@@ -647,7 +618,7 @@ end
 -- 分頁與元件
 --------------------------
 local Tabs = {
-    Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
+    Function = Window:Tab({ Title = "功能", Icon = "wrench" }),
     Auto = Window:Tab({ Title = "Auto", Icon = "repeat" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
