@@ -223,8 +223,34 @@ end)
 --------------------------
 -- Auto Walk To Throw Area
 local AutoWalkConnection
+local NoclipConnection
+local NoclipCollisionStates = {}
 local LastMoveToTime = 0
 local MOVE_TO_INTERVAL = 0.25
+
+-- 移動期間穿牆：只暫時關閉目前角色零件的碰撞，停止移動時恢復原狀。
+local function SetCharacterNoclip()
+    local character = LocalPlayer.Character
+    if not character then return end
+
+    for _, object in ipairs(character:GetDescendants()) do
+        if object:IsA("BasePart") then
+            if NoclipCollisionStates[object] == nil then
+                NoclipCollisionStates[object] = object.CanCollide
+            end
+            object.CanCollide = false
+        end
+    end
+end
+
+local function RestoreCharacterCollision()
+    for part, canCollide in pairs(NoclipCollisionStates) do
+        if part and part.Parent then
+            part.CanCollide = canCollide
+        end
+    end
+    table.clear(NoclipCollisionStates)
+end
 
 local function GetTargetPosition(target)
     if not target then return nil end
@@ -263,11 +289,21 @@ local function StopWalking()
         AutoWalkConnection:Disconnect()
         AutoWalkConnection = nil
     end
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+        NoclipConnection = nil
+    end
+    RestoreCharacterCollision()
 end
 
 local function StartWalking(targetResolver)
     StopWalking()
     LastMoveToTime = 0
+
+    -- 使用 Stepped 持續套用，避免角色零件被遊戲內部腳本重新開啟碰撞。
+    NoclipConnection = RunService.Stepped:Connect(function()
+        SetCharacterNoclip()
+    end)
 
     AutoWalkConnection = RunService.Heartbeat:Connect(function()
         if not _G.AutoWalkToThrowAreaEnabled and not _G.AutoFarmEnabled then
