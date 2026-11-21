@@ -73,7 +73,7 @@ local Window = WindUI:CreateWindow({
 _G.AutoWalkToThrowAreaEnabled = false
 
 --Auto Tap
-_G.AutoTapEnabled = false
+_G.AutoTapEnabled = true
 _G.TapTarget = 20
 
 -- Auto Equip Best
@@ -90,6 +90,25 @@ _G.AutoUpgradeBarEnabled = false
 
 -- Auto Sell All
 _G.AutoSellAllEnabled = false
+
+-- Auto Farm
+_G.AutoFarmEnabled = false
+
+--自動執行
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+
+if isfile and isfile("ThrowFoodForAnimals.file") then
+    local success, content = pcall(function() return readfile("ThrowFoodForAnimals.file") end)
+    _G.AutoExecute = (success and content == "true")
+else
+    _G.AutoExecute = false
+end
+
+local ScriptLoadstring = [[if isfile("ThrowFoodForAnimals.file") then
+    if readfile("ThrowFoodForAnimals.file") == "true" then
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xuez1025/Open-soucre/refs/heads/main/Xu%20hub(Throw%20Food%20For%20Animals)"))()
+    end
+end]]
 
 -- Anti AFK
 _G.AntiAFK_ENABLED = true
@@ -116,6 +135,8 @@ local ConfigKeys = {
 		"AutoUpgradePetCapacityEnabled",
 		"AutoUpgradeBarEnabled",
 		"AutoSellAllEnabled",
+    "AutoFarmEnabled",
+		"AutoExecute",
 		"AntiAFK_ENABLED",
 		"CurrentKey",
 		"KeyDisabled"
@@ -220,7 +241,7 @@ local function StartWalking()
     LastMoveToTime = 0
 
     AutoWalkConnection = RunService.Heartbeat:Connect(function()
-        if not _G.AutoWalkToThrowAreaEnabled then
+        if not _G.AutoWalkToThrowAreaEnabled and not _G.AutoFarmEnabled then
             StopWalking()
             return
         end
@@ -481,6 +502,110 @@ if _G.AutoSellAllEnabled then
     SellAll()
 end
 
+-- Auto Farm
+local function GetTargetCFrame(targetObj)
+    if not targetObj then return nil end
+    if targetObj:IsA("BasePart") then
+        return targetObj.CFrame * CFrame.new(0, targetObj.Size.Y * 0.5 + 3, 0)
+    elseif targetObj:IsA("Model") then
+        return targetObj:GetPivot() * CFrame.new(0, 3, 0)
+    end
+    return nil
+end
+
+local function TeleportToPullUpStand(plotIndex)
+    local plotsFolder = workspace:FindFirstChild("Plots")
+    local plot = plotsFolder and plotsFolder:FindFirstChild(tostring(plotIndex))
+    local serverFolder = plot and plot:FindFirstChild("Server")
+    local pullUpStand = serverFolder and serverFolder:FindFirstChild("PullUpStand")
+    local targetCFrame = GetTargetCFrame(pullUpStand)
+
+    if not targetCFrame then
+        warn(string.format("[AutoFarm] 找不到基地 [%d] 的 Server.PullUpStand", plotIndex))
+        return false
+    end
+
+    local character = LocalPlayer.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return false end
+
+    rootPart.CFrame = targetCFrame
+    return true
+end
+
+local function CheckCurrentPlotAndTeleport()
+    local plotsFolder = workspace:FindFirstChild("Plots")
+    if not plotsFolder then return nil end
+
+    for i = 1, 5 do
+        local plot = plotsFolder:FindFirstChild(tostring(i))
+        local ownerTag1 = plot and plot:FindFirstChild("OwnerTag")
+        local ownerTag2 = ownerTag1 and ownerTag1:FindFirstChild("OwnerTag")
+        local nameObj = ownerTag2 and ownerTag2:FindFirstChild("Name")
+
+        if nameObj and nameObj:IsA("TextLabel") then
+            local ownerText = nameObj.ContentText
+            if ownerText == LocalPlayer.Name or ownerText == LocalPlayer.DisplayName then
+                if TeleportToPullUpStand(i) then return i end
+            end
+        end
+    end
+
+    return nil
+end
+
+local TrainingStopRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Training_Stop")
+
+local function StopTraining()
+    pcall(function()
+        TrainingStopRemote:InvokeServer()
+    end)
+end
+
+local AutoFarmStatusParagraph
+local function SetAutoFarmStatus(status)
+    if AutoFarmStatusParagraph then
+        AutoFarmStatusParagraph:SetDesc(status)
+    end
+end
+
+local function WaitAutoFarm(seconds)
+    local endTime = os.clock() + seconds
+    while _G.AutoFarmEnabled and os.clock() < endTime do
+        task.wait(math.min(0.25, endTime - os.clock()))
+    end
+    return _G.AutoFarmEnabled
+end
+
+task.spawn(function()
+    while task.wait(0.25) do
+        if not LocalPlayer or not LocalPlayer:IsDescendantOf(Players) then break end
+        if _G.AutoFarmEnabled then
+            SetAutoFarmStatus("前往投擲區")
+            StartWalking()
+            if WaitAutoFarm(60) then
+                StopWalking()
+                CheckCurrentPlotAndTeleport()
+                SetAutoFarmStatus("跑步機中")
+                if _G.AutoFarmEnabled and WaitAutoFarm(60) then
+                    SetAutoFarmStatus("離開跑步機")
+                    StopTraining()
+                end
+            end
+
+            StopWalking()
+            if not _G.AutoFarmEnabled then StopTraining() end
+        end
+    end
+end)
+
+--自動執行
+local queue_func = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+
+if _G.AutoExecute and queue_func then
+    queue_func(ScriptLoadstring)
+end
+
 -- Anti AFK
 local function EnableAntiAFK()
     if _G.AntiAFK_Connection then
@@ -516,6 +641,7 @@ end
 --------------------------
 local Tabs = {
     Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
+    Auto = Window:Tab({ Title = "Auto", Icon = "repeat" }),
     Settings = Window:Tab({ Title = "設定", Icon = "settings" })
 }
 
@@ -612,6 +738,28 @@ Tabs.Function:Toggle({
     end
 })
 
+Tabs.Auto:Section({ Title = "Auto Farm" })
+
+AutoFarmStatusParagraph = Tabs.Auto:Paragraph({
+    Title = "目前狀態",
+    Desc = _G.AutoFarmEnabled and "前往投擲區" or "已停用"
+})
+
+Tabs.Auto:Toggle({
+    Title = "Auto Farm",
+    Value = _G.AutoFarmEnabled,
+    Callback = function(v)
+        _G.AutoFarmEnabled = v
+        if not v then
+            StopWalking()
+            StopTraining()
+            SetAutoFarmStatus("已停用")
+        else
+            SetAutoFarmStatus("前往投擲區")
+        end
+    end
+})
+
 Tabs.Settings:Section({ Title = "重置腳本" })
 
 Tabs.Settings:Button({
@@ -636,6 +784,42 @@ Tabs.Settings:Button({
 })
 
 Tabs.Settings:Section({ Title = "設定" })
+
+Tabs.Settings:Toggle({ 
+    Title = "換服後自動執行",
+    Desc = "切換伺服器時自動重新載入",
+    Value = _G.AutoExecute,
+    Callback = function(v)
+        _G.AutoExecute = v
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                writefile("ThrowFoodForAnimals.file", "true")
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = "通知",
+                    Content = "已開啟自動執行",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "支援錯誤",
+                    Content = "你目前的注入器不支援",
+                    Duration = 3
+                })
+            end
+        else
+            if queue_on_teleport and isfile("ThrowFoodForAnimals.file") then
+                delfile("ThrowFoodForAnimals.file")
+            end
+            WindUI:Notify({
+                Title = "通知",
+                Content = "已關閉自動執行",
+                Duration = 3
+            })
+        end
+    end
+})
 
 Tabs.Settings:Toggle({ 
     Title    = "防掛機踢出", 
@@ -673,5 +857,28 @@ Tabs.Settings:Toggle({
 Window:OnDestroy(function()
     if AutoTapConnection then AutoTapConnection:Disconnect() end
     StopWalking()
+    _G.AutoFarmEnabled = false
+    StopTraining()
+    SetAutoFarmStatus("已停用")
     _G.ThrowFoodForAnimalsLoaded = nil
+end)
+
+-- 初始化狀態
+task.spawn(function()
+    task.wait()
+
+    -- 自動執行
+    if _G.AutoExecute then
+        if queue_on_teleport then
+            if not isfile("ThrowFoodForAnimals.file") then
+                writefile("ThrowFoodForAnimals.file", "true")
+            end
+
+            queue_on_teleport(ScriptLoadstring)
+        end
+    else
+        if queue_on_teleport and isfile("ThrowFoodForAnimals.file") then
+            delfile("ThrowFoodForAnimals.file")
+        end
+    end
 end)
