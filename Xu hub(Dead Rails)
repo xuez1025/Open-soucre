@@ -39,7 +39,7 @@ local Translations = {
     ["English"] = {
         -- 系統
         ["腳本已在運行中，請勿重複執行！"] = "The script is already running. Please do not execute it again!",
-        ["語言"] = "Language",
+        ["語言/Language"] = "語言/Language",
         ["語言已切換為: English"] = "Language switched to English",
         ["語言已切換為: 中文"] = "Language switched to Chinese",
 
@@ -206,6 +206,8 @@ local Translations = {
         ["可更改"] = "Rebindable",
         ["停用快捷鍵"] = "Disable Hotkey",
         ["開啟後將禁用快捷鍵"] = "Enabling this option will disable the hotkey",
+        ["需要解鎖牛仔精通"] = "Need to unlock cowboy mastery",
+				
     }
 }
 
@@ -6488,6 +6490,12 @@ Tabs.Farm:Toggle({
     end
 })
 
+Tabs.Farm:Paragraph({
+	Title = "需要解鎖牛仔精通",
+	Thumbnail = "rbxassetid://127433155602224",
+	ThumbnailSize = 200,
+})
+
 Tabs.Searching:Section({ Title = L("傳送") })
 
 Tabs.Searching:Button({
@@ -6915,7 +6923,7 @@ end
 Tabs.Settings:Section({ Title = L("語言") })
 
 Tabs.Settings:Dropdown({
-    Title = L("語言"),
+    Title = L("語言/Language"),
     Values = { "中文", "English" },
     Value = _G.Language,
     Callback = function(v)
