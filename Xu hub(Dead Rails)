@@ -31,6 +31,227 @@ LocalPlayer.CharacterAdded:Connect(function(newCharacter)
 end)
 
 ----------------------------------------
+-- 翻譯系統
+----------------------------------------
+_G.Language = _G.Language or "中文"
+
+local Translations = {
+    ["English"] = {
+        -- 系統
+        ["腳本已在運行中，請勿重複執行！"] = "The script is already running. Please do not execute it again!",
+        ["語言"] = "Language",
+        ["語言已切換為: English"] = "Language switched to English",
+        ["語言已切換為: 中文"] = "Language switched to Chinese",
+
+        -- 分頁
+        ["資訊"] = "Information",
+        ["功能"] = "Features",
+        ["自瞄"] = "Aimbot",
+        ["治療"] = "Healing",
+        ["ESP"] = "ESP",
+        ["農場"] = "Farm",
+        ["傳送"] = "Teleport",
+        ["畫質"] = "Graphics",
+        ["設定"] = "Settings",
+        ["ESP Players"] = "Player ESP",
+        ["ESP Monsters"] = "Monster ESP",
+        ["ESP Items"] = "Item ESP",
+        ["傳送&尋找"] = "Teleport & Find",
+
+        -- 通用通知
+        ["提示"] = "Tip",
+        ["成功"] = "Success",
+        ["通知"] = "Notification",
+        ["找不到遊戲攝影機"] = "Game camera not found",
+        ["角色尚未載入完成"] = "Character has not loaded yet",
+        ["找不到馴服馬匹"] = "No tamed horse found",
+        ["已傳送至最近的馴服馬匹"] = "Teleported to the nearest tamed horse",
+        ["無效的馬匹座標"] = "Invalid horse coordinates",
+
+        -- 資訊
+        ["伺服器運行時間"] = "Server Uptime",
+        ["加入時間"] = "Join Time",
+        ["時鐘"] = "Clock",
+        ["時鐘顯示"] = "Show Clock",
+        ["在螢幕上顯示遊戲時間，可拖動移位"] = "Display the in-game time on screen. Drag to reposition",
+        ["時鐘大小"] = "Clock Size",
+
+        -- 功能
+        ["啟用第三人稱"] = "Enable Third Person",
+        ["第三人稱"] = "Third Person",
+        ["第三人稱才可顯示"] = "Only visible in third-person mode",
+        ["二段跳"] = "Double Jump",
+        ["快速互動"] = "Instant Interaction",
+        ["穿牆(含馬)"] = "Noclip (Including Horse)",
+        ["飛行"] = "Fly",
+        ["傳送最近馴服馬匹"] = "Teleport to Nearest Tamed Horse",
+        ["飛行(Only Riding)"] = "Fly (While Mounted Only)",
+        ["飛行速度"] = "Flight Speed",
+        ["自動駕駛"] = "Auto Pilot",
+        ["物品"] = "Items",
+        ["撿起所有物品"] = "Pick Up All Items",
+        ["物品篩選"] = "Item Filter",
+        ["空白=全部物品"] = "Leave blank to include all items",
+        ["刷新物品清單"] = "Refresh Item List",
+        ["物品延遲"] = "Item Delay",
+        ["已找到 "] = "Found ",
+        [" 個可拾取物品"] = " collectible items",
+        ["找不到遊戲物品模組"] = "Game item module not found",
+
+        -- 自瞄
+        ["輔助自瞄"] = "Aim Assist",
+        ["啟用自瞄"] = "Enable Aimbot",
+        ["瞄準部位"] = "Aim Part",
+        ["平滑度"] = "Smoothness",
+        ["數值越高，轉向越平滑"] = "Higher values result in smoother aiming",
+        ["牆壁檢測"] = "Wall Check",
+        ["顯示Fov"] = "Show FOV",
+        ["Fov大小"] = "FOV Size",
+        ["彈藥"] = "Ammo",
+        ["自動換彈"] = "Auto Reload",
+
+        -- 治療
+        ["移除繃帶冷卻"] = "Remove Bandage Cooldown",
+        ["自動治療"] = "Auto Heal",
+        ["治療物品"] = "Healing Items",
+        ["最低治療血量"] = "Minimum Health to Heal",
+        ["治療延遲(s)"] = "Healing Delay (s)",
+        ["自動救隊友(範圍內)"] = "Auto Revive Teammates (Within Range)",
+
+        -- ESP
+        ["ESP 玩家主開關"] = "Player ESP Master Switch",
+        ["ESP 怪物主開關"] = "Monster ESP Master Switch",
+        ["物品 ESP 主開關"] = "Item ESP Master Switch",
+        ["顯示名稱"] = "Show Name",
+        ["顯示血量和血條"] = "Show Health & Health Bar",
+        ["顯示距離"] = "Show Distance",
+        ["顯示射線"] = "Show Tracers",
+        ["顯示狀態"] = "Show Status",
+        ["ESP 字體大小"] = "ESP Font Size",
+
+        -- 農場
+        ["農場(需要馬)"] = "Farm (Requires Horse)",
+        ["收集債券"] = "Collect Bonds",
+        ["自動尋找Bond"] = "Auto Find Bonds",
+        ["終點 250 studs 內已沒有 Bond，正在 reset"] = "No Bonds found within 250 studs of the endpoint. Resetting...",
+        ["無法載入控制模組"] = "Failed to load control module",
+        ["自動復活"] = "Auto Revive",
+        ["請先坐在載具座位上，再使用此功能"] = "Please sit in a vehicle seat before using this feature",
+        ["歷史紀錄"] = "History",
+        ["請先選擇有效的地點"] = "Please select a valid location",
+        ["前往 "] = "Traveling to ",
+        ["遊戲結束自動重進"] = "Auto Rejoin After Game Ends",
+        ["僅死亡後重進"] = "Only Rejoin After Death",
+
+        -- 傳送&尋找
+        ["傳送到火車"] = "Teleport to Train",
+        ["移動設定"] = "Movement Settings",
+        ["移動速度"] = "Movement Speed",
+        ["安全區(需要馬)"] = "Safe Zone (Requires Horse)",
+        ["初始區／安全區"] = "Spawn / Safe Zone",
+        ["前往選取安全區"] = "Go to Selected Safe Zone",
+        ["自動前往安全區"] = "Auto Go to Safe Zone",
+        ["前往下一座安全區"] = "Go to Next Safe Zone",
+        ["尋找(需要馬)"] = "Find (Requires Horse)",
+        ["尋找小鎮"] = "Find Town",
+        ["前往下一座小鎮"] = "Go to Next Town",
+        ["尋找法外營地"] = "Find Outlaw Camp",
+        ["前往下一座法外營地"] = "Go to Next Outlaw Camp",
+        ["尋找農場"] = "Find Farm",
+        ["前往下一座農場"] = "Go to Next Farm",
+        ["尋找教堂"] = "Find Church",
+        ["前往下一座教堂"] = "Go to Next Church",
+        ["指定地點(需要馬)"] = "Specific Locations (Requires Horse)",
+        ["尋找監獄"] = "Find Prison",
+        ["尋找 Sterling"] = "Find Sterling",
+        ["尋找礦井"] = "Find Mine",
+        ["尋找古堡"] = "Find Castle",
+        ["尋找健身館"] = "Find Boxing Gym",
+        ["尋找實驗室"] = "Find Laboratory",
+        ["尋找憲法堡"] = "Find Fort Constitution",
+        ["尋找煉油廠"] = "Find Oil Refinery",
+        ["尋找終點"] = "Find Endpoint",
+        ["小鎮"] = "Town",
+        ["安全區"] = "Safe Zone",
+        ["法外營地"] = "Outlaw Camp",
+        ["教堂"] = "Church",
+        ["座標"] = "Coordinates",
+        ["前往初始區"] = "Go to Spawn",
+        ["請先選擇有效的安全區"] = "Please select a valid safe zone first",
+        ["歷史"] = "History",
+        ["地點"] = "Location",
+        ["自動記錄遊戲中遇到的地點"] = "Automatically save locations discovered in-game",
+        ["前往選取地點"] = "Go to Selected Location",
+
+        -- 畫質
+        ["移除迷霧"] = "Remove Fog",
+        ["超低配模式"] = "Ultra-Low Graphics Mode",
+
+        -- 設定
+        ["重置腳本"] = "Reset Script",
+        ["將所有配置恢復初始"] = "Restore All Settings to Default",
+        ["標記為待重置 下次啟動腳本時改為初始設定"] = "Marked for reset. Default settings will be applied the next time the script is executed",
+        ["配置等待重置"] = "Configuration Reset Pending",
+        ["下次啟動腳本後將完全生效 當前功能不受影響"] = "Changes will take full effect the next time the script is executed. Current features will remain unaffected",
+        ["重置失敗"] = "Reset Failed",
+        ["無法儲存設定檔 請確認執行器是否支援檔案寫入"] = "Unable to save config file. Please check whether your executor supports file writing",
+        ["換服後自動執行"] = "Auto-Execute",
+        ["切換伺服器時自動重新載入"] = "Automatically reload when switching servers",
+        ["已開啟自動執行"] = "Auto-Execute Enabled",
+        ["支援錯誤"] = "Compatibility Error",
+        ["你目前的注入器不支援"] = "Your current injector is not supported",
+        ["已關閉自動執行"] = "Auto-Execute Disabled",
+        ["防掛機踢出"] = "Anti-AFK Protection",
+        ["快捷鍵"] = "Hotkey",
+        ["可更改"] = "Rebindable",
+        ["停用快捷鍵"] = "Disable Hotkey",
+        ["開啟後將禁用快捷鍵"] = "Enabling this option will disable the hotkey",
+    }
+}
+
+local TranslationIndex = nil
+
+local function BuildTranslationIndex()
+    local list = {}
+    for zh, en in pairs(Translations["English"]) do
+        list[#list + 1] = { zh = zh, en = en }
+    end
+    table.sort(list, function(a, b) return #a.zh > #b.zh end)
+    TranslationIndex = list
+end
+
+local TranslationCache = {}
+
+local function TranslateParts(text)
+    if TranslationIndex == nil then BuildTranslationIndex() end
+
+    local cached = TranslationCache[text]
+    if cached ~= nil then return cached end
+
+    local lookup = Translations["English"]
+    local result
+    if lookup[text] then
+        result = lookup[text]
+    else
+        result = text
+        for _, entry in ipairs(TranslationIndex) do
+            if entry.zh ~= "" and string.find(result, entry.zh, 1, true) then
+                result = string.gsub(result, entry.zh:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"), entry.en)
+            end
+        end
+    end
+
+    TranslationCache[text] = result
+    return result
+end
+
+local function L(text)
+    if type(text) ~= "string" then return text end
+    if _G.Language ~= "English" then return text end
+    return TranslateParts(text)
+end
+
+----------------------------------------
 -- 防重複啟用
 ----------------------------------------
 if getgenv().DeadRailsLoaded then
@@ -38,7 +259,7 @@ if getgenv().DeadRailsLoaded then
     pcall(function()
         StarterGui:SetCore("SendNotification", {
             Title = "Dead Rails",
-            Text = "腳本已在運行中，請勿重複執行！",
+            Text = L("腳本已在運行中，請勿重複執行！"),
             Duration = 3
         })
     end)
@@ -307,7 +528,8 @@ local ConfigKeys = {
 		"AntiAFK_ENABLED",
     "ItemAuraEnabled", "ItemAuraDelay", "ItemAuraSelected",
     "CurrentKey",
-    "KeyDisabled"
+    "KeyDisabled",
+    "Language"
 }
 
 local function CopyConfigValue(value)
@@ -499,7 +721,7 @@ GetServerUptimeString = function()
     local t = time()
     local u = convertToDetailedTime(math.floor(t))
     return string.format(
-        "%d時 %d分 %d秒",
+        "%dhour %dmin %ds",
         u.Hours, u.Minutes, u.Seconds
     )
 end
@@ -510,7 +732,7 @@ GetLastJoinedString = function()
     local j = c - math.floor(time())
     local jt = os.date("*t", j)
 
-    local ap = jt.hour >= 12 and "下午" or "上午"
+    local ap = jt.hour >= 12 and "pm" or "am"
     local h12 = jt.hour % 12
     if h12 == 0 then h12 = 12 end
 
@@ -932,8 +1154,8 @@ TeleportToModelHorse = function()
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
     if not hrp then
         WindUI:Notify({
-            Title = "提示",
-            Content = "角色尚未載入完成",
+            Title = L("提示"),
+            Content = L("角色尚未載入完成"),
             Duration = 3
         })
         return
@@ -942,8 +1164,8 @@ TeleportToModelHorse = function()
     local target = GetNearestModelHorse()
     if not target then
         WindUI:Notify({
-            Title = "提示",
-            Content = "找不到馴服馬匹",
+            Title = L("提示"),
+            Content = L("找不到馴服馬匹"),
             Duration = 3
         })
         return
@@ -959,14 +1181,14 @@ TeleportToModelHorse = function()
     if targetCFrame then
         hrp.CFrame = targetCFrame * CFrame.new(0, 3, 0)
         WindUI:Notify({
-            Title = "成功",
-            Content = "已傳送至最近的馴服馬匹",
+            Title = L("成功"),
+            Content = L("已傳送至最近的馴服馬匹"),
             Duration = 3
         })
     else
         WindUI:Notify({
-            Title = "提示",
-            Content = "無效的馬匹座標",
+            Title = L("提示"),
+            Content = L("無效的馬匹座標"),
             Duration = 3
         })
     end
@@ -1197,8 +1419,8 @@ setAutopilot = function(state)
         if not startAutopilot() then
             _G.AutoPilotEnabled = false
             WindUI:Notify({
-                Title = "自動駕駛",
-                Content = "無法載入控制模組",
+                Title = L("自動駕駛"),
+                Content = L("無法載入控制模組"),
                 Duration = 3
             })
         end
@@ -4178,8 +4400,8 @@ do
             end
         end)
         WindUI:Notify({
-            Title = "自動尋找Bond",
-            Content = "終點 250 studs 內已沒有 Bond，正在 reset",
+            Title = L("自動尋找Bond"),
+            Content = L("終點 250 studs 內已沒有 Bond，正在 reset"),
             Duration = 3,
         })
         return false
@@ -5310,23 +5532,23 @@ end
 -- 分頁
 --------------------------
 local Tabs = {
-    Info = Window:Tab({ Title = "資訊", Icon = "info" }),
-		Function = Window:Tab({ Title = "功能", Icon = "sliders" }),
-		Aimbot = Window:Tab({ Title = "自瞄", Icon = "swords" }),
-		Heal = Window:Tab({ Title = "治療", Icon = "heart-pulse" }),
-		ESP = Window:Tab({ Title = "ESP", Icon = "eye" }),
-		Farm = Window:Tab({ Title = "農場", Icon = "mouse" }),
-		Teleport = Window:Tab({ Title = "傳送", Icon = "map-pin" }),
-		Graphics = Window:Tab({ Title = "畫質", Icon = "tv"}),
-    Settings = Window:Tab({ Title = "設定", Icon = "settings" })
+    Info = Window:Tab({ Title = L("資訊"), Icon = "info" }),
+		Function = Window:Tab({ Title = L("功能"), Icon = "sliders" }),
+		Aimbot = Window:Tab({ Title = L("自瞄"), Icon = "swords" }),
+		Heal = Window:Tab({ Title = L("治療"), Icon = "heart-pulse" }),
+		ESP = Window:Tab({ Title = L("ESP"), Icon = "eye" }),
+		Farm = Window:Tab({ Title = L("農場"), Icon = "mouse" }),
+		Teleport = Window:Tab({ Title = L("傳送"), Icon = "map-pin" }),
+		Graphics = Window:Tab({ Title = L("畫質"), Icon = "tv"}),
+    Settings = Window:Tab({ Title = L("設定"), Icon = "settings" })
 }
 
-Tabs.ESPPlayers = Tabs.ESP:SubTab({ Title = "ESP Players" })
-Tabs.ESPMonsters = Tabs.ESP:SubTab({ Title = "ESP Monsters" })
-Tabs.ESPItems = Tabs.ESP:SubTab({ Title = "ESP Items" })
+Tabs.ESPPlayers = Tabs.ESP:SubTab({ Title = L("ESP Players") })
+Tabs.ESPMonsters = Tabs.ESP:SubTab({ Title = L("ESP Monsters") })
+Tabs.ESPItems = Tabs.ESP:SubTab({ Title = L("ESP Items") })
 
-Tabs.Searching = Tabs.Teleport:SubTab({ Title = "傳送&尋找" })
-Tabs.History = Tabs.Teleport:SubTab({ Title = "歷史紀錄" })
+Tabs.Searching = Tabs.Teleport:SubTab({ Title = L("傳送&尋找") })
+Tabs.History = Tabs.Teleport:SubTab({ Title = L("歷史紀錄") })
 
 -- 地點歷史紀錄與座標
 do
@@ -5552,8 +5774,8 @@ do
     local function startHistoryTeleport(entry)
         if not entry or typeof(entry.CFrame) ~= "CFrame" then
             WindUI:Notify({
-                Title = "歷史紀錄",
-                Content = "請先選擇有效的地點",
+                Title = L("歷史紀錄"),
+                Content = L("請先選擇有效的地點"),
                 Duration = 2,
             })
             return
@@ -5600,8 +5822,8 @@ do
         end)
 
         WindUI:Notify({
-            Title = "歷史紀錄",
-            Content = "前往 " .. entry.Label,
+            Title = L("歷史紀錄"),
+            Content = L("前往 ") .. entry.Label,
             Duration = 2,
         })
     end
@@ -5617,11 +5839,11 @@ do
         end
     end)
 
-    Tabs.History:Section({ Title = "歷史" })
+    Tabs.History:Section({ Title = L("歷史") })
 
     HistoryDropdown = Tabs.History:Dropdown({
-        Title = "地點",
-        Desc = "自動記錄遊戲中遇到的地點",
+        Title = L("地點"),
+        Desc = L("自動記錄遊戲中遇到的地點"),
         Values = getHistoryValues(),
         Value = historySelected,
         AllowNone = true,
@@ -5636,7 +5858,7 @@ do
     })
 
     Tabs.History:Button({
-        Title = "前往選取地點",
+        Title = L("前往選取地點"),
         Callback = function()
             local entry = historySelected and historyByLabel[historySelected]
             startHistoryTeleport(entry)
@@ -5647,10 +5869,10 @@ end
 --------------------------
 -- 元件
 --------------------------
-Tabs.Info:Section({ Title = "資訊" })
+Tabs.Info:Section({ Title = L("資訊") })
 
 local ServerInfoParagraph = Tabs.Info:Paragraph({
-    Title = "伺服器運行時間",
+    Title = L("伺服器運行時間"),
     Desc  = GetServerUptimeString()
 })
 
@@ -5663,13 +5885,13 @@ task.spawn(function()
     end
 end)
 
-Tabs.Info:Paragraph({ Title = "加入時間", Desc = GetLastJoinedString() })
+Tabs.Info:Paragraph({ Title = L("加入時間"), Desc = GetLastJoinedString() })
 
-Tabs.Info:Section({ Title = "時鐘" })
+Tabs.Info:Section({ Title = L("時鐘") })
 
 Tabs.Info:Toggle({
-    Title = "時鐘顯示",
-    Desc = "在螢幕上顯示遊戲時間，可拖動移位",
+    Title = L("時鐘顯示"),
+    Desc = L("在螢幕上顯示遊戲時間，可拖動移位"),
     Value = _G.ClockDisplay_ENABLED,
     Callback = function(v)
         _G.ClockDisplay_ENABLED = v
@@ -5682,7 +5904,7 @@ Tabs.Info:Toggle({
 })
 
 Tabs.Info:Slider({
-    Title = "時鐘大小",
+    Title = L("時鐘大小"),
     Step = 0.05,
     Value = { Min = 0.5, Max = 2, Default = 1 },
     Callback = function(v)
@@ -5694,16 +5916,16 @@ Tabs.Info:Slider({
     end,
 })
 
-Tabs.Function:Section({ Title = "功能" })
+Tabs.Function:Section({ Title = L("功能") })
 
 Tabs.Function:Toggle({
-    Title = "啟用第三人稱",
+    Title = L("啟用第三人稱"),
     Value = _G.ForceThirdPersonEnabled,
     Callback = function(v)
         _G.ForceThirdPersonEnabled = v
         if v then
             if not startThirdPerson() then
-                WindUI:Notify({ Title = "第三人稱", Content = "找不到遊戲攝影機", Duration = 3 })
+                WindUI:Notify({ Title = L("第三人稱"), Content = L("找不到遊戲攝影機"), Duration = 3 })
             end
         else
             stopThirdPerson()
@@ -5712,7 +5934,7 @@ Tabs.Function:Toggle({
 })
 
 Tabs.Function:Toggle({
-    Title = "二段跳",
+    Title = L("二段跳"),
     Value = _G.DoubleJumpEnabled,
     Callback = function(v)
         _G.DoubleJumpEnabled = v
@@ -5725,7 +5947,7 @@ Tabs.Function:Toggle({
 })
 
 Tabs.Function:Toggle({
-    Title = "快速互動",
+    Title = L("快速互動"),
     Value = _G.InstantPrompts,
     Callback = function(v)
         toggleInstantPrompts(v)
@@ -5733,24 +5955,24 @@ Tabs.Function:Toggle({
 })
 
 Tabs.Function:Toggle({
-    Title = "穿牆(含馬)",
+    Title = L("穿牆(含馬)"),
     Value = _G.NoclipEnabled,
     Callback = function(v)
         SetNoclip(v)
     end,
 })
 
-Tabs.Function:Section({ Title = "飛行" })
+Tabs.Function:Section({ Title = L("飛行") })
 
 Tabs.Function:Button({
-	Title = "傳送最近馴服馬匹",
+	Title = L("傳送最近馴服馬匹"),
 	Callback = function(v)
 		TeleportToModelHorse()
 	end
 })
 
 Tabs.Function:Toggle({
-    Title = "飛行(Only Riding)",
+    Title = L("飛行(Only Riding)"),
     Value = _G.VehicleFlyEnabled,
     Callback = function(v)
         _G.VehicleFlyEnabled = v
@@ -5763,7 +5985,7 @@ Tabs.Function:Toggle({
 })
 
 Tabs.Function:Slider({
-    Title = "飛行速度",
+    Title = L("飛行速度"),
     Min = 1,
     Max = 10,
     Default = _G.vflySpeed,
@@ -5772,17 +5994,17 @@ Tabs.Function:Slider({
     end,
 })
 
-Tabs.Function:Section({ Title = "自動駕駛" })
+Tabs.Function:Section({ Title = L("自動駕駛") })
 
 Tabs.Function:Toggle({
-    Title = "自動駕駛",
+    Title = L("自動駕駛"),
     Value = _G.AutoPilotEnabled,
     Callback = function(v)
         setAutopilot(v)
     end,
 })
 
-Tabs.Function:Section({ Title = "物品" })
+Tabs.Function:Section({ Title = L("物品") })
 
 local ItemAuraValues = ItemAuraAPI.Scan()
 local ItemAuraValue = {}
@@ -5794,8 +6016,8 @@ for id in pairs(_G.ItemAuraSelected) do
 end
 
 Tabs.Function:Toggle({
-    Title = "物品",
-    Desc = "撿起所有物品",
+    Title = L("物品"),
+    Desc = L("撿起所有物品"),
     Value = _G.ItemAuraEnabled,
     Callback = function(v)
         _G.ItemAuraEnabled = v
@@ -5808,8 +6030,8 @@ Tabs.Function:Toggle({
 })
 
 local ItemAuraDropdown = Tabs.Function:Dropdown({
-    Title = "物品篩選",
-    Desc = "空白=全部物品",
+    Title = L("物品篩選"),
+    Desc = L("空白=全部物品"),
     Values = ItemAuraValues,
     Value = ItemAuraValue,
     Multi = true,
@@ -5828,7 +6050,7 @@ local ItemAuraDropdown = Tabs.Function:Dropdown({
 })
 
 Tabs.Function:Button({
-    Title = "刷新物品清單",
+    Title = L("刷新物品清單"),
     Callback = function()
         local values = ItemAuraAPI.Scan()
         local selectedTitles = {}
@@ -5842,15 +6064,15 @@ Tabs.Function:Button({
             ItemAuraDropdown:Refresh(values, selectedTitles)
         end
         WindUI:Notify({
-            Title = "物品",
-            Content = "已找到 " .. tostring(#values) .. " 個可拾取物品",
+            Title = L("物品"),
+            Content = L("已找到 ") .. tostring(#values) .. L(" 個可拾取物品"),
             Duration = 3,
         })
     end,
 })
 
 Tabs.Function:Slider({
-    Title = "物品延遲",
+    Title = L("物品延遲"),
     Min = 0.1,
     Max = 1,
     Step = 0.1,
@@ -5860,14 +6082,14 @@ Tabs.Function:Slider({
     end,
 })
 
-Tabs.Aimbot:Section({ Title = "輔助自瞄" })
+Tabs.Aimbot:Section({ Title = L("輔助自瞄") })
 
 local AimbotToggle = Tabs.Aimbot:Toggle({
-    Title = "啟用自瞄",
+    Title = L("啟用自瞄"),
     Value = _G.AimbotEnabled,
     Callback = function(v)
         if v and not getCameraController() then
-            WindUI:Notify({ Title = "自瞄", Content = "找不到遊戲攝影機", Duration = 3 })
+            WindUI:Notify({ Title = L("自瞄"), Content = L("找不到遊戲攝影機"), Duration = 3 })
             AimbotToggle:Set(false)
             return
         end
@@ -5878,22 +6100,22 @@ local AimbotToggle = Tabs.Aimbot:Toggle({
 })
 
 Tabs.Aimbot:Dropdown({
-    Title = "瞄準部位",
+    Title = L("瞄準部位"),
     Values = { "Head", "Body", "Legs" },
     Value = _G.AimbotPart,
     Callback = function(v) _G.AimbotPart = v end,
 })
 
 Tabs.Aimbot:Slider({
-    Title = "平滑度",
-    Desc = "數值越高，轉向越平滑",
+    Title = L("平滑度"),
+    Desc = L("數值越高，轉向越平滑"),
     Step = 1,
     Value = { Min = 1, Max = 15, Default = _G.AimbotSmoothness },
     Callback = function(v) _G.AimbotSmoothness = tonumber(v) or 5 end,
 })
 
 Tabs.Aimbot:Toggle({
-    Title = "牆壁檢測",
+    Title = L("牆壁檢測"),
     Value = _G.AimbotWallCheck,
     Callback = function(v) _G.AimbotWallCheck = v end,
 })
@@ -5901,7 +6123,7 @@ Tabs.Aimbot:Toggle({
 Tabs.Aimbot:Divider()
 
 Tabs.Aimbot:Toggle({
-    Title = "顯示Fov",
+    Title = L("顯示Fov"),
     Value = _G.AimShowFov,
     Callback = function(v)
         _G.AimShowFov = v
@@ -5910,7 +6132,7 @@ Tabs.Aimbot:Toggle({
 })
 
 Tabs.Aimbot:Slider({
-    Title = "Fov大小",
+    Title = L("Fov大小"),
     Step = 1,
     Value = { Min = 10, Max = 1000, Default = _G.AimFovRadius },
     Callback = function(v)
@@ -5919,20 +6141,20 @@ Tabs.Aimbot:Slider({
     end,
 })
 
-Tabs.Aimbot:Section({ Title = "彈藥" })
+Tabs.Aimbot:Section({ Title = L("彈藥") })
 
 Tabs.Aimbot:Toggle({
-    Title = "自動換彈",
+    Title = L("自動換彈"),
     Value = _G.AutoReloadEnabled,
     Callback = function(v)
         _G.AutoReloadEnabled = v
     end
 })
 
-Tabs.Heal:Section({ Title = "治療" })
+Tabs.Heal:Section({ Title = L("治療") })
 
 Tabs.Heal:Toggle({
-    Title = "移除繃帶冷卻",
+    Title = L("移除繃帶冷卻"),
     Value = _G.RemoveBandageCooldown_ENABLED,
     Callback = function(v)
         _G.RemoveBandageCooldown_ENABLED = v
@@ -5947,7 +6169,7 @@ Tabs.Heal:Toggle({
 Tabs.Heal:Divider()
 
 Tabs.Heal:Toggle({
-    Title = "自動治療",
+    Title = L("自動治療"),
     Value = _G.AutoHealEnabled,
     Callback = function(v)
         _G.AutoHealEnabled = v
@@ -5955,7 +6177,7 @@ Tabs.Heal:Toggle({
 })
 
 Tabs.Heal:Dropdown({
-    Title = "治療物品",
+    Title = L("治療物品"),
     Values = HEAL_ITEMS,
     Value = { "Bandage", "Snake Oil" },
     Multi = true,
@@ -5970,7 +6192,7 @@ Tabs.Heal:Dropdown({
 })
 
 Tabs.Heal:Slider({
-    Title = "最低治療血量",
+    Title = L("最低治療血量"),
     Min = 0,
     Max = 100,
     Step = 1,
@@ -5981,7 +6203,7 @@ Tabs.Heal:Slider({
 })
 
 Tabs.Heal:Slider({
-    Title = "治療延遲(s)",
+    Title = L("治療延遲(s)"),
     Min = 0.1,
     Max = 5,
     Step = 0.1,
@@ -5994,7 +6216,7 @@ Tabs.Heal:Slider({
 Tabs.Heal:Divider()
 
 Tabs.Heal:Toggle({
-    Title = "自動救隊友(範圍內)",
+    Title = L("自動救隊友(範圍內)"),
     Value = _G.AutoReviveEnabled,
     Callback = function(v)
         _G.AutoReviveEnabled = v
@@ -6006,10 +6228,10 @@ Tabs.Heal:Toggle({
     end,
 })
 
-Tabs.ESPPlayers:Section({ Title = "ESP Players" })
+Tabs.ESPPlayers:Section({ Title = L("ESP Players") })
 
 Tabs.ESPPlayers:Toggle({
-    Title = "ESP 玩家主開關",
+    Title = L("ESP 玩家主開關"),
     Type = "Checkbox",
     Value = _G.ESP_Master,
     Callback = function(v)
@@ -6021,7 +6243,7 @@ Tabs.ESPPlayers:Toggle({
 })
 
 Tabs.ESPPlayers:Toggle({
-    Title = "顯示名稱",
+    Title = L("顯示名稱"),
     Value = _G.ESP_ShowName,
     Callback = function(v)
         _G.ESP_ShowName = v
@@ -6029,7 +6251,7 @@ Tabs.ESPPlayers:Toggle({
 })
 
 Tabs.ESPPlayers:Toggle({
-    Title = "顯示血量和血條",
+    Title = L("顯示血量和血條"),
     Value = _G.ESP_ShowHealth,
     Callback = function(v)
         _G.ESP_ShowHealth = v
@@ -6037,7 +6259,7 @@ Tabs.ESPPlayers:Toggle({
 })
 
 Tabs.ESPPlayers:Toggle({
-    Title = "顯示距離",
+    Title = L("顯示距離"),
     Value = _G.ESP_ShowDistance,
     Callback = function(v)
         _G.ESP_ShowDistance = v
@@ -6045,8 +6267,8 @@ Tabs.ESPPlayers:Toggle({
 })
 
 Tabs.ESPPlayers:Toggle({
-    Title = "顯示射線",
-    Desc = "第三人稱才可顯示",
+    Title = L("顯示射線"),
+    Desc = L("第三人稱才可顯示"),
     Value = _G.ESP_ShowTracers,
     Callback = function(v)
         _G.ESP_ShowTracers = v
@@ -6059,7 +6281,7 @@ Tabs.ESPPlayers:Toggle({
 })
 
 Tabs.ESPPlayers:Slider({
-    Title = "ESP 字體大小",
+    Title = L("ESP 字體大小"),
     Value = {
         Min = 10,
         Max = 32,
@@ -6070,10 +6292,10 @@ Tabs.ESPPlayers:Slider({
     end
 })
 
-Tabs.ESPMonsters:Section({ Title = "ESP Monsters" })
+Tabs.ESPMonsters:Section({ Title = L("ESP Monsters") })
 
 Tabs.ESPMonsters:Toggle({
-    Title = "ESP 怪物主開關",
+    Title = L("ESP 怪物主開關"),
     Type = "Checkbox",
     Value = _G.MobESP_Master,
     Callback = function(v)
@@ -6088,7 +6310,7 @@ Tabs.ESPMonsters:Toggle({
 })
 
 Tabs.ESPMonsters:Toggle({
-    Title = "顯示名稱",
+    Title = L("顯示名稱"),
     Value = _G.MobESP_ShowName,
     Callback = function(v)
         _G.MobESP_ShowName = v
@@ -6096,7 +6318,7 @@ Tabs.ESPMonsters:Toggle({
 })
 
 Tabs.ESPMonsters:Toggle({
-    Title = "顯示血量和血條",
+    Title = L("顯示血量和血條"),
     Value = _G.MobESP_ShowHealth,
     Callback = function(v)
         _G.MobESP_ShowHealth = v
@@ -6104,7 +6326,7 @@ Tabs.ESPMonsters:Toggle({
 })
 
 Tabs.ESPMonsters:Toggle({
-    Title = "顯示距離",
+    Title = L("顯示距離"),
     Value = _G.MobESP_ShowDistance,
     Callback = function(v)
         _G.MobESP_ShowDistance = v
@@ -6112,7 +6334,7 @@ Tabs.ESPMonsters:Toggle({
 })
 
 Tabs.ESPMonsters:Toggle({
-    Title = "顯示狀態",
+    Title = L("顯示狀態"),
     Value = _G.MobESP_ShowState,
     Callback = function(v)
         _G.MobESP_ShowState = v
@@ -6120,8 +6342,8 @@ Tabs.ESPMonsters:Toggle({
 })
 
 Tabs.ESPMonsters:Toggle({
-    Title = "顯示射線",
-    Desc = "第三人稱才可顯示",
+    Title = L("顯示射線"),
+    Desc = L("第三人稱才可顯示"),
     Value = _G.MobESP_ShowTracers,
     Callback = function(v)
         _G.MobESP_ShowTracers = v
@@ -6134,7 +6356,7 @@ Tabs.ESPMonsters:Toggle({
 })
 
 Tabs.ESPMonsters:Slider({
-    Title = "ESP 字體大小",
+    Title = L("ESP 字體大小"),
     Value = {
         Min = 10,
         Max = 32,
@@ -6145,10 +6367,10 @@ Tabs.ESPMonsters:Slider({
     end
 })
 
-Tabs.ESPItems:Section({ Title = "ESP Items" })
+Tabs.ESPItems:Section({ Title = L("ESP Items") })
 
 Tabs.ESPItems:Toggle({
-    Title = "物品 ESP 主開關",
+    Title = L("物品 ESP 主開關"),
     Type = "Checkbox",
     Value = _G.ESP_ItemMaster,
     Callback = function(v)
@@ -6158,7 +6380,7 @@ Tabs.ESPItems:Toggle({
 })
 
 Tabs.ESPItems:Toggle({
-    Title = "顯示名稱",
+    Title = L("顯示名稱"),
     Value = _G.ESP_ItemShowName,
     Callback = function(v)
         _G.ESP_ItemShowName = v
@@ -6166,7 +6388,7 @@ Tabs.ESPItems:Toggle({
 })
 
 Tabs.ESPItems:Toggle({
-    Title = "顯示距離",
+    Title = L("顯示距離"),
     Value = _G.ESP_ItemShowDistance,
     Callback = function(v)
         _G.ESP_ItemShowDistance = v
@@ -6174,8 +6396,8 @@ Tabs.ESPItems:Toggle({
 })
 
 Tabs.ESPItems:Toggle({
-    Title = "顯示射線",
-		Desc  = "第三人稱才可顯示",
+    Title = L("顯示射線"),
+		Desc  = L("第三人稱才可顯示"),
     Value = _G.ESP_ItemShowTracers,
     Callback = function(v)
         _G.ESP_ItemShowTracers = v
@@ -6188,7 +6410,7 @@ Tabs.ESPItems:Toggle({
 })
 
 Tabs.ESPItems:Slider({
-    Title = "ESP 字體大小",
+    Title = L("ESP 字體大小"),
     Value = {
         Min = 10,
         Max = 32,
@@ -6199,10 +6421,10 @@ Tabs.ESPItems:Slider({
     end
 })
 
-Tabs.Farm:Section({ Title = "農場(需要馬)" })
+Tabs.Farm:Section({ Title = L("農場(需要馬)") })
 
 Tabs.Farm:Toggle({
-    Title = "收集債券",
+    Title = L("收集債券"),
     Value = _G.AutoCollectBondEnabled,
     Callback = function(v)
         _G.AutoCollectBondEnabled = v
@@ -6210,7 +6432,7 @@ Tabs.Farm:Toggle({
 })
 
 Tabs.Farm:Toggle({
-    Title = "自動尋找Bond",
+    Title = L("自動尋找Bond"),
     Value = _G.AutoFindBondEnabled,
     Callback = function(v)
         if _G.ToggleAutoFindBond then
@@ -6222,27 +6444,63 @@ Tabs.Farm:Toggle({
 })
 
 Tabs.Farm:Toggle({
-    Title = "遊戲結束自動重進",
-		Desc = "僅死亡後重進",
+    Title = L("遊戲結束自動重進"),
+		Desc = L("僅死亡後重進"),
     Value = _G.EndDecisionEnabled,
     Callback = function(v)
         _G.EndDecisionEnabled = v
     end
 })
 
-Tabs.Searching:Section({ Title = "傳送" })
+Tabs.Farm:Toggle({
+    Title = L("換服後自動執行"),
+    Desc = L("切換伺服器時自動重新載入"),
+    Value = _G.AutoExecute,
+    Callback = function(v)
+        _G.AutoExecute = v
+        
+        if _G.AutoExecute then
+            if queue_on_teleport then
+                writefile("DeadRails.file", "true")
+                queue_on_teleport(ScriptLoadstring)
+                WindUI:Notify({
+                    Title = L("通知"),
+                    Content = L("已開啟自動執行"),
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = L("支援錯誤"),
+                    Content = L("你目前的注入器不支援"),
+                    Duration = 3
+                })
+            end
+        else
+            if queue_on_teleport and isfile("DeadRails.file") then
+                delfile("DeadRails.file")
+            end
+            WindUI:Notify({
+                Title = L("通知"),
+                Content = L("已關閉自動執行"),
+                Duration = 3
+            })
+        end
+    end
+})
+
+Tabs.Searching:Section({ Title = L("傳送") })
 
 Tabs.Searching:Button({
-    Title = "傳送到火車",
+    Title = L("傳送到火車"),
     Callback = function()
         _G.TeleportToTrain()
     end
 })
 
-Tabs.Searching:Section({ Title = "移動設定" })
+Tabs.Searching:Section({ Title = L("移動設定") })
 
 Tabs.Searching:Slider({
-    Title = "移動速度",
+    Title = L("移動速度"),
     Min = 100,
     Max = 1000,
     Step = 100,
@@ -6252,10 +6510,10 @@ Tabs.Searching:Slider({
     end,
 })
 
-Tabs.Searching:Section({ Title = "安全區(需要馬)" })
+Tabs.Searching:Section({ Title = L("安全區(需要馬)") })
 
 SafeZoneDropdown = Tabs.Searching:Dropdown({
-    Title = "初始區／安全區",
+    Title = L("初始區／安全區"),
     Values = scanTeleportLocations(),
     Value = _G.SafeZoneSelected,
     AllowNone = false,
@@ -6285,14 +6543,14 @@ SafeZoneDropdown = Tabs.Searching:Dropdown({
 })
 
 Tabs.Searching:Button({
-    Title = "前往選取安全區",
+    Title = L("前往選取安全區"),
     Callback = function()
         teleportToSelectedLocation()
     end,
 })
 
 Tabs.Searching:Toggle({
-    Title = "自動前往安全區",
+    Title = L("自動前往安全區"),
     Value = _G.SafeZoneTeleportEnabled,
     Callback = function(v)
         _G.SafeZoneTeleportEnabled = v
@@ -6305,16 +6563,16 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Button({
-    Title = "前往下一座安全區",
+    Title = L("前往下一座安全區"),
     Callback = function()
         skipToNextSafeZone()
     end,
 })
 
-Tabs.Searching:Section({ Title = "尋找(需要馬)" })
+Tabs.Searching:Section({ Title = L("尋找(需要馬)") })
 
 Tabs.Searching:Toggle({
-    Title = "尋找小鎮",
+    Title = L("尋找小鎮"),
     Value = _G.TownTeleportEnabled,
     Callback = function(v)
         _G.TownTeleportEnabled = v
@@ -6328,7 +6586,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Button({
-    Title = "前往下一座小鎮",
+    Title = L("前往下一座小鎮"),
     Callback = function()
         skipToNextTown()
     end,
@@ -6337,7 +6595,7 @@ Tabs.Searching:Button({
 Tabs.Searching:Divider()
 
 Tabs.Searching:Toggle({
-    Title = "尋找法外營地",
+    Title = L("尋找法外營地"),
     Value = _G.OutlawCampTeleportEnabled,
     Callback = function(v)
         _G.OutlawCampTeleportEnabled = v
@@ -6350,7 +6608,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Button({
-    Title = "前往下一座法外營地",
+    Title = L("前往下一座法外營地"),
     Callback = function()
         OutlawCampTeleport.Skip()
     end,
@@ -6359,7 +6617,7 @@ Tabs.Searching:Button({
 Tabs.Searching:Divider()
 
 Tabs.Searching:Toggle({
-    Title = "尋找農場",
+    Title = L("尋找農場"),
     Value = _G.RandomFarmTeleportEnabled,
     Callback = function(v)
         _G.RandomFarmTeleportEnabled = v
@@ -6372,7 +6630,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Button({
-    Title = "前往下一座農場",
+    Title = L("前往下一座農場"),
     Callback = function()
         RandomFarmTeleport.Skip()
     end,
@@ -6381,7 +6639,7 @@ Tabs.Searching:Button({
 Tabs.Searching:Divider()
 
 Tabs.Searching:Toggle({
-    Title = "尋找教堂",
+    Title = L("尋找教堂"),
     Value = _G.EvilChurchTeleportEnabled,
     Callback = function(v)
         _G.EvilChurchTeleportEnabled = v
@@ -6394,16 +6652,16 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Button({
-    Title = "前往下一座教堂",
+    Title = L("前往下一座教堂"),
     Callback = function()
         EvilChurchTeleport.Skip()
     end,
 })
 
-Tabs.Searching:Section({ Title = "指定地點(需要馬)" })
+Tabs.Searching:Section({ Title = L("指定地點(需要馬)") })
 
 Tabs.Searching:Toggle({
-    Title = "尋找監獄",
+    Title = L("尋找監獄"),
     Value = _G.StillwaterPrisonTeleportEnabled,
     Callback = function(v)
         _G.StillwaterPrisonTeleportEnabled = v
@@ -6413,7 +6671,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找 Sterling",
+    Title = L("尋找 Sterling"),
     Value = _G.SterlingTownTeleportEnabled,
     Callback = function(v)
         _G.SterlingTownTeleportEnabled = v
@@ -6423,7 +6681,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找礦井",
+    Title = L("尋找礦井"),
     Value = _G.SterlingMountainTeleportEnabled,
     Callback = function(v)
         _G.SterlingMountainTeleportEnabled = v
@@ -6433,7 +6691,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找古堡",
+    Title = L("尋找古堡"),
     Value = _G.VampireCastleTeleportEnabled,
     Callback = function(v)
         _G.VampireCastleTeleportEnabled = v
@@ -6443,7 +6701,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找健身館",
+    Title = L("尋找健身館"),
     Value = _G.BoxingGymTeleportEnabled,
     Callback = function(v)
         _G.BoxingGymTeleportEnabled = v
@@ -6453,7 +6711,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找實驗室",
+    Title = L("尋找實驗室"),
     Value = _G.TeslaLabTeleportEnabled,
     Callback = function(v)
         _G.TeslaLabTeleportEnabled = v
@@ -6463,7 +6721,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找憲法堡",
+    Title = L("尋找憲法堡"),
     Value = _G.FortTeleportEnabled,
     Callback = function(v)
         _G.FortTeleportEnabled = v
@@ -6473,7 +6731,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找煉油廠",
+    Title = L("尋找煉油廠"),
     Value = _G.OilRefineryTeleportEnabled,
     Callback = function(v)
         _G.OilRefineryTeleportEnabled = v
@@ -6483,7 +6741,7 @@ Tabs.Searching:Toggle({
 })
 
 Tabs.Searching:Toggle({
-    Title = "尋找終點",
+    Title = L("尋找終點"),
 		Icon  = "log-in",
     Value = _G.EndpointTeleportEnabled,
     Callback = function(v)
@@ -6493,10 +6751,10 @@ Tabs.Searching:Toggle({
     end,
 })
 
-Tabs.Graphics:Section({ Title = "畫質" })
+Tabs.Graphics:Section({ Title = L("畫質") })
 
 Tabs.Graphics:Toggle({
-    Title = "移除迷霧",
+    Title = L("移除迷霧"),
     Value = _G.RemoveFogEnabled,
     Callback = function(v)
         _G.ToggleFogService(v)
@@ -6504,7 +6762,7 @@ Tabs.Graphics:Toggle({
 })
 
 Tabs.Graphics:Toggle({
-    Title = "超低配模式",
+    Title = L("超低配模式"),
     Value = _G.LowCpuMode,
     Callback = function(v)
         _G.LowCpuMode = v
@@ -6514,12 +6772,214 @@ Tabs.Graphics:Toggle({
     end
 })
 
-Tabs.Settings:Section({ Title = "重置腳本" })
+----------------------------------------
+-- 語言切換
+----------------------------------------
+local ReverseTranslationIndex
+local ReverseTranslationCache = {}
+
+local function TranslateToChinese(text)
+    if type(text) ~= "string" then return text end
+    local cached = ReverseTranslationCache[text]
+    if cached ~= nil then return cached end
+
+    if not ReverseTranslationIndex then
+        ReverseTranslationIndex = {}
+        for zh, en in pairs(Translations["English"]) do
+            if type(en) == "string" and en ~= "" then
+                ReverseTranslationIndex[#ReverseTranslationIndex + 1] = { en = en, zh = zh }
+            end
+        end
+        table.sort(ReverseTranslationIndex, function(a, b) return #a.en > #b.en end)
+    end
+
+    local result = text
+    for _, entry in ipairs(ReverseTranslationIndex) do
+        if string.find(result, entry.en, 1, true) then
+            local escaped = entry.en:gsub("([^%w])", "%%%1")
+            result = string.gsub(result, escaped, function() return entry.zh end)
+        end
+    end
+    ReverseTranslationCache[text] = result
+    return result
+end
+
+local function IsWindUIScreenGui(gui)
+    if not gui or not gui.Parent then return false end
+    local rootName = string.lower(gui.Name)
+    -- WindUI (LiquidGlass) 主視窗為 "LiquidGlass"，另有 Overlay / OpenButton 等
+    if string.find(rootName, "liquidglass", 1, true) then return true end
+    if string.find(rootName, "wind", 1, true) then return true end
+    if string.find(rootName, "xu", 1, true) then return true end
+    return false
+end
+
+local function T(text)
+    if type(text) ~= "string" then return text end
+    return _G.Language == "English" and TranslateParts(text) or TranslateToChinese(text)
+end
+
+local function RefreshVisibleLanguage()
+    -- 1. 透過 WindUI 元素 API 更新 (元素即使未顯示也能正確翻譯)
+    pcall(function()
+        local elements = Window and Window.AllElements
+        if type(elements) ~= "table" then return end
+        for _, element in ipairs(elements) do
+            if element.Title ~= nil then
+                local raw = element._RawTitle or element.Title
+                element._RawTitle = raw
+                pcall(function() element:SetTitle(T(raw)) end)
+            end
+            if element.Desc ~= nil then
+                local raw = element._RawDesc or element.Desc
+                element._RawDesc = raw
+                pcall(function() element:SetDesc(T(raw)) end)
+            end
+        end
+    end)
+
+    -- 2. 分頁標題 (側邊欄 + 頁面標題)
+    pcall(function()
+        local tabs = Window and Window.Tabs
+        if type(tabs) ~= "table" then return end
+        for _, tab in ipairs(tabs) do
+            local raw = tab._RawTitle or tab.Title
+            tab._RawTitle = raw
+            local titleText = T(raw)
+            tab.Title = titleText
+            local tabGui = tab.UIElements or {}
+            if tabGui.Main then
+                local titleLabel = tabGui.Main:FindFirstChild("Title")
+                if titleLabel and titleLabel:IsA("TextLabel") then
+                    titleLabel.Text = titleText
+                end
+            end
+        end
+
+        -- 子分頁
+        for _, tab in ipairs(tabs) do
+            if type(tab.SubTabs) == "table" then
+                for _, sub in ipairs(tab.SubTabs) do
+                    local raw = sub._RawTitle or sub.Title
+                    sub._RawTitle = raw
+                    local titleText = T(raw)
+                    sub.Title = titleText
+                    local subGui = sub.UIElements or {}
+                    if subGui.Button then
+                        local titleLabel = subGui.Button:FindFirstChild("Title")
+                        if titleLabel and titleLabel:IsA("TextLabel") then
+                            titleLabel.Text = titleText
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- 3. 頁面標題 (切換分頁時會由 Tab.Title 重設)
+    pcall(function()
+        if Window and Window.SelectedTab then
+            local tabGui = Window.SelectedTab.UIElements or {}
+            if tabGui.Page and tabGui.Page.Parent then
+                local pageTitle = tabGui.Page.Parent:FindFirstChild("PageTitle")
+                if pageTitle and pageTitle:IsA("TextLabel") then
+                    pageTitle.Text = Window.SelectedTab.Title
+                end
+            end
+        end
+    end)
+
+    -- 4. 最後掃描一次剩餘文字 (如開關內的值、按鈕等)
+    local roots = {}
+    pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
+    pcall(function() table.insert(roots, LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
+
+    for _, root in ipairs(roots) do
+        if root then
+            for _, gui in ipairs(root:GetDescendants()) do
+                if gui:IsA("ScreenGui") and IsWindUIScreenGui(gui) then
+                    for _, item in ipairs(gui:GetDescendants()) do
+                        if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+                            pcall(function() item.Text = T(item.Text) end)
+                            if item:IsA("TextBox") then
+                                pcall(function() item.PlaceholderText = T(item.PlaceholderText) end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+Tabs.Settings:Section({ Title = L("語言") })
+
+Tabs.Settings:Dropdown({
+    Title = L("語言"),
+    Values = { "中文", "English" },
+    Value = _G.Language,
+    Callback = function(v)
+        _G.Language = v
+
+        task.defer(RefreshVisibleLanguage)
+
+        WindUI:Notify({
+            Title = L("語言"),
+            Content = _G.Language == "English" and L("語言已切換為: English") or L("語言已切換為: 中文"),
+            Duration = 3
+        })
+    end
+})
+
+Window:CreateTopbarButton("Translation", "languages", function()
+    pcall(function() Window:SelectTab(Tabs.Settings) end)
+    pcall(function() Tabs.Settings:Select() end)
+
+    task.defer(function()
+        -- 找到語言下拉的標題文字，向上找到可點擊的列並展開
+        local roots = {}
+        pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
+        pcall(function() table.insert(roots, LocalPlayer:FindFirstChildOfClass("PlayerGui")) end)
+
+        for _, root in ipairs(roots) do
+            if root then
+                for _, gui in ipairs(root:GetDescendants()) do
+                    if gui:IsA("ScreenGui") and IsWindUIScreenGui(gui) then
+                        for _, item in ipairs(gui:GetDescendants()) do
+                            if (item:IsA("TextButton") or item:IsA("TextLabel"))
+                                and (item.Text == L("語言") or item.Text == "語言" or item.Text == "Language") then
+                                local node = item
+                                for _ = 1, 5 do
+                                    if not node or not node.Parent then break end
+                                    if node:IsA("GuiButton") then
+                                        pcall(function() node:Activate() end)
+                                        return
+                                    end
+                                    node = node.Parent
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end, 1)
+
+-- 啟動時套用已儲存的語言設定
+task.defer(function()
+    if _G.Language == "English" then
+        task.wait(0.5)
+        RefreshVisibleLanguage()
+    end
+end)
+
+Tabs.Settings:Section({ Title = L("重置腳本") })
 
 Tabs.Settings:Button({
-    Title = "將所有配置恢復初始",
+    Title = L("將所有配置恢復初始"),
     Icon = "trash-2",
-    Desc = "標記為待重置 下次啟動腳本時改為初始設定",
+    Desc = L("標記為待重置 下次啟動腳本時改為初始設定"),
     Callback = function()
         local ok = pcall(function()
             if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(ConfigFolder) then
@@ -6532,62 +6992,24 @@ Tabs.Settings:Button({
         
         if ok then
             WindUI:Notify({
-                Title = "配置等待重置",
-                Content = "下次啟動腳本後將完全生效 當前功能不受影響",
+                Title = L("配置等待重置"),
+                Content = L("下次啟動腳本後將完全生效 當前功能不受影響"),
                 Duration = 4
             })
         else
             WindUI:Notify({
-                Title = "重置失敗",
-                Content = "無法儲存設定檔 請確認執行器是否支援檔案寫入",
+                Title = L("重置失敗"),
+                Content = L("無法儲存設定檔 請確認執行器是否支援檔案寫入"),
                 Duration = 4
             })
         end
     end
 })
 
-Tabs.Settings:Section({ Title = "設定" })
+Tabs.Settings:Section({ Title = L("設定") })
 
 Tabs.Settings:Toggle({ 
-    Title = "換服後自動執行",
-    Desc = "切換伺服器時自動重新載入",
-    Value = _G.AutoExecute,
-    Callback = function(v)
-        _G.AutoExecute = v
-        
-        if _G.AutoExecute then
-            if queue_on_teleport then
-                writefile("DeadRails.file", "true")
-                queue_on_teleport(ScriptLoadstring)
-                WindUI:Notify({
-                    Title = "通知",
-                    Content = "已開啟自動執行",
-                    Duration = 3
-                })
-            else
-                WindUI:Notify({
-                    Title = "支援錯誤",
-                    Content = "你目前的注入器不支援",
-                    Duration = 3
-                })
-            end
-        else
-            if queue_on_teleport and isfile("DeadRails.file") then
-                delfile("DeadRails.file")
-            end
-            WindUI:Notify({
-                Title = "通知",
-                Content = "已關閉自動執行",
-                Duration = 3
-            })
-        end
-    end
-})
-
-Tabs.Settings:Divider()
-
-Tabs.Settings:Toggle({ 
-    Title    = "防掛機踢出", 
+    Title    = L("防掛機踢出"), 
     Value    = _G.AntiAFK_ENABLED,
     Callback = function(v) 
         _G.AntiAFK_ENABLED = v
@@ -6600,8 +7022,8 @@ Tabs.Settings:Toggle({
 })
 
 Tabs.Settings:Keybind({ 
-    Title = "快捷鍵", 
-    Desc = "可更改", 
+    Title = L("快捷鍵"), 
+    Desc = L("可更改"), 
     Value = _G.CurrentKey,
     Callback = function(v)
         _G.CurrentKey = v
@@ -6613,8 +7035,8 @@ Tabs.Settings:Keybind({
 })
 
 Tabs.Settings:Toggle({
-    Title = "停用快捷鍵",
-    Desc = "開啟後將禁用快捷鍵",
+    Title = L("停用快捷鍵"),
+    Desc = L("開啟後將禁用快捷鍵"),
     Value = _G.KeyDisabled,
     Callback = function(state)
         _G.KeyDisabled = state
